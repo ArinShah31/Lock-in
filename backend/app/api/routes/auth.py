@@ -11,10 +11,41 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.models.user import User
+from app.models.institution import Department, Institution
+from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, TokenPair, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _validate_institution_assignment(payload: RegisterRequest, db: Session) -> None:
+    if payload.role == UserRole.SUPER_ADMIN:
+        if payload.institution_id is not None or payload.department_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SUPER_ADMIN cannot be assigned to an institution or department",
+            )
+        return
+
+    if payload.institution_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="institution_id is required for non-super-admin roles",
+        )
+
+    institution = db.query(Institution).filter(Institution.id == payload.institution_id).first()
+    if not institution or not institution.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or inactive institution")
+
+    if payload.department_id is not None:
+        department = db.query(Department).filter(Department.id == payload.department_id).first()
+        if not department or not department.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or inactive department")
+        if department.institution_id != payload.institution_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Department does not belong to the given institution",
+            )
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -23,11 +54,15 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
+    _validate_institution_assignment(payload, db)
+
     user = User(
         full_name=payload.full_name,
         email=payload.email.lower(),
         hashed_password=get_password_hash(payload.password),
         role=payload.role,
+        institution_id=payload.institution_id,
+        department_id=payload.department_id,
     )
     db.add(user)
     db.commit()

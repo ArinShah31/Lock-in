@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Syne", sans-serif;
+  --font-sans: "Manrope", sans-serif;
+  --color-ink: #07111f;
+  --color-ink-soft: #0f1c2e;
+  --color-panel: #132338;
+  --color-line: #243447;
+  --color-mist: #9bb0c9;
+  --color-paper: #eef3f8;
+  --color-accent: #3ecfbf;
+  --color-accent-deep: #1fa896;
+  --color-warn: #f0b429;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(62, 207, 191, 0.18), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(240, 180, 41, 0.08), transparent 45%),
+    linear-gradient(165deg, #07111f 0%, #0b1628 45%, #0a1422 100%);
+  color: var(--color-paper);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, black 35%, transparent 85%);
+  opacity: 0.5;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: rise-in 0.55s ease-out both;
+}
+
+.animate-rise-delay {
+  animation: rise-in 0.7s ease-out 0.12s both;
+}
