@@ -76,7 +76,7 @@ export function InstitutionsPage() {
     <div>
       <PageHeader
         title="Institutions"
-        subtitle="Super Admins create institutions. Institution Admins manage departments."
+        subtitle="Super Admins create institutions. Institution Admins manage departments and HODs."
       />
 
       <ErrorText message={error} />

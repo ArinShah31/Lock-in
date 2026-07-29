@@ -17,8 +17,9 @@ import {
 export function ClassroomsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const canCreate = user?.role === "SUPER_ADMIN" || user?.role === "CLASS_TEACHER";
-  const canManage = canCreate;
+  const canCreate =
+    user?.role === "SUPER_ADMIN" || user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
+  const isTeacher = user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -209,7 +210,9 @@ export function ClassroomsPage() {
                         ID {c.id} · Institution {c.institution_id} · {c.is_active ? "Active" : "Inactive"}
                       </p>
                     </button>
-                    {canManage && c.is_active && (user?.role === "SUPER_ADMIN" || user?.id === c.class_teacher_id) ? (
+                    {isTeacher && c.is_active && user?.id === c.class_teacher_id ? (
+                      <GhostButton onClick={() => deactivate.mutate(c.id)}>Deactivate</GhostButton>
+                    ) : user?.role === "SUPER_ADMIN" && c.is_active ? (
                       <GhostButton onClick={() => deactivate.mutate(c.id)}>Deactivate</GhostButton>
                     ) : null}
                   </div>

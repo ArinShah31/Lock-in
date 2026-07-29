@@ -1,24 +1,13 @@
 import { FormEvent, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import type { UserRole } from "../api/types";
 import { ErrorText, Field, inputClass, PrimaryButton } from "../components/ui";
-
-const roles: UserRole[] = [
-  "SUPER_ADMIN",
-  "INSTITUTION_ADMIN",
-  "HOD",
-  "CLASS_TEACHER",
-  "SUBJECT_TEACHER",
-  "STUDENT",
-];
 
 export function RegisterPage() {
   const { user, register } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRole>("STUDENT");
   const [institutionId, setInstitutionId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +24,8 @@ export function RegisterPage() {
         full_name: fullName,
         email,
         password,
-        role,
-        institution_id: role === "SUPER_ADMIN" ? null : Number(institutionId),
+        role: "STUDENT",
+        institution_id: Number(institutionId),
         department_id: departmentId ? Number(departmentId) : null,
       });
     } catch (err) {
@@ -54,8 +43,10 @@ export function RegisterPage() {
       >
         <div>
           <p className="font-display text-3xl text-paper">ASTRA</p>
-          <h1 className="mt-2 font-display text-3xl text-paper">Create your account</h1>
-          <p className="mt-1 text-sm text-mist">Join your institution workspace.</p>
+          <h1 className="mt-2 font-display text-3xl text-paper">Student registration</h1>
+          <p className="mt-1 text-sm text-mist">
+            Faculty and admin accounts are created by your institution. Students can self-register here.
+          </p>
         </div>
 
         <ErrorText message={error} />
@@ -77,40 +68,27 @@ export function RegisterPage() {
               minLength={8}
             />
           </Field>
-          <Field label="Role">
-            <select className={inputClass} value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-              {roles.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+          <Field label="Institution ID">
+            <input
+              className={inputClass}
+              type="number"
+              value={institutionId}
+              onChange={(e) => setInstitutionId(e.target.value)}
+              required
+            />
           </Field>
-          {role !== "SUPER_ADMIN" ? (
-            <>
-              <Field label="Institution ID">
-                <input
-                  className={inputClass}
-                  type="number"
-                  value={institutionId}
-                  onChange={(e) => setInstitutionId(e.target.value)}
-                  required
-                />
-              </Field>
-              <Field label="Department ID (optional)">
-                <input
-                  className={inputClass}
-                  type="number"
-                  value={departmentId}
-                  onChange={(e) => setDepartmentId(e.target.value)}
-                />
-              </Field>
-            </>
-          ) : null}
+          <Field label="Department ID (optional)">
+            <input
+              className={inputClass}
+              type="number"
+              value={departmentId}
+              onChange={(e) => setDepartmentId(e.target.value)}
+            />
+          </Field>
         </div>
 
         <PrimaryButton type="submit" disabled={busy}>
-          {busy ? "Creating…" : "Create account"}
+          {busy ? "Creating…" : "Create student account"}
         </PrimaryButton>
 
         <p className="text-sm text-mist">

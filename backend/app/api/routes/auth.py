@@ -48,13 +48,39 @@ def _validate_institution_assignment(payload: RegisterRequest, db: Session) -> N
             )
 
 
+PROVISIONED_ROLES = {
+    UserRole.SUPER_ADMIN,
+    UserRole.INSTITUTION_ADMIN,
+    UserRole.HOD,
+    UserRole.CLASS_TEACHER,
+    UserRole.SUBJECT_TEACHER,
+}
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == payload.email.lower()).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    _validate_institution_assignment(payload, db)
+    user_count = db.query(User).count()
+    if payload.role in PROVISIONED_ROLES:
+        if payload.role == UserRole.SUPER_ADMIN and user_count == 0:
+            pass  # bootstrap first Super Admin
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This role must be created by an administrator",
+            )
+
+    if payload.role == UserRole.STUDENT:
+        _validate_institution_assignment(payload, db)
+    elif payload.role == UserRole.SUPER_ADMIN and user_count == 0:
+        if payload.institution_id is not None or payload.department_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SUPER_ADMIN cannot be assigned to an institution or department",
+            )
 
     user = User(
         full_name=payload.full_name,
