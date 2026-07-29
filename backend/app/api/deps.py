@@ -38,3 +38,10 @@ def require_roles(allowed_roles: Iterable[UserRole]):
         return current_user
 
     return role_checker
+
+
+def ensure_institution_access(user: User, institution_id: int) -> None:
+    if user.role == UserRole.SUPER_ADMIN:
+        return
+    if user.institution_id != institution_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this institution")

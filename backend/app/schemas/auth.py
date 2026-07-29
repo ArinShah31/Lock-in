@@ -8,6 +8,8 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     role: UserRole
+    institution_id: int | None = None
+    department_id: int | None = None
 
 
 class LoginRequest(BaseModel):
@@ -31,6 +33,8 @@ class UserOut(BaseModel):
     email: EmailStr
     role: UserRole
     is_active: bool
+    institution_id: int | None = None
+    department_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

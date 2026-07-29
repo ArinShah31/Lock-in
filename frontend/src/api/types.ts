@@ -1,0 +1,101 @@
+export type UserRole =
+  | "SUPER_ADMIN"
+  | "HOD"
+  | "CLASS_TEACHER"
+  | "SUBJECT_TEACHER"
+  | "STUDENT";
+
+export type User = {
+  id: number;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+  institution_id: number | null;
+  department_id: number | null;
+};
+
+export type TokenPair = {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+};
+
+export type AuthResponse = {
+  user: User;
+  tokens: TokenPair;
+};
+
+export type Institution = {
+  id: number;
+  name: string;
+  code: string;
+  address: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type Department = {
+  id: number;
+  institution_id: number;
+  name: string;
+  code: string;
+  is_active: boolean;
+};
+
+export type Classroom = {
+  id: number;
+  institution_id: number;
+  department_id: number | null;
+  class_teacher_id: number;
+  name: string;
+  code: string;
+  academic_year: string | null;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type Subject = {
+  id: number;
+  classroom_id: number;
+  teacher_id: number;
+  name: string;
+  code: string;
+  description: string | null;
+  syllabus_text: string | null;
+  syllabus_file_url: string | null;
+  is_published: boolean;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type ClassroomStudent = {
+  id: number;
+  classroom_id: number;
+  student_id: number;
+  is_active: boolean;
+  joined_at: string;
+};
+
+export type ClassroomAnnouncement = {
+  id: number;
+  classroom_id: number;
+  author_id: number;
+  title: string;
+  body: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type SubjectMaterial = {
+  id: number;
+  subject_id: number;
+  uploaded_by: number;
+  title: string;
+  material_type: string;
+  file_url: string | null;
+  content_text: string | null;
+  is_active: boolean;
+  created_at: string;
+};
