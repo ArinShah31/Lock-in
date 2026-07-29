@@ -76,7 +76,7 @@ export function InstitutionsPage() {
     <div>
       <PageHeader
         title="Institutions"
-        subtitle="Manage colleges, universities, and departments."
+        subtitle="Super Admins create institutions. Institution Admins manage departments."
       />
 
       <ErrorText message={error} />
@@ -141,7 +141,7 @@ export function InstitutionsPage() {
             <EmptyState title="Select an institution" body="Choose an institution to view or add departments." />
           ) : (
             <>
-              {user?.role === "SUPER_ADMIN" ? (
+              {user?.role === "INSTITUTION_ADMIN" ? (
                 <form onSubmit={onCreateDepartment} className="mb-4 grid gap-3">
                   <Field label="Department name">
                     <input className={inputClass} value={deptName} onChange={(e) => setDeptName(e.target.value)} required />
@@ -156,7 +156,7 @@ export function InstitutionsPage() {
               ) : null}
 
               {!departments.data?.length ? (
-                <EmptyState title="No departments" body="Add CSE, ECE, or other departments." />
+                <EmptyState title="No departments" body="Institution admins can add departments like CSE or ECE." />
               ) : (
                 <ul className="space-y-2">
                   {departments.data.map((d) => (

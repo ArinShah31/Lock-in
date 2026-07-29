@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
+  INSTITUTION_ADMIN: "Institution Admin",
   HOD: "Head of Department",
   CLASS_TEACHER: "Class Teacher",
   SUBJECT_TEACHER: "Subject Teacher",
