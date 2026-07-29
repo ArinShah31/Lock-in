@@ -47,9 +47,12 @@ export function DashboardPage() {
       <Panel>
         <h2 className="font-display text-2xl text-paper">What you can do now</h2>
         <ul className="mt-4 space-y-2 text-sm text-mist">
-          {user?.role === "SUPER_ADMIN" ? <li>Create institutions across the platform.</li> : null}
-          {user?.role === "INSTITUTION_ADMIN" ? <li>Create and manage departments for your institution.</li> : null}
-          {user?.role === "CLASS_TEACHER" || user?.role === "SUPER_ADMIN" ? (
+          {user?.role === "SUPER_ADMIN" ? <li>Create institutions and institution admins from the Team page.</li> : null}
+          {user?.role === "INSTITUTION_ADMIN" ? (
+            <li>Create departments and HODs from Institutions and Team pages.</li>
+          ) : null}
+          {user?.role === "HOD" ? <li>Create teachers from the Team page.</li> : null}
+          {user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER" || user?.role === "SUPER_ADMIN" ? (
             <li>Create classrooms, enroll students, and post announcements.</li>
           ) : null}
           {user?.role === "SUBJECT_TEACHER" || user?.role === "CLASS_TEACHER" || user?.role === "SUPER_ADMIN" ? (

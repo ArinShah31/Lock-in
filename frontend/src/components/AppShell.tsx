@@ -16,6 +16,7 @@ export function AppShell() {
   const links = [
     { to: "/", label: "Overview", show: true },
     { to: "/institutions", label: "Institutions", show: user?.role === "SUPER_ADMIN" || !!user?.institution_id },
+    { to: "/team", label: "Team", show: user?.role === "SUPER_ADMIN" || user?.role === "INSTITUTION_ADMIN" || user?.role === "HOD" },
     { to: "/classrooms", label: "Classrooms", show: true },
     { to: "/subjects", label: "Subjects", show: true },
   ].filter((l) => l.show);

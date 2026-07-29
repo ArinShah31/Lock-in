@@ -40,6 +40,8 @@ def _user_can_view_classroom(db: Session, user: User, classroom: Classroom) -> b
     if user.role == UserRole.CLASS_TEACHER and classroom.class_teacher_id == user.id:
         return True
     if user.role == UserRole.SUBJECT_TEACHER:
+        if classroom.class_teacher_id == user.id:
+            return True
         return (
             db.query(ClassroomTeacher)
             .filter(
@@ -67,7 +69,9 @@ def _user_can_view_classroom(db: Session, user: User, classroom: Classroom) -> b
 def _user_can_manage_classroom(user: User, classroom: Classroom) -> bool:
     if user.role == UserRole.SUPER_ADMIN:
         return True
-    return user.role == UserRole.CLASS_TEACHER and classroom.class_teacher_id == user.id
+    if user.role in (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER):
+        return classroom.class_teacher_id == user.id
+    return False
 
 
 def _ensure_view_access(db: Session, user: User, classroom: Classroom) -> None:
@@ -80,18 +84,23 @@ def _ensure_manage_access(user: User, classroom: Classroom) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage this classroom")
 
 
+TEACHER_ROLES = (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER)
+
+
 @router.post("", response_model=ClassroomOut, status_code=status.HTTP_201_CREATED)
 def create_classroom(
     payload: ClassroomCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.CLASS_TEACHER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, *TEACHER_ROLES])),
 ):
     institution = db.query(Institution).filter(Institution.id == payload.institution_id).first()
     if not institution or not institution.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or inactive institution")
 
-    if current_user.role == UserRole.CLASS_TEACHER:
+    if current_user.role in TEACHER_ROLES:
         ensure_institution_access(current_user, payload.institution_id)
+        if payload.institution_id != current_user.institution_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot create classroom outside your institution")
 
     if payload.department_id is not None:
         department = db.query(Department).filter(Department.id == payload.department_id).first()
@@ -114,7 +123,7 @@ def create_classroom(
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Classroom code already exists")
 
-    if current_user.role == UserRole.CLASS_TEACHER:
+    if current_user.role in TEACHER_ROLES:
         class_teacher_id = current_user.id
     else:
         if payload.class_teacher_id is None:
@@ -123,7 +132,7 @@ def create_classroom(
                 detail="class_teacher_id is required when SUPER_ADMIN creates a classroom",
             )
         teacher = db.query(User).filter(User.id == payload.class_teacher_id).first()
-        if not teacher or teacher.role != UserRole.CLASS_TEACHER or not teacher.is_active:
+        if not teacher or teacher.role not in TEACHER_ROLES or not teacher.is_active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class teacher")
         if teacher.institution_id != payload.institution_id:
             raise HTTPException(
@@ -173,6 +182,7 @@ def list_classrooms(
         return query.filter(Classroom.class_teacher_id == current_user.id).order_by(Classroom.id).all()
 
     if current_user.role == UserRole.SUBJECT_TEACHER:
+        owned = query.filter(Classroom.class_teacher_id == current_user.id)
         classroom_ids = [
             row.classroom_id
             for row in db.query(ClassroomTeacher.classroom_id)
@@ -182,9 +192,10 @@ def list_classrooms(
             )
             .all()
         ]
-        if not classroom_ids:
-            return []
-        return query.filter(Classroom.id.in_(classroom_ids)).order_by(Classroom.id).all()
+        if classroom_ids:
+            assigned = query.filter(Classroom.id.in_(classroom_ids))
+            return owned.union(assigned).order_by(Classroom.id).all()
+        return owned.order_by(Classroom.id).all()
 
     if current_user.role == UserRole.STUDENT:
         classroom_ids = [

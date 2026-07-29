@@ -80,6 +80,18 @@ export const classroomsApi = {
     }),
 };
 
+export const usersApi = {
+  list: () => api<User[]>("/users"),
+  create: (body: {
+    full_name: string;
+    email: string;
+    password: string;
+    role: UserRole;
+    institution_id?: number | null;
+    department_id?: number | null;
+  }) => api<User>("/users", { method: "POST", body: JSON.stringify(body) }),
+};
+
 export const subjectsApi = {
   list: () => api<Subject[]>("/subjects"),
   listByClassroom: (classroomId: number) => api<Subject[]>(`/classrooms/${classroomId}/subjects`),
