@@ -8,6 +8,7 @@ from app.core.database import Base
 
 class UserRole(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
+    INSTITUTION_ADMIN = "INSTITUTION_ADMIN"
     HOD = "HOD"
     CLASS_TEACHER = "CLASS_TEACHER"
     SUBJECT_TEACHER = "SUBJECT_TEACHER"

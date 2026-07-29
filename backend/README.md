@@ -17,6 +17,7 @@
 - Password hashing with bcrypt.
 - Role-based route guards for:
   - `SUPER_ADMIN`
+  - `INSTITUTION_ADMIN`
   - `HOD`
   - `CLASS_TEACHER`
   - `SUBJECT_TEACHER`
@@ -24,8 +25,8 @@
 
 ### Institution Management
 
-- Institution CRUD (soft delete via `is_active`).
-- Department CRUD nested under institutions.
+- Institution CRUD (soft delete via `is_active`) by `SUPER_ADMIN`.
+- Department CRUD by `INSTITUTION_ADMIN` only (scoped to their own institution).
 - Users linked via `institution_id` / `department_id`.
 - Non-`SUPER_ADMIN` registration requires a valid active institution.
 

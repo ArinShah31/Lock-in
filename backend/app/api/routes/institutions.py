@@ -123,8 +123,14 @@ def create_department(
     institution_id: int,
     payload: DepartmentCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles([UserRole.SUPER_ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.INSTITUTION_ADMIN])),
 ):
+    if current_user.institution_id != institution_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Institution admins can only manage departments in their own institution",
+        )
+
     institution = db.query(Institution).filter(Institution.id == institution_id).first()
     if not institution:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Institution not found")
@@ -177,11 +183,17 @@ def update_department(
     department_id: int,
     payload: DepartmentUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles([UserRole.SUPER_ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.INSTITUTION_ADMIN])),
 ):
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+    if current_user.institution_id != department.institution_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Institution admins can only manage departments in their own institution",
+        )
 
     updates = payload.model_dump(exclude_unset=True)
     if "code" in updates and updates["code"] is not None:
@@ -211,11 +223,17 @@ def update_department(
 def deactivate_department(
     department_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles([UserRole.SUPER_ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.INSTITUTION_ADMIN])),
 ):
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+    if current_user.institution_id != department.institution_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Institution admins can only manage departments in their own institution",
+        )
 
     department.is_active = False
     db.commit()

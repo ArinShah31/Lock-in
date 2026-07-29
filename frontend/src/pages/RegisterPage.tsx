@@ -6,6 +6,7 @@ import { ErrorText, Field, inputClass, PrimaryButton } from "../components/ui";
 
 const roles: UserRole[] = [
   "SUPER_ADMIN",
+  "INSTITUTION_ADMIN",
   "HOD",
   "CLASS_TEACHER",
   "SUBJECT_TEACHER",
