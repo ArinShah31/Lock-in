@@ -1,13 +1,21 @@
+import secrets
+import string
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_institution_access, get_current_user, require_roles
 from app.core.database import get_db
-from app.models.classroom import Classroom, ClassroomAnnouncement, ClassroomStudent, ClassroomTeacher
+from app.models.classroom import (
+    Classroom,
+    ClassroomAnnouncement,
+    ClassroomStudent,
+    ClassroomTeacher,
+    MembershipStatus,
+)
 from app.models.institution import Department, Institution
 from app.models.user import User, UserRole
 from app.schemas.classroom import (
-    AddStudentRequest,
     AnnouncementCreate,
     AnnouncementOut,
     AssignTeacherRequest,
@@ -16,9 +24,13 @@ from app.schemas.classroom import (
     ClassroomStudentOut,
     ClassroomTeacherOut,
     ClassroomUpdate,
+    JoinClassroomRequest,
 )
 
 router = APIRouter(prefix="/classrooms", tags=["classrooms"])
+
+TEACHER_ROLES = (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER)
+JOIN_CODE_ALPHABET = string.ascii_uppercase + string.digits
 
 
 def _get_classroom_or_404(db: Session, classroom_id: int) -> Classroom:
@@ -28,9 +40,45 @@ def _get_classroom_or_404(db: Session, classroom_id: int) -> Classroom:
     return classroom
 
 
+def _generate_join_code(db: Session) -> str:
+    for _ in range(20):
+        code = "".join(secrets.choice(JOIN_CODE_ALPHABET) for _ in range(5))
+        exists = db.query(Classroom).filter(Classroom.join_code == code).first()
+        if not exists:
+            return code
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not generate join code")
+
+
+def _membership_out(membership: ClassroomStudent, student: User | None = None, classroom: Classroom | None = None) -> ClassroomStudentOut:
+    return ClassroomStudentOut(
+        id=membership.id,
+        classroom_id=membership.classroom_id,
+        student_id=membership.student_id,
+        status=membership.status,
+        is_active=membership.is_active,
+        joined_at=membership.joined_at,
+        student_full_name=student.full_name if student else None,
+        student_email=student.email if student else None,
+        classroom_name=classroom.name if classroom else None,
+        classroom_code=classroom.code if classroom else None,
+    )
+
+
 def _user_can_view_classroom(db: Session, user: User, classroom: Classroom) -> bool:
     if user.role == UserRole.SUPER_ADMIN:
         return True
+    if user.role == UserRole.STUDENT:
+        return (
+            db.query(ClassroomStudent)
+            .filter(
+                ClassroomStudent.classroom_id == classroom.id,
+                ClassroomStudent.student_id == user.id,
+                ClassroomStudent.is_active.is_(True),
+                ClassroomStudent.status == MembershipStatus.APPROVED,
+            )
+            .first()
+            is not None
+        )
     if user.institution_id != classroom.institution_id:
         return False
     if user.role == UserRole.HOD:
@@ -52,24 +100,13 @@ def _user_can_view_classroom(db: Session, user: User, classroom: Classroom) -> b
             .first()
             is not None
         )
-    if user.role == UserRole.STUDENT:
-        return (
-            db.query(ClassroomStudent)
-            .filter(
-                ClassroomStudent.classroom_id == classroom.id,
-                ClassroomStudent.student_id == user.id,
-                ClassroomStudent.is_active.is_(True),
-            )
-            .first()
-            is not None
-        )
     return False
 
 
 def _user_can_manage_classroom(user: User, classroom: Classroom) -> bool:
     if user.role == UserRole.SUPER_ADMIN:
         return True
-    if user.role in (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER):
+    if user.role in TEACHER_ROLES:
         return classroom.class_teacher_id == user.id
     return False
 
@@ -84,7 +121,11 @@ def _ensure_manage_access(user: User, classroom: Classroom) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage this classroom")
 
 
-TEACHER_ROLES = (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER)
+def _assign_student_scope(student: User, classroom: Classroom) -> None:
+    if student.institution_id is None:
+        student.institution_id = classroom.institution_id
+        if classroom.department_id is not None:
+            student.department_id = classroom.department_id
 
 
 @router.post("", response_model=ClassroomOut, status_code=status.HTTP_201_CREATED)
@@ -100,7 +141,10 @@ def create_classroom(
     if current_user.role in TEACHER_ROLES:
         ensure_institution_access(current_user, payload.institution_id)
         if payload.institution_id != current_user.institution_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot create classroom outside your institution")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot create classroom outside your institution",
+            )
 
     if payload.department_id is not None:
         department = db.query(Department).filter(Department.id == payload.department_id).first()
@@ -147,6 +191,7 @@ def create_classroom(
         class_teacher_id=class_teacher_id,
         name=payload.name,
         code=payload.code.upper(),
+        join_code=_generate_join_code(db),
         academic_year=payload.academic_year,
         description=payload.description,
     )
@@ -165,6 +210,21 @@ def list_classrooms(
 
     if current_user.role == UserRole.SUPER_ADMIN:
         return query.order_by(Classroom.id).all()
+
+    if current_user.role == UserRole.STUDENT:
+        classroom_ids = [
+            row.classroom_id
+            for row in db.query(ClassroomStudent.classroom_id)
+            .filter(
+                ClassroomStudent.student_id == current_user.id,
+                ClassroomStudent.is_active.is_(True),
+                ClassroomStudent.status == MembershipStatus.APPROVED,
+            )
+            .all()
+        ]
+        if not classroom_ids:
+            return []
+        return query.filter(Classroom.id.in_(classroom_ids)).order_by(Classroom.id).all()
 
     if current_user.institution_id is None:
         return []
@@ -197,21 +257,71 @@ def list_classrooms(
             return owned.union(assigned).order_by(Classroom.id).all()
         return owned.order_by(Classroom.id).all()
 
-    if current_user.role == UserRole.STUDENT:
-        classroom_ids = [
-            row.classroom_id
-            for row in db.query(ClassroomStudent.classroom_id)
-            .filter(
-                ClassroomStudent.student_id == current_user.id,
-                ClassroomStudent.is_active.is_(True),
-            )
-            .all()
-        ]
-        if not classroom_ids:
-            return []
-        return query.filter(Classroom.id.in_(classroom_ids)).order_by(Classroom.id).all()
-
     return []
+
+
+@router.post("/join", response_model=ClassroomStudentOut, status_code=status.HTTP_201_CREATED)
+def join_classroom(
+    payload: JoinClassroomRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.STUDENT])),
+):
+    join_code = payload.join_code.upper()
+    classroom = (
+        db.query(Classroom)
+        .filter(Classroom.join_code == join_code, Classroom.is_active.is_(True))
+        .first()
+    )
+    if not classroom:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid classroom join code")
+
+    existing = (
+        db.query(ClassroomStudent)
+        .filter(
+            ClassroomStudent.classroom_id == classroom.id,
+            ClassroomStudent.student_id == current_user.id,
+        )
+        .first()
+    )
+    if existing:
+        if existing.status == MembershipStatus.APPROVED and existing.is_active:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already enrolled in this classroom")
+        if existing.status == MembershipStatus.PENDING and existing.is_active:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Join request awaiting approval")
+        existing.status = MembershipStatus.PENDING
+        existing.is_active = True
+        db.commit()
+        db.refresh(existing)
+        return _membership_out(existing, current_user, classroom)
+
+    membership = ClassroomStudent(
+        classroom_id=classroom.id,
+        student_id=current_user.id,
+        status=MembershipStatus.PENDING,
+    )
+    db.add(membership)
+    db.commit()
+    db.refresh(membership)
+    return _membership_out(membership, current_user, classroom)
+
+
+@router.get("/my-join-requests", response_model=list[ClassroomStudentOut])
+def list_my_join_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.STUDENT])),
+):
+    rows = (
+        db.query(ClassroomStudent, Classroom)
+        .join(Classroom, Classroom.id == ClassroomStudent.classroom_id)
+        .filter(
+            ClassroomStudent.student_id == current_user.id,
+            ClassroomStudent.is_active.is_(True),
+            ClassroomStudent.status == MembershipStatus.PENDING,
+        )
+        .order_by(ClassroomStudent.id.desc())
+        .all()
+    )
+    return [_membership_out(membership, current_user, classroom) for membership, classroom in rows]
 
 
 @router.get("/{classroom_id}", response_model=ClassroomOut)
@@ -294,50 +404,92 @@ def deactivate_classroom(
     return classroom
 
 
-@router.post(
-    "/{classroom_id}/students",
-    response_model=ClassroomStudentOut,
-    status_code=status.HTTP_201_CREATED,
-)
-def add_student(
+@router.get("/{classroom_id}/join-requests", response_model=list[ClassroomStudentOut])
+def list_join_requests(
     classroom_id: int,
-    payload: AddStudentRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_manage_access(current_user, classroom)
 
-    student = db.query(User).filter(User.id == payload.student_id).first()
-    if not student or student.role != UserRole.STUDENT or not student.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid student")
-    if student.institution_id != classroom.institution_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student must belong to the same institution",
+    rows = (
+        db.query(ClassroomStudent, User)
+        .join(User, User.id == ClassroomStudent.student_id)
+        .filter(
+            ClassroomStudent.classroom_id == classroom_id,
+            ClassroomStudent.is_active.is_(True),
+            ClassroomStudent.status == MembershipStatus.PENDING,
         )
+        .order_by(ClassroomStudent.id)
+        .all()
+    )
+    return [_membership_out(membership, student, classroom) for membership, student in rows]
 
-    existing = (
+
+@router.post("/{classroom_id}/join-requests/{student_id}/approve", response_model=ClassroomStudentOut)
+def approve_join_request(
+    classroom_id: int,
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, classroom)
+
+    membership = (
         db.query(ClassroomStudent)
         .filter(
             ClassroomStudent.classroom_id == classroom_id,
-            ClassroomStudent.student_id == payload.student_id,
+            ClassroomStudent.student_id == student_id,
+            ClassroomStudent.is_active.is_(True),
+            ClassroomStudent.status == MembershipStatus.PENDING,
         )
         .first()
     )
-    if existing:
-        if existing.is_active:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student already enrolled")
-        existing.is_active = True
-        db.commit()
-        db.refresh(existing)
-        return existing
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join request not found")
 
-    membership = ClassroomStudent(classroom_id=classroom_id, student_id=payload.student_id)
-    db.add(membership)
+    student = db.query(User).filter(User.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+
+    membership.status = MembershipStatus.APPROVED
+    _assign_student_scope(student, classroom)
     db.commit()
     db.refresh(membership)
-    return membership
+    return _membership_out(membership, student, classroom)
+
+
+@router.post("/{classroom_id}/join-requests/{student_id}/reject", response_model=ClassroomStudentOut)
+def reject_join_request(
+    classroom_id: int,
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, classroom)
+
+    membership = (
+        db.query(ClassroomStudent)
+        .filter(
+            ClassroomStudent.classroom_id == classroom_id,
+            ClassroomStudent.student_id == student_id,
+            ClassroomStudent.is_active.is_(True),
+            ClassroomStudent.status == MembershipStatus.PENDING,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join request not found")
+
+    student = db.query(User).filter(User.id == student_id).first()
+    membership.status = MembershipStatus.REJECTED
+    membership.is_active = False
+    db.commit()
+    db.refresh(membership)
+    return _membership_out(membership, student, classroom)
 
 
 @router.get("/{classroom_id}/students", response_model=list[ClassroomStudentOut])
@@ -348,12 +500,19 @@ def list_students(
 ):
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_view_access(db, current_user, classroom)
-    return (
-        db.query(ClassroomStudent)
-        .filter(ClassroomStudent.classroom_id == classroom_id, ClassroomStudent.is_active.is_(True))
+
+    rows = (
+        db.query(ClassroomStudent, User)
+        .join(User, User.id == ClassroomStudent.student_id)
+        .filter(
+            ClassroomStudent.classroom_id == classroom_id,
+            ClassroomStudent.is_active.is_(True),
+            ClassroomStudent.status == MembershipStatus.APPROVED,
+        )
         .order_by(ClassroomStudent.id)
         .all()
     )
+    return [_membership_out(membership, student, classroom) for membership, student in rows]
 
 
 @router.delete("/{classroom_id}/students/{student_id}", response_model=ClassroomStudentOut)
@@ -372,16 +531,18 @@ def remove_student(
             ClassroomStudent.classroom_id == classroom_id,
             ClassroomStudent.student_id == student_id,
             ClassroomStudent.is_active.is_(True),
+            ClassroomStudent.status == MembershipStatus.APPROVED,
         )
         .first()
     )
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not enrolled")
 
+    student = db.query(User).filter(User.id == student_id).first()
     membership.is_active = False
     db.commit()
     db.refresh(membership)
-    return membership
+    return _membership_out(membership, student, classroom)
 
 
 @router.post(

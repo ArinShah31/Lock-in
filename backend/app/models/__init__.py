@@ -1,4 +1,4 @@
-from app.models.classroom import Classroom, ClassroomAnnouncement, ClassroomStudent, ClassroomTeacher
+from app.models.classroom import Classroom, ClassroomAnnouncement, ClassroomStudent, ClassroomTeacher, MembershipStatus
 from app.models.institution import Department, Institution
 from app.models.subject import Subject, SubjectMaterial
 from app.models.user import User
@@ -11,6 +11,7 @@ __all__ = [
     "ClassroomStudent",
     "ClassroomTeacher",
     "ClassroomAnnouncement",
+    "MembershipStatus",
     "Subject",
     "SubjectMaterial",
 ]

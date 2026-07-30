@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthProvider } from "./auth/AuthContext";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
@@ -20,6 +20,12 @@ const queryClient = new QueryClient({
   },
 });
 
+function HomeRedirect() {
+  const { user } = useAuth();
+  if (user?.role === "STUDENT") return <Navigate to="/classrooms" replace />;
+  return <DashboardPage />;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -31,7 +37,7 @@ export default function App() {
 
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
-                <Route path="/" element={<DashboardPage />} />
+                <Route path="/" element={<HomeRedirect />} />
                 <Route path="/institutions" element={<InstitutionsPage />} />
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />

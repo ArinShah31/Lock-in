@@ -14,11 +14,19 @@ export function AppShell() {
   const { user, logout } = useAuth();
 
   const links = [
-    { to: "/", label: "Overview", show: true },
-    { to: "/institutions", label: "Institutions", show: user?.role === "SUPER_ADMIN" || !!user?.institution_id },
-    { to: "/team", label: "Team", show: user?.role === "SUPER_ADMIN" || user?.role === "INSTITUTION_ADMIN" || user?.role === "HOD" },
-    { to: "/classrooms", label: "Classrooms", show: true },
-    { to: "/subjects", label: "Subjects", show: true },
+    {
+      to: "/",
+      label: user?.role === "SUPER_ADMIN" ? "Dashboard" : "Overview",
+      show: user?.role !== "STUDENT",
+    },
+    {
+      to: "/institutions",
+      label: "Institutions",
+      show: user?.role === "SUPER_ADMIN" || (user?.role !== "STUDENT" && !!user?.institution_id),
+    },
+    { to: "/team", label: "Team", show: user?.role === "INSTITUTION_ADMIN" || user?.role === "HOD" },
+    { to: "/classrooms", label: "Classrooms", show: user?.role !== "SUPER_ADMIN" },
+    { to: "/subjects", label: "Subjects", show: user?.role !== "SUPER_ADMIN" && user?.role !== "STUDENT" },
   ].filter((l) => l.show);
 
   return (

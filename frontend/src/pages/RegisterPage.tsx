@@ -8,8 +8,6 @@ export function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [institutionId, setInstitutionId] = useState("");
-  const [departmentId, setDepartmentId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -25,8 +23,8 @@ export function RegisterPage() {
         email,
         password,
         role: "STUDENT",
-        institution_id: Number(institutionId),
-        department_id: departmentId ? Number(departmentId) : null,
+        institution_id: null,
+        department_id: null,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -39,7 +37,7 @@ export function RegisterPage() {
     <div className="grid min-h-screen place-items-center px-4 py-10">
       <form
         onSubmit={onSubmit}
-        className="animate-rise w-full max-w-xl space-y-4 rounded-3xl border border-line/70 bg-panel/70 p-7 backdrop-blur"
+        className="animate-rise w-full max-w-md space-y-4 rounded-3xl border border-line/70 bg-panel/70 p-7 backdrop-blur"
       >
         <div>
           <p className="font-display text-3xl text-paper">ASTRA</p>
@@ -51,41 +49,22 @@ export function RegisterPage() {
 
         <ErrorText message={error} />
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Full name">
-            <input className={inputClass} value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-          </Field>
-          <Field label="Email">
-            <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </Field>
-          <Field label="Password">
-            <input
-              className={inputClass}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-          </Field>
-          <Field label="Institution ID">
-            <input
-              className={inputClass}
-              type="number"
-              value={institutionId}
-              onChange={(e) => setInstitutionId(e.target.value)}
-              required
-            />
-          </Field>
-          <Field label="Department ID (optional)">
-            <input
-              className={inputClass}
-              type="number"
-              value={departmentId}
-              onChange={(e) => setDepartmentId(e.target.value)}
-            />
-          </Field>
-        </div>
+        <Field label="Full name">
+          <input className={inputClass} value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+        </Field>
+        <Field label="Email">
+          <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </Field>
+        <Field label="Password">
+          <input
+            className={inputClass}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+          />
+        </Field>
 
         <PrimaryButton type="submit" disabled={busy}>
           {busy ? "Creating…" : "Create student account"}

@@ -74,7 +74,7 @@ export function LoginPage() {
           <p className="text-sm text-mist">
             New here?{" "}
             <Link className="text-accent hover:underline" to="/register">
-              Create an account
+              Register a student
             </Link>
           </p>
         </form>

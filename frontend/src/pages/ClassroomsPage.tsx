@@ -17,30 +17,45 @@ import {
 export function ClassroomsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const canCreate =
-    user?.role === "SUPER_ADMIN" || user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
-  const isTeacher = user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
+  const isStudent = user?.role === "STUDENT";
+  const canCreate = user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
+  const isOwner = (classTeacherId: number) =>
+    (user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER") && user.id === classTeacherId;
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState("");
   const [form, setForm] = useState({
     institution_id: "",
     department_id: "",
-    class_teacher_id: "",
     name: "",
     code: "",
     academic_year: "",
     description: "",
   });
-  const [studentId, setStudentId] = useState("");
   const [announcement, setAnnouncement] = useState({ title: "", body: "" });
 
-  const institutions = useQuery({ queryKey: ["institutions"], queryFn: institutionsApi.list });
+  const institutions = useQuery({
+    queryKey: ["institutions"],
+    queryFn: institutionsApi.list,
+    enabled: canCreate,
+  });
   const classrooms = useQuery({ queryKey: ["classrooms"], queryFn: classroomsApi.list });
+  const pendingJoins = useQuery({
+    queryKey: ["my-join-requests"],
+    queryFn: classroomsApi.myJoinRequests,
+    enabled: isStudent,
+  });
   const students = useQuery({
     queryKey: ["classroom-students", selectedId],
     queryFn: () => classroomsApi.listStudents(selectedId!),
-    enabled: selectedId != null,
+    enabled: selectedId != null && !isStudent,
+  });
+  const joinRequests = useQuery({
+    queryKey: ["classroom-join-requests", selectedId],
+    queryFn: () => classroomsApi.listJoinRequests(selectedId!),
+    enabled: selectedId != null && !!classrooms.data?.find((c) => c.id === selectedId && isOwner(c.class_teacher_id)),
   });
   const announcements = useQuery({
     queryKey: ["classroom-announcements", selectedId],
@@ -50,27 +65,47 @@ export function ClassroomsPage() {
 
   const createClassroom = useMutation({
     mutationFn: classroomsApi.create,
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       setForm({
         institution_id: "",
         department_id: "",
-        class_teacher_id: "",
         name: "",
         code: "",
         academic_year: "",
         description: "",
       });
+      setSuccess(`Classroom created. Join code: ${created.join_code}`);
+      setSelectedId(created.id);
       await qc.invalidateQueries({ queryKey: ["classrooms"] });
     },
     onError: (err: Error) => setError(err.message),
   });
 
-  const addStudent = useMutation({
-    mutationFn: ({ id, student_id }: { id: number; student_id: number }) =>
-      classroomsApi.addStudent(id, student_id),
+  const joinClassroom = useMutation({
+    mutationFn: (code: string) => classroomsApi.join(code),
     onSuccess: async () => {
-      setStudentId("");
-      await qc.invalidateQueries({ queryKey: ["classroom-students", selectedId] });
+      setJoinCode("");
+      setSuccess("Join request sent. Waiting for teacher approval.");
+      await qc.invalidateQueries({ queryKey: ["my-join-requests"] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const approveJoin = useMutation({
+    mutationFn: ({ id, studentId }: { id: number; studentId: number }) => classroomsApi.approveJoin(id, studentId),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["classroom-join-requests", selectedId] }),
+        qc.invalidateQueries({ queryKey: ["classroom-students", selectedId] }),
+      ]);
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const rejectJoin = useMutation({
+    mutationFn: ({ id, studentId }: { id: number; studentId: number }) => classroomsApi.rejectJoin(id, studentId),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["classroom-join-requests", selectedId] });
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -99,10 +134,10 @@ export function ClassroomsPage() {
   function onCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     createClassroom.mutate({
       institution_id: Number(form.institution_id || user?.institution_id),
-      department_id: form.department_id ? Number(form.department_id) : null,
-      class_teacher_id: user?.role === "SUPER_ADMIN" ? Number(form.class_teacher_id) : undefined,
+      department_id: form.department_id ? Number(form.department_id) : user?.department_id ?? null,
       name: form.name,
       code: form.code,
       academic_year: form.academic_year || undefined,
@@ -110,12 +145,97 @@ export function ClassroomsPage() {
     });
   }
 
+  function onJoin(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    joinClassroom.mutate(joinCode.trim().toUpperCase());
+  }
+
   const selected = classrooms.data?.find((c) => c.id === selectedId);
+  const selectedIsOwned = selected ? isOwner(selected.class_teacher_id) : false;
+
+  if (isStudent) {
+    return (
+      <div>
+        <PageHeader
+          title="Classrooms"
+          subtitle="Enter the 5-character join code from your teacher. Access starts after approval."
+        />
+        <ErrorText message={error} />
+        {success ? (
+          <p className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent">{success}</p>
+        ) : null}
+
+        <Panel className="mb-6">
+          <h2 className="mb-4 font-display text-xl text-paper">Join a classroom</h2>
+          <form onSubmit={onJoin} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <Field label="Join code">
+                <input
+                  className={`${inputClass} uppercase tracking-[0.3em]`}
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase().slice(0, 5))}
+                  maxLength={5}
+                  minLength={5}
+                  pattern="[A-Za-z0-9]{5}"
+                  placeholder="AB12C"
+                  required
+                />
+              </Field>
+            </div>
+            <PrimaryButton type="submit" disabled={joinClassroom.isPending}>
+              Request to join
+            </PrimaryButton>
+          </form>
+        </Panel>
+
+        {pendingJoins.data?.length ? (
+          <Panel className="mb-6">
+            <h2 className="mb-4 font-display text-xl text-paper">Pending requests</h2>
+            <ul className="space-y-2">
+              {pendingJoins.data.map((r) => (
+                <li key={r.id} className="rounded-xl border border-line px-3 py-2 text-sm text-mist">
+                  <span className="text-paper">{r.classroom_name ?? `Classroom ${r.classroom_id}`}</span>
+                  {r.classroom_code ? ` (${r.classroom_code})` : ""} · awaiting approval
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ) : null}
+
+        <Panel>
+          <h2 className="mb-4 font-display text-xl text-paper">Your classrooms</h2>
+          {!classrooms.data?.length ? (
+            <EmptyState title="No classrooms yet" body="Ask your teacher for a join code to get started." />
+          ) : (
+            <div className="space-y-3">
+              {classrooms.data.map((c) => (
+                <div key={c.id} className="rounded-2xl border border-line bg-ink-soft/40 px-4 py-3">
+                  <p className="font-semibold text-paper">
+                    {c.name} <span className="text-mist">({c.code})</span>
+                  </p>
+                  <p className="mt-1 text-xs text-mist">Year: {c.academic_year || "—"}</p>
+                  {c.description ? <p className="mt-2 text-sm text-mist">{c.description}</p> : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <PageHeader title="Classrooms" subtitle="Create classes, enroll students, and share announcements." />
+      <PageHeader
+        title="Classrooms"
+        subtitle="Create classrooms, share the join code, and approve student requests."
+      />
       <ErrorText message={error} />
+      {success ? (
+        <p className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent">{success}</p>
+      ) : null}
 
       {canCreate ? (
         <Panel className="mb-6">
@@ -140,24 +260,14 @@ export function ClassroomsPage() {
             <Field label="Department ID (optional)">
               <input
                 className={inputClass}
-                value={form.department_id}
+                value={form.department_id || String(user?.department_id ?? "")}
                 onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}
               />
             </Field>
-            {user?.role === "SUPER_ADMIN" ? (
-              <Field label="Class teacher user ID">
-                <input
-                  className={inputClass}
-                  value={form.class_teacher_id}
-                  onChange={(e) => setForm((f) => ({ ...f, class_teacher_id: e.target.value }))}
-                  required
-                />
-              </Field>
-            ) : null}
             <Field label="Name">
               <input className={inputClass} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required />
             </Field>
-            <Field label="Code">
+            <Field label="Class label">
               <input className={inputClass} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} required />
             </Field>
             <Field label="Academic year">
@@ -207,12 +317,12 @@ export function ClassroomsPage() {
                         {c.name} <span className="text-mist">({c.code})</span>
                       </p>
                       <p className="text-xs text-mist">
-                        ID {c.id} · Institution {c.institution_id} · {c.is_active ? "Active" : "Inactive"}
+                        Join code <span className="font-semibold tracking-widest text-accent">{c.join_code}</span>
+                        {" · "}
+                        {c.is_active ? "Active" : "Inactive"}
                       </p>
                     </button>
-                    {isTeacher && c.is_active && user?.id === c.class_teacher_id ? (
-                      <GhostButton onClick={() => deactivate.mutate(c.id)}>Deactivate</GhostButton>
-                    ) : user?.role === "SUPER_ADMIN" && c.is_active ? (
+                    {isOwner(c.class_teacher_id) && c.is_active ? (
                       <GhostButton onClick={() => deactivate.mutate(c.id)}>Deactivate</GhostButton>
                     ) : null}
                   </div>
@@ -225,51 +335,74 @@ export function ClassroomsPage() {
         <Panel>
           <h2 className="mb-4 font-display text-xl text-paper">Classroom detail</h2>
           {!selected ? (
-            <EmptyState title="Select a classroom" body="Pick a classroom to manage students and announcements." />
+            <EmptyState title="Select a classroom" body="Pick a classroom to manage join requests and announcements." />
           ) : (
             <div className="space-y-6">
               <div>
                 <p className="text-paper">{selected.description || "No description"}</p>
                 <p className="mt-1 text-xs text-mist">Year: {selected.academic_year || "—"}</p>
+                {selectedIsOwned ? (
+                  <p className="mt-3 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-sm">
+                    Share join code:{" "}
+                    <span className="font-display text-lg tracking-[0.25em] text-accent">{selected.join_code}</span>
+                  </p>
+                ) : null}
               </div>
 
-              {(user?.role === "SUPER_ADMIN" || user?.id === selected.class_teacher_id) && (
-                <form
-                  className="grid gap-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setError(null);
-                    addStudent.mutate({ id: selected.id, student_id: Number(studentId) });
-                  }}
-                >
-                  <Field label="Enroll student (user ID)">
-                    <input className={inputClass} value={studentId} onChange={(e) => setStudentId(e.target.value)} required />
-                  </Field>
-                  <PrimaryButton type="submit">Add student</PrimaryButton>
-                </form>
-              )}
+              {selectedIsOwned ? (
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Pending join requests</h3>
+                  {!joinRequests.data?.length ? (
+                    <p className="text-sm text-mist">No pending requests.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {joinRequests.data.map((r) => (
+                        <li key={r.id} className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2 text-sm">
+                          <span>
+                            <span className="text-paper">{r.student_full_name ?? `Student ${r.student_id}`}</span>
+                            <span className="text-mist"> · {r.student_email}</span>
+                          </span>
+                          <div className="flex gap-2">
+                            <PrimaryButton
+                              onClick={() => approveJoin.mutate({ id: selected.id, studentId: r.student_id })}
+                            >
+                              Approve
+                            </PrimaryButton>
+                            <GhostButton onClick={() => rejectJoin.mutate({ id: selected.id, studentId: r.student_id })}>
+                              Reject
+                            </GhostButton>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Students</h3>
                 {!students.data?.length ? (
-                  <p className="text-sm text-mist">No students enrolled.</p>
+                  <p className="text-sm text-mist">No approved students yet.</p>
                 ) : (
                   <ul className="space-y-2">
                     {students.data.map((s) => (
                       <li key={s.id} className="flex items-center justify-between rounded-xl border border-line px-3 py-2 text-sm">
-                        <span>Student ID {s.student_id}</span>
-                        {(user?.role === "SUPER_ADMIN" || user?.id === selected.class_teacher_id) && (
+                        <span>
+                          {s.student_full_name ?? `Student ${s.student_id}`}
+                          <span className="text-mist">{s.student_email ? ` · ${s.student_email}` : ""}</span>
+                        </span>
+                        {selectedIsOwned ? (
                           <GhostButton onClick={() => removeStudent.mutate({ id: selected.id, studentId: s.student_id })}>
                             Remove
                           </GhostButton>
-                        )}
+                        ) : null}
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
 
-              {(user?.role === "SUPER_ADMIN" || user?.id === selected.class_teacher_id) && (
+              {selectedIsOwned ? (
                 <form
                   className="grid gap-3"
                   onSubmit={(e) => {
@@ -297,7 +430,7 @@ export function ClassroomsPage() {
                   </Field>
                   <PrimaryButton type="submit">Post announcement</PrimaryButton>
                 </form>
-              )}
+              ) : null}
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Announcements</h3>
