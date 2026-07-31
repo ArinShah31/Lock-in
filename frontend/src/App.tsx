@@ -15,6 +15,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SubjectsPage } from "./pages/SubjectsPage";
 import { TeamPage } from "./pages/TeamPage";
+import { ClassroomDocumentsTab } from "./pages/ClassroomDocumentsTab";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +51,7 @@ export default function App() {
                   <Route path="dashboard" element={<ClassroomDashboardTab />} />
                   <Route path="details" element={<ClassroomDetailsTab />} />
                   <Route path="course-builder" element={<ClassroomCourseBuilderTab />} />
+                  <Route path="documents" element={<ClassroomDocumentsTab />} />
                 </Route>
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />

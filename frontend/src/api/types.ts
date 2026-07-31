@@ -108,3 +108,20 @@ export type SubjectMaterial = {
   is_active: boolean;
   created_at: string;
 };
+
+export type Content = {
+  id: number;
+  classroom_id: number;
+  uploaded_by: number;
+  title: string;
+  description: string | null;
+  content_type: string;
+  file_name: string;
+  file_path: string;
+  external_url: string | null;
+  file_size: number;
+  mime_type: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+};

@@ -58,16 +58,22 @@ export function ClassroomLayout() {
       </div>
 
       <div className="mb-6 flex gap-6 border-b border-line">
-        <NavLink to={`/classrooms/${id}/dashboard`} className={tabClass}>
-          Dashboard
-        </NavLink>
-        <NavLink to={`/classrooms/${id}/details`} className={tabClass}>
-          Details
-        </NavLink>
-        <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
-          Course builder
-        </NavLink>
-      </div>
+  <NavLink to={`/classrooms/${id}/dashboard`} className={tabClass}>
+    Dashboard
+  </NavLink>
+
+  <NavLink to={`/classrooms/${id}/details`} className={tabClass}>
+    Details
+  </NavLink>
+
+  <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
+    Course builder
+  </NavLink>
+
+  <NavLink to={`/classrooms/${id}/documents`} className={tabClass}>
+    Documents
+  </NavLink>
+</div>
 
       <Panel>
         <Outlet context={{ classroom: c }} />
