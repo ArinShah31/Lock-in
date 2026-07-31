@@ -134,23 +134,30 @@ def create_classroom(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, *TEACHER_ROLES])),
 ):
-    institution = db.query(Institution).filter(Institution.id == payload.institution_id).first()
+    if current_user.role in TEACHER_ROLES:
+        if current_user.institution_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Teacher has no institution assigned",
+            )
+        institution_id = current_user.institution_id
+        department_id = current_user.department_id
+    else:
+        institution_id = payload.institution_id
+        department_id = payload.department_id
+
+    institution = db.query(Institution).filter(Institution.id == institution_id).first()
     if not institution or not institution.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or inactive institution")
 
     if current_user.role in TEACHER_ROLES:
-        ensure_institution_access(current_user, payload.institution_id)
-        if payload.institution_id != current_user.institution_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot create classroom outside your institution",
-            )
+        ensure_institution_access(current_user, institution_id)
 
-    if payload.department_id is not None:
-        department = db.query(Department).filter(Department.id == payload.department_id).first()
+    if department_id is not None:
+        department = db.query(Department).filter(Department.id == department_id).first()
         if not department or not department.is_active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or inactive department")
-        if department.institution_id != payload.institution_id:
+        if department.institution_id != institution_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Department does not belong to the given institution",
@@ -159,7 +166,7 @@ def create_classroom(
     existing = (
         db.query(Classroom)
         .filter(
-            Classroom.institution_id == payload.institution_id,
+            Classroom.institution_id == institution_id,
             Classroom.code == payload.code.upper(),
         )
         .first()
@@ -178,7 +185,7 @@ def create_classroom(
         teacher = db.query(User).filter(User.id == payload.class_teacher_id).first()
         if not teacher or teacher.role not in TEACHER_ROLES or not teacher.is_active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class teacher")
-        if teacher.institution_id != payload.institution_id:
+        if teacher.institution_id != institution_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Class teacher must belong to the same institution",
@@ -186,8 +193,8 @@ def create_classroom(
         class_teacher_id = teacher.id
 
     classroom = Classroom(
-        institution_id=payload.institution_id,
-        department_id=payload.department_id,
+        institution_id=institution_id,
+        department_id=department_id,
         class_teacher_id=class_teacher_id,
         name=payload.name,
         code=payload.code.upper(),

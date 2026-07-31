@@ -3,7 +3,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { ClassroomCourseBuilderTab } from "./pages/ClassroomCourseBuilderTab";
+import { ClassroomDashboardTab } from "./pages/ClassroomDashboardTab";
+import { ClassroomDetailsTab } from "./pages/ClassroomDetailsTab";
+import { ClassroomLayout } from "./pages/ClassroomLayout";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
+import { CreateClassroomPage } from "./pages/CreateClassroomPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InstitutionsPage } from "./pages/InstitutionsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -39,6 +44,13 @@ export default function App() {
               <Route element={<AppShell />}>
                 <Route path="/" element={<HomeRedirect />} />
                 <Route path="/institutions" element={<InstitutionsPage />} />
+                <Route path="/classrooms/new" element={<CreateClassroomPage />} />
+                <Route path="/classrooms/:classroomId" element={<ClassroomLayout />}>
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  <Route path="dashboard" element={<ClassroomDashboardTab />} />
+                  <Route path="details" element={<ClassroomDetailsTab />} />
+                  <Route path="course-builder" element={<ClassroomCourseBuilderTab />} />
+                </Route>
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
                 <Route path="/team" element={<TeamPage />} />
