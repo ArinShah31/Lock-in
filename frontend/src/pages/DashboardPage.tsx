@@ -47,22 +47,28 @@ export function DashboardPage() {
       <Panel>
         <h2 className="font-display text-2xl text-paper">What you can do now</h2>
         <ul className="mt-4 space-y-2 text-sm text-mist">
-          {user?.role === "SUPER_ADMIN" ? <li>Create institutions and institution admins from the Team page.</li> : null}
+          {user?.role === "SUPER_ADMIN" ? (
+            <li>Create institutions and assign institution admins from the Institutions page.</li>
+          ) : null}
           {user?.role === "INSTITUTION_ADMIN" ? (
             <li>Create departments and HODs from Institutions and Team pages.</li>
           ) : null}
-          {user?.role === "HOD" ? <li>Create teachers from the Team page.</li> : null}
-          {user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER" || user?.role === "SUPER_ADMIN" ? (
-            <li>Create classrooms, enroll students, and post announcements.</li>
+          {user?.role === "HOD" ? (
+            <li>Create teachers from Team. Students self-register and join classrooms with a teacher code.</li>
           ) : null}
-          {user?.role === "SUBJECT_TEACHER" || user?.role === "CLASS_TEACHER" || user?.role === "SUPER_ADMIN" ? (
+          {user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER" ? (
+            <li>Create classrooms, share the 5-character join code, and approve student join requests.</li>
+          ) : null}
+          {user?.role === "SUBJECT_TEACHER" || user?.role === "CLASS_TEACHER" ? (
             <li>Manage subjects, syllabus, and course materials.</li>
           ) : null}
-          {user?.role === "STUDENT" ? <li>View enrolled classrooms and published subjects.</li> : null}
+          {user?.role === "STUDENT" ? (
+            <li>Join classrooms with a teacher join code; access starts after approval.</li>
+          ) : null}
           {user?.role === "HOD" ? <li>Monitor department classrooms and subjects.</li> : null}
         </ul>
 
-        {!classrooms.data?.length ? (
+        {user?.role !== "SUPER_ADMIN" && !classrooms.data?.length ? (
           <div className="mt-6">
             <EmptyState
               title="No classrooms yet"

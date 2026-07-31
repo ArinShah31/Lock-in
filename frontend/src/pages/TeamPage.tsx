@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { institutionsApi, usersApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import type { UserRole } from "../api/types";
 import {
   EmptyState,
   ErrorText,
@@ -22,6 +23,8 @@ const roleLabel: Record<string, string> = {
   STUDENT: "Student",
 };
 
+type HodCreateRole = "CLASS_TEACHER" | "SUBJECT_TEACHER";
+
 export function TeamPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -30,19 +33,11 @@ export function TeamPage() {
     full_name: "",
     email: "",
     password: "",
-    institution_id: "",
     department_id: "",
-    teacher_role: "CLASS_TEACHER" as "CLASS_TEACHER" | "SUBJECT_TEACHER",
+    member_role: "CLASS_TEACHER" as HodCreateRole,
   });
 
-  const canManage =
-    user?.role === "SUPER_ADMIN" || user?.role === "INSTITUTION_ADMIN" || user?.role === "HOD";
-
-  const institutions = useQuery({
-    queryKey: ["institutions"],
-    queryFn: institutionsApi.list,
-    enabled: user?.role === "SUPER_ADMIN",
-  });
+  const canManage = user?.role === "INSTITUTION_ADMIN" || user?.role === "HOD";
 
   const departments = useQuery({
     queryKey: ["departments", user?.institution_id],
@@ -63,9 +58,8 @@ export function TeamPage() {
         full_name: "",
         email: "",
         password: "",
-        institution_id: "",
         department_id: "",
-        teacher_role: "CLASS_TEACHER",
+        member_role: "CLASS_TEACHER",
       });
       await qc.invalidateQueries({ queryKey: ["users"] });
     },
@@ -75,17 +69,6 @@ export function TeamPage() {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-
-    if (user?.role === "SUPER_ADMIN") {
-      createUser.mutate({
-        full_name: form.full_name,
-        email: form.email,
-        password: form.password,
-        role: "INSTITUTION_ADMIN",
-        institution_id: Number(form.institution_id),
-      });
-      return;
-    }
 
     if (user?.role === "INSTITUTION_ADMIN") {
       createUser.mutate({
@@ -103,35 +86,34 @@ export function TeamPage() {
         full_name: form.full_name,
         email: form.email,
         password: form.password,
-        role: form.teacher_role,
+        role: form.member_role as UserRole,
       });
     }
   }
 
   const createTitle =
-    user?.role === "SUPER_ADMIN"
-      ? "Create institution admin"
-      : user?.role === "INSTITUTION_ADMIN"
-        ? "Create head of department"
-        : user?.role === "HOD"
-          ? "Create teacher"
-          : "";
+    user?.role === "INSTITUTION_ADMIN"
+      ? "Create head of department"
+      : user?.role === "HOD"
+        ? "Create teacher"
+        : "";
 
   const createHint =
-    user?.role === "SUPER_ADMIN"
-      ? "Assign an admin to manage departments for an institution."
-      : user?.role === "INSTITUTION_ADMIN"
-        ? "HODs manage teachers in their department."
-        : user?.role === "HOD"
-          ? "Teachers can create classrooms and manage subjects."
-          : "";
+    user?.role === "INSTITUTION_ADMIN"
+      ? "HODs manage teachers in their department."
+      : user?.role === "HOD"
+        ? "Teachers create classrooms and approve join requests. Students self-register and join with a code."
+        : "";
 
   if (!canManage) {
     return (
       <div>
         <PageHeader title="Team" subtitle="User provisioning is managed by administrators." />
         <Panel>
-          <EmptyState title="No access" body="Only Super Admin, Institution Admin, or HOD can manage team members." />
+          <EmptyState
+            title="No access"
+            body="Institution admins and HODs manage team members here. Super Admins create institution admins from Institutions."
+          />
         </Panel>
       </div>
     );
@@ -174,24 +156,6 @@ export function TeamPage() {
             />
           </Field>
 
-          {user?.role === "SUPER_ADMIN" ? (
-            <Field label="Institution">
-              <select
-                className={inputClass}
-                value={form.institution_id}
-                onChange={(e) => setForm((f) => ({ ...f, institution_id: e.target.value }))}
-                required
-              >
-                <option value="">Select institution</option>
-                {institutions.data?.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.code})
-                  </option>
-                ))}
-              </select>
-            </Field>
-          ) : null}
-
           {user?.role === "INSTITUTION_ADMIN" ? (
             <Field label="Department">
               <select
@@ -211,13 +175,11 @@ export function TeamPage() {
           ) : null}
 
           {user?.role === "HOD" ? (
-            <Field label="Teacher type">
+            <Field label="Account type">
               <select
                 className={inputClass}
-                value={form.teacher_role}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, teacher_role: e.target.value as "CLASS_TEACHER" | "SUBJECT_TEACHER" }))
-                }
+                value={form.member_role}
+                onChange={(e) => setForm((f) => ({ ...f, member_role: e.target.value as HodCreateRole }))}
               >
                 <option value="CLASS_TEACHER">Class Teacher</option>
                 <option value="SUBJECT_TEACHER">Subject Teacher</option>

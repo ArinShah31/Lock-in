@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.core.database import get_db
-from app.models.classroom import Classroom, ClassroomStudent, ClassroomTeacher
+from app.models.classroom import Classroom, ClassroomStudent, ClassroomTeacher, MembershipStatus
 from app.models.subject import Subject, SubjectMaterial
 from app.models.user import User, UserRole
 from app.schemas.subject import (
@@ -70,6 +70,7 @@ def _user_can_view_classroom(db: Session, user: User, classroom: Classroom) -> b
                 ClassroomStudent.classroom_id == classroom.id,
                 ClassroomStudent.student_id == user.id,
                 ClassroomStudent.is_active.is_(True),
+                ClassroomStudent.status == MembershipStatus.APPROVED,
             )
             .first()
             is not None
@@ -218,6 +219,7 @@ def list_my_subjects(
             .filter(
                 ClassroomStudent.student_id == current_user.id,
                 ClassroomStudent.is_active.is_(True),
+                ClassroomStudent.status == MembershipStatus.APPROVED,
             )
             .all()
         ]

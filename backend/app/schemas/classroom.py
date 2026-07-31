@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.classroom import MembershipStatus
+
 
 class ClassroomCreate(BaseModel):
     institution_id: int
@@ -30,6 +32,7 @@ class ClassroomOut(BaseModel):
     class_teacher_id: int
     name: str
     code: str
+    join_code: str
     academic_year: str | None
     description: str | None
     is_active: bool
@@ -38,16 +41,21 @@ class ClassroomOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AddStudentRequest(BaseModel):
-    student_id: int
+class JoinClassroomRequest(BaseModel):
+    join_code: str = Field(min_length=5, max_length=5, pattern=r"^[A-Za-z0-9]{5}$")
 
 
 class ClassroomStudentOut(BaseModel):
     id: int
     classroom_id: int
     student_id: int
+    status: MembershipStatus
     is_active: bool
     joined_at: datetime
+    student_full_name: str | None = None
+    student_email: str | None = None
+    classroom_name: str | None = None
+    classroom_code: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
