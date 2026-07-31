@@ -182,14 +182,33 @@ def create_classroom(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="class_teacher_id is required when SUPER_ADMIN creates a classroom",
             )
+
         teacher = db.query(User).filter(User.id == payload.class_teacher_id).first()
-        if not teacher or teacher.role not in TEACHER_ROLES or not teacher.is_active:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class teacher")
-        if teacher.institution_id != institution_id:
+
+        if not teacher or not teacher.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid class teacher",
+            )
+
+        # TEMPORARY:
+        # Allow SUPER_ADMIN to be assigned as the class teacher while
+        # the classroom/content module is under development.
+        if teacher.role not in (*TEACHER_ROLES, UserRole.SUPER_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid class teacher",
+            )
+
+        if (
+            teacher.role != UserRole.SUPER_ADMIN
+            and teacher.institution_id != institution_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Class teacher must belong to the same institution",
             )
+
         class_teacher_id = teacher.id
 
     classroom = Classroom(
@@ -202,6 +221,7 @@ def create_classroom(
         academic_year=payload.academic_year,
         description=payload.description,
     )
+
     db.add(classroom)
     db.commit()
     db.refresh(classroom)

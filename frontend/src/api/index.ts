@@ -4,6 +4,7 @@ import type {
   Classroom,
   ClassroomAnnouncement,
   ClassroomStudent,
+  Content,
   Department,
   Institution,
   Subject,
@@ -84,6 +85,11 @@ export const classroomsApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+};
+
+export const contentsApi = {
+  listByClassroom: (id: number) =>
+    api<Content[]>(`/contents/classrooms/${id}`),
 };
 
 export const usersApi = {
