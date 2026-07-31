@@ -51,10 +51,26 @@ export type Classroom = {
   class_teacher_id: number;
   name: string;
   code: string;
+  join_code: string;
   academic_year: string | null;
   description: string | null;
   is_active: boolean;
   created_at: string;
+};
+
+export type MembershipStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export type ClassroomStudent = {
+  id: number;
+  classroom_id: number;
+  student_id: number;
+  status: MembershipStatus;
+  is_active: boolean;
+  joined_at: string;
+  student_full_name?: string | null;
+  student_email?: string | null;
+  classroom_name?: string | null;
+  classroom_code?: string | null;
 };
 
 export type Subject = {
@@ -69,14 +85,6 @@ export type Subject = {
   is_published: boolean;
   is_active: boolean;
   created_at: string;
-};
-
-export type ClassroomStudent = {
-  id: number;
-  classroom_id: number;
-  student_id: number;
-  is_active: boolean;
-  joined_at: string;
 };
 
 export type ClassroomAnnouncement = {

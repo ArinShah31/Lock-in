@@ -64,12 +64,18 @@ export const classroomsApi = {
   update: (id: number, body: Record<string, unknown>) =>
     api<Classroom>(`/classrooms/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deactivate: (id: number) => api<Classroom>(`/classrooms/${id}`, { method: "DELETE" }),
-  listStudents: (id: number) => api<ClassroomStudent[]>(`/classrooms/${id}/students`),
-  addStudent: (id: number, student_id: number) =>
-    api<ClassroomStudent>(`/classrooms/${id}/students`, {
+  join: (join_code: string) =>
+    api<ClassroomStudent>("/classrooms/join", {
       method: "POST",
-      body: JSON.stringify({ student_id }),
+      body: JSON.stringify({ join_code }),
     }),
+  myJoinRequests: () => api<ClassroomStudent[]>("/classrooms/my-join-requests"),
+  listJoinRequests: (id: number) => api<ClassroomStudent[]>(`/classrooms/${id}/join-requests`),
+  approveJoin: (id: number, studentId: number) =>
+    api<ClassroomStudent>(`/classrooms/${id}/join-requests/${studentId}/approve`, { method: "POST" }),
+  rejectJoin: (id: number, studentId: number) =>
+    api<ClassroomStudent>(`/classrooms/${id}/join-requests/${studentId}/reject`, { method: "POST" }),
+  listStudents: (id: number) => api<ClassroomStudent[]>(`/classrooms/${id}/students`),
   removeStudent: (id: number, studentId: number) =>
     api<ClassroomStudent>(`/classrooms/${id}/students/${studentId}`, { method: "DELETE" }),
   listAnnouncements: (id: number) => api<ClassroomAnnouncement[]>(`/classrooms/${id}/announcements`),
