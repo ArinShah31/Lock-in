@@ -1,11 +1,17 @@
 import { api, clearTokens, setTokens } from "./client";
 import type {
   AuthResponse,
+  ChapterAttempt,
+  ChapterNotes,
   Classroom,
   ClassroomAnnouncement,
   ClassroomStudent,
+  CourseArtifact,
+  CourseArtifactType,
+  CourseBuildJob,
   Department,
   Institution,
+  LearningPath,
   Subject,
   SubjectMaterial,
   User,
@@ -111,4 +117,47 @@ export const subjectsApi = {
     id: number,
     body: { title: string; material_type?: string; file_url?: string; content_text?: string },
   ) => api<SubjectMaterial>(`/subjects/${id}/materials`, { method: "POST", body: JSON.stringify(body) }),
+};
+
+export const courseBuilderApi = {
+  uploadSyllabus: (subjectId: number, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return api<Subject>(`/subjects/${subjectId}/course-builder/upload-syllabus`, { method: "POST", body });
+  },
+  generate: (subjectId: number, artifact_types: CourseArtifactType[] = ["LEARNING_PATH"]) =>
+    api<CourseBuildJob>(`/subjects/${subjectId}/course-builder/generate`, {
+      method: "POST",
+      body: JSON.stringify({ artifact_types }),
+    }),
+  getJob: (subjectId: number, jobId: number) =>
+    api<CourseBuildJob>(`/subjects/${subjectId}/course-builder/jobs/${jobId}`),
+  listArtifacts: (subjectId: number) => api<CourseArtifact[]>(`/subjects/${subjectId}/course-builder/artifacts`),
+  updateArtifact: (
+    artifactId: number,
+    body: Partial<Pick<CourseArtifact, "title" | "content" | "is_published">>,
+  ) => api<CourseArtifact>(`/course-builder/artifacts/${artifactId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  getLearningPath: (subjectId: number) =>
+    api<LearningPath>(`/subjects/${subjectId}/course-builder/learning-path`),
+  getChapterNotes: (subjectId: number, chapterNumber: number) =>
+    api<ChapterNotes>(`/subjects/${subjectId}/course-builder/chapters/${chapterNumber}/notes`),
+  generateChapterNotes: (subjectId: number, chapterNumber: number) =>
+    api<CourseBuildJob>(`/subjects/${subjectId}/course-builder/chapters/${chapterNumber}/notes/generate`, {
+      method: "POST",
+    }),
+  setChapterLock: (subjectId: number, chapterNumber: number, is_unlocked: boolean) =>
+    api<LearningPath>(`/subjects/${subjectId}/course-builder/chapters/${chapterNumber}/lock`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_unlocked }),
+    }),
+  submitQuizAttempt: (subjectId: number, chapterNumber: number, selected_answers: string[]) =>
+    api<ChapterAttempt>(`/subjects/${subjectId}/course-builder/chapters/${chapterNumber}/quiz-attempt`, {
+      method: "POST",
+      body: JSON.stringify({ selected_answers }),
+    }),
+  submitAssessmentAttempt: (subjectId: number, chapterNumber: number, answers: string[]) =>
+    api<ChapterAttempt>(`/subjects/${subjectId}/course-builder/chapters/${chapterNumber}/assessment-attempt`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
 };

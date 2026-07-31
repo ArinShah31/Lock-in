@@ -19,6 +19,15 @@ export function AppShell() {
     { to: "/team", label: "Team", show: user?.role === "SUPER_ADMIN" || user?.role === "INSTITUTION_ADMIN" || user?.role === "HOD" },
     { to: "/classrooms", label: "Classrooms", show: true },
     { to: "/subjects", label: "Subjects", show: true },
+    {
+      to: "/course-builder",
+      label: "Course Builder",
+      show:
+        user?.role === "SUPER_ADMIN" ||
+        user?.role === "CLASS_TEACHER" ||
+        user?.role === "SUBJECT_TEACHER" ||
+        user?.role === "STUDENT",
+    },
   ].filter((l) => l.show);
 
   return (

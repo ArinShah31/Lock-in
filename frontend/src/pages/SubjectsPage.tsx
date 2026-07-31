@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { classroomsApi, subjectsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
@@ -89,10 +90,23 @@ export function SubjectsPage() {
   }
 
   const selected = subjects.data?.find((s) => s.id === selectedId);
+  const canEditSelected =
+    !!selected && (user?.role === "SUPER_ADMIN" || user?.role === "CLASS_TEACHER" || user?.id === selected.teacher_id);
 
   return (
     <div>
-      <PageHeader title="Subjects" subtitle="Assign teachers, publish subjects, and manage syllabus materials." />
+      <PageHeader
+        title="Subjects"
+        subtitle="Assign teachers, publish subjects, and manage syllabus materials."
+        action={
+          <Link
+            to="/course-builder"
+            className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-accent-deep"
+          >
+            Open AI Course Builder
+          </Link>
+        }
+      />
       <ErrorText message={error} />
 
       {canCreate ? (
@@ -204,6 +218,19 @@ export function SubjectsPage() {
                 <GhostButton onClick={() => setSelectedId(null)}>Close</GhostButton>
               </div>
 
+              <div className="rounded-2xl border border-accent/30 bg-accent/5 p-4">
+                <p className="font-display text-lg text-paper">AI Course Content</p>
+                <p className="mt-1 text-sm text-mist">
+                  Roadmaps, flashcards, quizzes, and assessments are managed in Course Builder — not stacked here.
+                </p>
+                <Link
+                  to="/course-builder"
+                  className="mt-3 inline-flex rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-accent-deep"
+                >
+                  Go to Course Builder
+                </Link>
+              </div>
+
               {(user?.role === "SUPER_ADMIN" ||
                 user?.role === "CLASS_TEACHER" ||
                 user?.id === selected.teacher_id) && (
@@ -227,16 +254,13 @@ export function SubjectsPage() {
                 </form>
               )}
 
-              {selected.syllabus_text &&
-              !(user?.role === "SUPER_ADMIN" || user?.role === "CLASS_TEACHER" || user?.id === selected.teacher_id) ? (
+              {selected.syllabus_text && !canEditSelected ? (
                 <div className="rounded-xl border border-line bg-ink-soft/50 p-3 text-sm text-mist whitespace-pre-wrap">
                   {selected.syllabus_text}
                 </div>
               ) : null}
 
-              {(user?.role === "SUPER_ADMIN" ||
-                user?.role === "CLASS_TEACHER" ||
-                user?.id === selected.teacher_id) && (
+              {canEditSelected ? (
                 <form
                   className="grid gap-3"
                   onSubmit={(e) => {
@@ -271,7 +295,7 @@ export function SubjectsPage() {
                   </Field>
                   <PrimaryButton type="submit">Add material</PrimaryButton>
                 </form>
-              )}
+              ) : null}
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Materials</h3>

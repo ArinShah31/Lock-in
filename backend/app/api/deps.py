@@ -15,7 +15,14 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    payload = decode_token(credentials.credentials)
+    try:
+        payload = decode_token(credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please log in again.",
+        ) from exc
+
     if payload.get("type") != TokenType.ACCESS.value:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token type")
 

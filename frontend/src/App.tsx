@@ -4,6 +4,8 @@ import { AuthProvider } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
+import { ChapterNotesPage } from "./pages/ChapterNotesPage";
+import { CourseBuilderPage } from "./pages/CourseBuilderPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InstitutionsPage } from "./pages/InstitutionsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -35,6 +37,11 @@ export default function App() {
                 <Route path="/institutions" element={<InstitutionsPage />} />
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
+                <Route path="/course-builder" element={<CourseBuilderPage />} />
+                <Route
+                  path="/course-builder/subjects/:subjectId/chapters/:chapterNumber/notes"
+                  element={<ChapterNotesPage />}
+                />
                 <Route path="/team" element={<TeamPage />} />
               </Route>
             </Route>

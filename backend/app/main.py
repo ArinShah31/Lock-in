@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.classrooms import router as classrooms_router
+from app.api.routes.course_builder import router as course_builder_router
 from app.api.routes.institutions import router as institutions_router
 from app.api.routes.rbac_demo import router as rbac_router
 from app.api.routes.subjects import router as subjects_router
@@ -14,6 +15,10 @@ from app.models import (  # noqa: F401
     ClassroomAnnouncement,
     ClassroomStudent,
     ClassroomTeacher,
+    CourseArtifact,
+    CourseBuildJob,
+    CourseChapterAttempt,
+    CourseChapterLock,
     Department,
     Institution,
     Subject,
@@ -50,5 +55,6 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(institutions_router, prefix="/api/v1")
 app.include_router(classrooms_router, prefix="/api/v1")
 app.include_router(subjects_router, prefix="/api/v1")
+app.include_router(course_builder_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(rbac_router, prefix="/api/v1")

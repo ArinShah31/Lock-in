@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ASTRA AI Course Builder — Change Summary</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    body {
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      color: #1a1f2e;
+      line-height: 1.45;
+      font-size: 11pt;
+    }
+    h1 {
+      font-size: 22pt;
+      margin: 0 0 4px;
+      color: #0b1c2c;
+    }
+    h2 {
+      font-size: 14pt;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 2px solid #1f6f6a;
+      color: #0b1c2c;
+    }
+    h3 {
+      font-size: 12pt;
+      margin: 14px 0 6px;
+      color: #1f6f6a;
+    }
+    .meta {
+      color: #4b5563;
+      margin-bottom: 18px;
+      font-size: 10pt;
+    }
+    .badge {
+      display: inline-block;
+      background: #e8f5f3;
+      color: #1f6f6a;
+      border: 1px solid #9fd3cd;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 9pt;
+      margin-right: 6px;
+    }
+    p { margin: 6px 0; }
+    ul, ol { margin: 6px 0 10px 18px; }
+    li { margin: 3px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 14px;
+      font-size: 10pt;
+    }
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #0b1c2c;
+      color: #fff;
+    }
+    tr:nth-child(even) td { background: #f7fafc; }
+    code, .path {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 9.5pt;
+      background: #f1f5f9;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .flow {
+      background: #f8fafc;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: Consolas, monospace;
+      font-size: 9.5pt;
+      white-space: pre-wrap;
+    }
+    .note {
+      background: #fff7ed;
+      border-left: 4px solid #f59e0b;
+      padding: 8px 10px;
+      margin: 10px 0;
+    }
+    .ok {
+      background: #ecfdf5;
+      border-left: 4px solid #10b981;
+      padding: 8px 10px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>ASTRA AI Course Builder</h1>
+  <p class="meta">
+    <span class="badge">Branch: feature/ai-course-builder</span>
+    <span class="badge">Feature summary</span>
+    <span class="badge">29 Jul 2026</span>
+  </p>
+  <p>
+    This document explains <strong>all changes</strong> made for the AI Course Builder feature,
+    <strong>how they were implemented</strong>, and how teachers and students use the flow.
+  </p>
+
+  <h2>1. Goal</h2>
+  <p>
+    Let a teacher upload a syllabus, let AI generate a roadmap, flashcards, quiz, and assessments,
+    then require teacher review/publish before students can see that content.
+  </p>
+  <div class="flow">Teacher uploads syllabus
+  → AI generates draft artifacts
+  → Teacher reviews / edits
+  → Teacher publishes selected artifacts
+  → Students see only published content</div>
+
+  <h2>2. AI stack chosen</h2>
+  <table>
+    <tr><th>Choice</th><th>Why</th></tr>
+    <tr>
+      <td>Google Gemini via <code>google-genai</code></td>
+      <td>Free developer tier, file/PDF support, structured JSON output</td>
+    </tr>
+    <tr>
+      <td>Provider-agnostic interface</td>
+      <td>Can swap to OpenAI / Claude / local models later without rewriting routes</td>
+    </tr>
+    <tr>
+      <td>Mock provider fallback</td>
+      <td>Works without an API key during local development</td>
+    </tr>
+    <tr>
+      <td>Teacher-review publish model</td>
+      <td>AI drafts never go directly to students</td>
+    </tr>
+  </table>
+  <p>
+    Config keys added: <code>AI_PROVIDER</code>, <code>GEMINI_API_KEY</code>,
+    <code>GEMINI_MODEL</code>, <code>UPLOADS_DIR</code>.
+  </p>
+
+  <h2>3. Branch and config setup</h2>
+  <ol>
+    <li>Created git branch <code>feature/ai-course-builder</code> from <code>main</code>.</li>
+    <li>Added <code>google-genai</code> to <span class="path">backend/requirements.txt</span>.</li>
+    <li>Extended <span class="path">backend/.env.example</span> and
+        <span class="path">backend/app/core/config.py</span> with AI settings.</li>
+  </ol>
+
+  <h2>4. New backend files</h2>
+  <table>
+    <tr><th>File</th><th>Purpose</th></tr>
+    <tr>
+      <td><span class="path">backend/app/models/course_builder.py</span></td>
+      <td>DB models: <code>CourseBuildJob</code>, <code>CourseArtifact</code></td>
+    </tr>
+    <tr>
+      <td><span class="path">backend/app/schemas/course_builder.py</span></td>
+      <td>Pydantic schemas for jobs, artifacts, roadmap/flashcards/quiz/assessment</td>
+    </tr>
+    <tr>
+      <td><span class="path">backend/app/services/ai/provider.py</span></td>
+      <td>Abstract AI provider interface</td>
+    </tr>
+    <tr>
+      <td><span class="path">backend/app/services/ai/gemini_provider.py</span></td>
+      <td>Gemini structured generation</td>
+    </tr>
+    <tr>
+      <td><span class="path">backend/app/services/ai/mock_provider.py</span></td>
+      <td>Deterministic draft content when no Gemini key is set</td>
+    </tr>
+    <tr>
+      <td><span class="path">backend/app/services/course_builder.py</span></td>
+      <td>Background job orchestration and artifact persistence</td>
+    </tr>
+    <tr>
+      <td><span class="path">backend/app/api/routes/course_builder.py</span></td>
+      <td>Upload / generate / poll / list / publish API routes</td>
+    </tr>
+  </table>
+
+  <h2>5. How the backend works</h2>
+  <h3>5.1 Data model</h3>
+  <ul>
+    <li><strong>CourseBuildJob</strong> — tracks generation status (<code>PENDING</code>, <code>RUNNING</code>, <code>COMPLETED</code>, <code>FAILED</code>), requested artifact types, syllabus snapshot, errors.</li>
+    <li><strong>CourseArtifact</strong> — stores each generated piece (roadmap, flashcards, quiz, assessment) as JSON, with <code>is_published</code> defaulting to <code>false</code>.</li>
+  </ul>
+
+  <h3>5.2 API endpoints</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Who</th><th>What it does</th></tr>
+    <tr>
+      <td>POST</td>
+      <td><code>/subjects/{id}/course-builder/upload-syllabus</code></td>
+      <td>Teacher</td>
+      <td>Uploads syllabus file; stores path; extracts text for txt/md</td>
+    </tr>
+    <tr>
+      <td>POST</td>
+      <td><code>/subjects/{id}/course-builder/generate</code></td>
+      <td>Teacher</td>
+      <td>Creates a job and runs generation in a background task</td>
+    </tr>
+    <tr>
+      <td>GET</td>
+      <td><code>/subjects/{id}/course-builder/jobs/{job_id}</code></td>
+      <td>Teacher</td>
+      <td>Polls job status</td>
+    </tr>
+    <tr>
+      <td>GET</td>
+      <td><code>/subjects/{id}/course-builder/artifacts</code></td>
+      <td>Teacher / Student</td>
+      <td>Teachers see drafts + published; students see published only</td>
+    </tr>
+    <tr>
+      <td>PATCH</td>
+      <td><code>/course-builder/artifacts/{artifact_id}</code></td>
+      <td>Teacher</td>
+      <td>Edit title/content and toggle publish</td>
+    </tr>
+  </table>
+
+  <h3>5.3 Permissions</h3>
+  <ul>
+    <li>Edit/generate/publish: <code>SUPER_ADMIN</code>, class teacher of the classroom, or subject teacher of that subject.</li>
+    <li>Students must be enrolled and the subject must be published; they only receive artifacts with <code>is_published=true</code>.</li>
+  </ul>
+
+  <h3>5.4 Generation pipeline</h3>
+  <ol>
+    <li>Teacher ensures syllabus text exists or uploads a file.</li>
+    <li>API creates a <code>CourseBuildJob</code> and returns <code>202 Accepted</code>.</li>
+    <li>Background task calls Gemini (if key present) or Mock provider.</li>
+    <li>Provider returns structured JSON matching Pydantic schemas.</li>
+    <li>Service saves one draft artifact per requested type.</li>
+    <li>Teacher edits and publishes selected artifacts.</li>
+  </ol>
+
+  <h2>6. Frontend changes</h2>
+  <table>
+    <tr><th>File</th><th>Change</th></tr>
+    <tr>
+      <td><span class="path">frontend/src/api/client.ts</span></td>
+      <td>Skip forcing JSON Content-Type for <code>FormData</code> uploads</td>
+    </tr>
+    <tr>
+      <td><span class="path">frontend/src/api/types.ts</span></td>
+      <td>Added <code>CourseBuildJob</code>, <code>CourseArtifact</code>, artifact/status types</td>
+    </tr>
+    <tr>
+      <td><span class="path">frontend/src/api/index.ts</span></td>
+      <td>Added <code>courseBuilderApi</code> helpers</td>
+    </tr>
+    <tr>
+      <td><span class="path">frontend/src/pages/SubjectsPage.tsx</span></td>
+      <td>Teacher builder UI + student published-content view inside subject workspace</td>
+    </tr>
+  </table>
+
+  <h3>6.1 Teacher UI</h3>
+  <ul>
+    <li>Upload syllabus file (.txt / .md / .pdf)</li>
+    <li>Generate AI drafts (roadmap, flashcards, quiz, assessments)</li>
+    <li>Poll job status while generation runs</li>
+    <li>Edit artifact JSON and title</li>
+    <li>Publish / unpublish each artifact</li>
+  </ul>
+
+  <h3>6.2 Student UI</h3>
+  <ul>
+    <li>Same Subjects page, “AI course content” section</li>
+    <li>Shows only published artifacts</li>
+    <li>Read-only preview of structured content</li>
+  </ul>
+
+  <h2>7. How this was executed</h2>
+  <ol>
+    <li><strong>Planned first</strong> — selected Gemini + teacher-review publish model.</li>
+    <li><strong>Branched</strong> — <code>feature/ai-course-builder</code>.</li>
+    <li><strong>Backend-first</strong> — config → models/schemas → AI services → routes → mount in <code>main.py</code>.</li>
+    <li><strong>Frontend next</strong> — API client/types → Subjects page teacher + student UX.</li>
+    <li><strong>Validated</strong> —
+      <ul>
+        <li><code>python -m compileall app</code></li>
+        <li><code>npm run build</code></li>
+        <li>API flow: teacher generated 4 drafts, published 1, student saw only that 1</li>
+      </ul>
+    </li>
+  </ol>
+
+  <div class="ok">
+    <strong>Validation result:</strong> Teacher created 4 draft artifacts; after publishing “AI Assessments”,
+    student visibility count was 1 (published only). Mock provider was used when no Gemini key was configured.
+  </div>
+
+  <h2>8. Files touched (summary)</h2>
+  <h3>Modified</h3>
+  <ul>
+    <li><span class="path">backend/.env.example</span></li>
+    <li><span class="path">backend/requirements.txt</span></li>
+    <li><span class="path">backend/app/core/config.py</span></li>
+    <li><span class="path">backend/app/main.py</span></li>
+    <li><span class="path">backend/app/models/__init__.py</span></li>
+    <li><span class="path">frontend/src/api/client.ts</span></li>
+    <li><span class="path">frontend/src/api/index.ts</span></li>
+    <li><span class="path">frontend/src/api/types.ts</span></li>
+    <li><span class="path">frontend/src/pages/SubjectsPage.tsx</span></li>
+  </ul>
+  <h3>Added</h3>
+  <ul>
+    <li><span class="path">backend/app/api/routes/course_builder.py</span></li>
+    <li><span class="path">backend/app/models/course_builder.py</span></li>
+    <li><span class="path">backend/app/schemas/course_builder.py</span></li>
+    <li><span class="path">backend/app/services/</span> (AI providers + course builder orchestration)</li>
+  </ul>
+
+  <h2>9. How to use it</h2>
+  <ol>
+    <li>Start backend and frontend.</li>
+    <li>Optional: set <code>GEMINI_API_KEY</code> in <span class="path">backend/.env</span>. Without it, mock drafts are generated.</li>
+    <li>Log in as class/subject teacher.</li>
+    <li>Open <strong>Subjects</strong> → select subject → save or upload syllabus.</li>
+    <li>Click <strong>Generate AI drafts</strong>.</li>
+    <li>Review/edit drafts → <strong>Publish</strong> selected ones.</li>
+    <li>Log in as enrolled student → open the published subject → view AI course content.</li>
+  </ol>
+
+  <div class="note">
+    <strong>Runtime note:</strong> During validation, a stale process briefly blocked port 8000.
+    A clean backend on port 8001 was used successfully for API verification. If the frontend proxy
+    (port 5173 → 8000) fails, restart the backend cleanly on 8000 or temporarily point the proxy/API URL to 8001.
+  </div>
+
+  <h2>10. What was intentionally not built yet</h2>
+  <ul>
+    <li>Student quiz attempts / scoring</li>
+    <li>Assessment submissions</li>
+    <li>Adaptive recommendations based on progress</li>
+    <li>Redis/Celery queue (MVP uses FastAPI background tasks)</li>
+  </ul>
+  <p>
+    Those can be added next on the same branch without changing the draft → review → publish model.
+  </p>
+
+  <p class="meta" style="margin-top:24px;">
+    Generated from the implemented work on branch <code>feature/ai-course-builder</code>.
+  </p>
+</body>
+</html>
