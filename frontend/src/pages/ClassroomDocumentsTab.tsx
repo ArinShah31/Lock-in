@@ -2,16 +2,6 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { contentsApi } from "../api";
 
-type Content = {
-  id: number;
-  title: string;
-  description: string | null;
-  content_type: string;
-  file_name: string;
-  file_path: string;
-  created_at: string;
-};
-
 export function ClassroomDocumentsTab() {
   const { classroomId } = useParams();
 
