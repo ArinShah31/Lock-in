@@ -1,5 +1,7 @@
-import { api, clearTokens, setTokens } from "./client";
+import { api, apiForm, clearTokens, setTokens } from "./client";
 import type {
+  Assignment,
+  AssignmentSubmission,
   AuthResponse,
   Classroom,
   ClassroomAnnouncement,
@@ -90,6 +92,23 @@ export const classroomsApi = {
 export const contentsApi = {
   listByClassroom: (id: number) =>
     api<Content[]>(`/contents/classrooms/${id}`),
+};
+
+export const assignmentsApi = {
+  listByClassroom: (classroomId: number) =>
+    api<Assignment[]>(`/classrooms/${classroomId}/assignments`),
+  get: (id: number) => api<Assignment>(`/assignments/${id}`),
+  create: (classroomId: number, formData: FormData) =>
+    apiForm<Assignment>(`/classrooms/${classroomId}/assignments`, formData),
+  submit: (assignmentId: number, formData: FormData) =>
+    apiForm<AssignmentSubmission>(`/assignments/${assignmentId}/submissions`, formData),
+  listSubmissions: (assignmentId: number) =>
+    api<AssignmentSubmission[]>(`/assignments/${assignmentId}/submissions`),
+  grade: (assignmentId: number, studentId: number, body: { marks: number; feedback?: string }) =>
+    api<AssignmentSubmission>(`/assignments/${assignmentId}/submissions/${studentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
 };
 
 export const usersApi = {

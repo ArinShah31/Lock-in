@@ -3,9 +3,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { ClassroomAssignmentsTab } from "./pages/ClassroomAssignmentsTab";
 import { ClassroomCourseBuilderTab } from "./pages/ClassroomCourseBuilderTab";
 import { ClassroomDashboardTab } from "./pages/ClassroomDashboardTab";
 import { ClassroomDetailsTab } from "./pages/ClassroomDetailsTab";
+import { ClassroomDocumentsTab } from "./pages/ClassroomDocumentsTab";
 import { ClassroomLayout } from "./pages/ClassroomLayout";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
 import { CreateClassroomPage } from "./pages/CreateClassroomPage";
@@ -15,7 +17,6 @@ import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SubjectsPage } from "./pages/SubjectsPage";
 import { TeamPage } from "./pages/TeamPage";
-import { ClassroomDocumentsTab } from "./pages/ClassroomDocumentsTab";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +53,7 @@ export default function App() {
                   <Route path="details" element={<ClassroomDetailsTab />} />
                   <Route path="course-builder" element={<ClassroomCourseBuilderTab />} />
                   <Route path="documents" element={<ClassroomDocumentsTab />} />
+                  <Route path="assignments" element={<ClassroomAssignmentsTab />} />
                 </Route>
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
