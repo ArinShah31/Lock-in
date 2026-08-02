@@ -16,6 +16,7 @@ export function ClassroomDocumentsTab() {
 
   const [editDescription, setEditDescription] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["documents", classroomId],
@@ -81,6 +82,20 @@ export function ClassroomDocumentsTab() {
     return <p>Failed to load documents.</p>;
   }
 
+  const uploadFile = (file: File) => {
+    if (!user) return;
+
+    const formData = new FormData();
+
+    formData.append("title", file.name);
+    formData.append("description", "");
+    formData.append("content_type", "PDF");
+    formData.append("uploaded_by", String(user.id));
+    formData.append("file", file);
+
+    uploadMutation.mutate(formData);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -104,6 +119,41 @@ export function ClassroomDocumentsTab() {
         />
       </div>
 
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+
+          const file = e.dataTransfer.files?.[0];
+
+          if (!file) return;
+
+          uploadFile(file);
+        }}
+        className={`mt-4 cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-all duration-200 ${
+          isDragging
+            ? "border-blue-500 bg-blue-500/10"
+            : "border-line hover:border-blue-400 hover:bg-slate-800/30"
+        }`}
+      >
+        <div className="space-y-2">
+          <div className="text-4xl">📁</div>
+
+          <h3 className="text-lg font-semibold">Drag & Drop Documents Here</h3>
+
+          <p className="text-sm opacity-70">
+            or click the Upload Document button above
+          </p>
+
+          <p className="text-xs opacity-50">PDF • DOCX • PPT • Images</p>
+        </div>
+      </div>
+
       <input
         ref={fileInputRef}
         type="file"
@@ -111,22 +161,9 @@ export function ClassroomDocumentsTab() {
         onChange={(e) => {
           const file = e.target.files?.[0];
 
-          if (!file) {
-            return;
-          }
+          if (!file) return;
 
-          if (!user) {
-            return;
-          }
-
-          const formData = new FormData();
-          formData.append("title", file.name);
-          formData.append("description", "");
-          formData.append("content_type", "PDF");
-          formData.append("uploaded_by", String(user.id));
-          formData.append("file", file);
-
-          uploadMutation.mutate(formData);
+          uploadFile(file);
 
           e.target.value = "";
         }}
