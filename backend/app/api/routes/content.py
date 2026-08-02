@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.classroom import Classroom
 from app.models.content import ClassroomContent, ContentType
-from app.schemas.content import ContentOut
+from app.schemas.content import ContentOut, ContentUpdate
 
 router = APIRouter(
     prefix="/contents",
@@ -104,6 +104,65 @@ def get_classroom_contents(
     )
 
     return contents
+
+@router.patch("/{content_id}", response_model=ContentOut)
+def update_content(
+    content_id: int,
+    payload: ContentUpdate,
+    db: Session = Depends(get_db),
+):
+    content = (
+        db.query(ClassroomContent)
+        .filter(ClassroomContent.id == content_id)
+        .first()
+    )
+
+    if content is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        setattr(content, field, value)
+
+    db.commit()
+    db.refresh(content)
+
+    return content
+
+@router.delete("/classrooms/{classroom_id}/{content_id}")
+def delete_content(
+    classroom_id: int,
+    content_id: int,
+    db: Session = Depends(get_db),
+):
+    content = (
+        db.query(ClassroomContent)
+        .filter(
+            ClassroomContent.id == content_id,
+            ClassroomContent.classroom_id == classroom_id,
+        )
+        .first()
+    )
+
+    if content is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    file_path = Path(content.file_path)
+
+    if file_path.exists():
+        file_path.unlink()
+
+    db.delete(content)
+    db.commit()
+
+    return {"message": "Document deleted successfully"}
 
 
 @router.get("/")

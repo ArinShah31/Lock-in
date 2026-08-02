@@ -119,6 +119,26 @@ export const contentsApi = {
 
    return response.json();
  },
+
+ delete: (classroomId: number, contentId: number) =>
+  api<{ message: string }>(
+    `/contents/classrooms/${classroomId}/${contentId}`,
+    {
+      method: "DELETE",
+    },
+   ),
+
+  update: (
+    contentId: number,
+    body: {
+      title?: string;
+      description?: string;
+    },
+  ) =>
+    api<Content>(`/contents/${contentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
 };
 
 export const usersApi = {
