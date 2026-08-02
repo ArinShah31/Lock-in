@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -14,7 +14,6 @@ from app.models.subject import Subject
 from app.models.user import User, UserRole
 from app.schemas.course_builder import (
     ArtifactType,
-    AssessmentAttemptCreate,
     AttemptOut,
     ChapterLockUpdate,
     ChapterNotesContent,
@@ -33,10 +32,11 @@ from app.services.course_builder import (
     CHAPTER_NOTES_META_PREFIX,
     _ensure_chapter_locks,
     assemble_chapters_from_artifacts,
+    fail_stuck_running_jobs,
     find_active_notes_job,
     find_chapter_notes_artifact,
     find_latest_failed_notes_job,
-    run_course_builder_job,
+    start_course_builder_job,
     sync_chapter_notes_publish_state,
 )
 
@@ -167,7 +167,6 @@ async def upload_syllabus(
 def generate_course_builder_artifacts(
     subject_id: int,
     payload: GenerateCourseRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -182,7 +181,8 @@ def generate_course_builder_artifacts(
             detail="Add syllabus text or upload a syllabus file first",
         )
 
-    if settings.ai_provider.lower().strip() == "gemini" and not settings.gemini_api_key.strip():
+    provider = settings.ai_provider.lower().strip()
+    if provider == "gemini" and not settings.resolve_gemini_api_keys():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -190,6 +190,16 @@ def generate_course_builder_artifacts(
                 "Get a free key from https://aistudio.google.com/apikey then restart the backend."
             ),
         )
+    if provider == "groq" and not settings.groq_api_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Real AI generation needs GROQ_API_KEY in backend/.env. "
+                "Get a free key from https://console.groq.com/keys then restart the backend."
+            ),
+        )
+
+    fail_stuck_running_jobs(older_than_minutes=8)
 
     job = CourseBuildJob(
         subject_id=subject.id,
@@ -202,7 +212,7 @@ def generate_course_builder_artifacts(
     db.add(job)
     db.commit()
     db.refresh(job)
-    background_tasks.add_task(run_course_builder_job, job.id)
+    start_course_builder_job(job.id)
     return job
 
 
@@ -216,6 +226,9 @@ def get_course_builder_job(
     subject = _get_subject_or_404(db, subject_id)
     classroom = _get_classroom_or_404(db, subject.classroom_id)
     _ensure_subject_edit_access(current_user, subject, classroom)
+
+    fail_stuck_running_jobs(older_than_minutes=8)
+    db.expire_all()
 
     job = (
         db.query(CourseBuildJob)
@@ -359,7 +372,7 @@ def get_learning_path(
                     activities=chapter.activities,
                     flashcards=chapter.flashcards,
                     quiz=chapter.quiz,
-                    assessment=chapter.assessment,
+                    assessment=None,
                     is_unlocked=unlocked,
                     is_current=chapter.chapter == current_chapter,
                     is_locked_for_viewer=False,
@@ -490,7 +503,6 @@ def get_chapter_notes(
 def generate_chapter_notes(
     subject_id: int,
     chapter_number: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -504,12 +516,21 @@ def generate_chapter_notes(
             detail="Add syllabus text or upload a syllabus file first",
         )
 
-    if settings.ai_provider.lower().strip() == "gemini" and not settings.gemini_api_key.strip():
+    provider = settings.ai_provider.lower().strip()
+    if provider == "gemini" and not settings.resolve_gemini_api_keys():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Real AI generation needs GEMINI_API_KEY in backend/.env. "
                 "Get a free key from https://aistudio.google.com/apikey then restart the backend."
+            ),
+        )
+    if provider == "groq" and not settings.groq_api_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Real AI generation needs GROQ_API_KEY in backend/.env. "
+                "Get a free key from https://console.groq.com/keys then restart the backend."
             ),
         )
 
@@ -547,7 +568,7 @@ def generate_chapter_notes(
     db.add(job)
     db.commit()
     db.refresh(job)
-    background_tasks.add_task(run_course_builder_job, job.id)
+    start_course_builder_job(job.id)
     return job
 
 
@@ -632,41 +653,6 @@ def submit_quiz_attempt(
         attempt_type="QUIZ",
         score=score,
         payload={"selected_answers": payload.selected_answers, "correct": correct, "total": total},
-    )
-    db.add(attempt)
-    db.commit()
-    db.refresh(attempt)
-    return attempt
-
-
-@router.post(
-    "/subjects/{subject_id}/course-builder/chapters/{chapter_number}/assessment-attempt",
-    response_model=AttemptOut,
-    status_code=status.HTTP_201_CREATED,
-)
-def submit_assessment_attempt(
-    subject_id: int,
-    chapter_number: int,
-    payload: AssessmentAttemptCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    subject = _get_subject_or_404(db, subject_id)
-    classroom = _get_classroom_or_404(db, subject.classroom_id)
-    _ensure_subject_view_access(db, current_user, subject, classroom)
-
-    path = get_learning_path(subject_id=subject_id, db=db, current_user=current_user)
-    chapter = next((c for c in path.chapters if c.chapter == chapter_number), None)
-    if not chapter or chapter.is_locked_for_viewer:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chapter is locked")
-
-    attempt = CourseChapterAttempt(
-        subject_id=subject_id,
-        chapter_number=chapter_number,
-        user_id=current_user.id,
-        attempt_type="ASSESSMENT",
-        score=None,
-        payload={"answers": payload.answers},
     )
     db.add(attempt)
     db.commit()

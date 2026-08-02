@@ -1,3 +1,6 @@
+import threading
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -6,6 +9,7 @@ from app.models.course_builder import CourseArtifact, CourseBuildJob, CourseChap
 from app.models.subject import Subject
 from app.schemas.course_builder import ArtifactType, ChapterContent, ChapterNotesContent, CourseBuilderOutput
 from app.services.ai.gemini_provider import GeminiCourseBuilderProvider
+from app.services.ai.groq_provider import GroqCourseBuilderProvider
 from app.services.ai.mock_provider import MockCourseBuilderProvider
 from app.services.ai.provider import CourseBuilderProvider
 
@@ -17,19 +21,81 @@ def get_course_builder_provider() -> CourseBuilderProvider:
     if provider == "mock":
         return MockCourseBuilderProvider()
     if provider == "gemini":
-        if not settings.gemini_api_key.strip():
+        keys = settings.resolve_gemini_api_keys()
+        if not keys:
             raise RuntimeError(
                 "GEMINI_API_KEY is missing. Add it to backend/.env to generate real syllabus-based content. "
                 "Get a free key at https://aistudio.google.com/apikey"
             )
-        return GeminiCourseBuilderProvider(settings.gemini_api_key.strip(), settings.gemini_model)
-    raise RuntimeError(f"Unsupported AI_PROVIDER '{settings.ai_provider}'. Use 'gemini' or 'mock'.")
+        return GeminiCourseBuilderProvider(keys, settings.gemini_model)
+    if provider == "groq":
+        key = settings.groq_api_key.strip()
+        if not key:
+            raise RuntimeError(
+                "GROQ_API_KEY is missing. Add it to backend/.env for free real AI generation. "
+                "Get a free key at https://console.groq.com/keys"
+            )
+        return GroqCourseBuilderProvider(key, settings.groq_model)
+    raise RuntimeError(
+        f"Unsupported AI_PROVIDER '{settings.ai_provider}'. Use 'gemini', 'groq', or 'mock'."
+    )
+
+
+def start_course_builder_job(job_id: int) -> None:
+    """Run generation in an isolated daemon thread so HTTP requests stay responsive."""
+    thread = threading.Thread(
+        target=run_course_builder_job,
+        args=(job_id,),
+        daemon=True,
+        name=f"course-builder-job-{job_id}",
+    )
+    thread.start()
 
 
 def run_course_builder_job(job_id: int) -> None:
     db = SessionLocal()
     try:
         _run_course_builder_job(db, job_id)
+    finally:
+        db.close()
+
+
+def set_job_progress(job_id: int, message: str) -> None:
+    db = SessionLocal()
+    try:
+        job = db.query(CourseBuildJob).filter(CourseBuildJob.id == job_id).first()
+        if not job or job.status != "RUNNING":
+            return
+        job.error_message = message
+        job.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+
+
+def fail_stuck_running_jobs(*, older_than_minutes: int = 8) -> int:
+    """Mark long-running jobs as failed so the UI is not stuck forever."""
+    from datetime import timedelta
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+        stuck = db.query(CourseBuildJob).filter(CourseBuildJob.status == "RUNNING").all()
+        count = 0
+        for job in stuck:
+            updated = job.updated_at
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            if updated <= cutoff:
+                job.status = "FAILED"
+                job.error_message = (
+                    "Generation timed out or was interrupted. "
+                    "Please click Generate AI drafts again."
+                )
+                count += 1
+        if count:
+            db.commit()
+        return count
     finally:
         db.close()
 
@@ -47,18 +113,27 @@ def _run_course_builder_job(db: Session, job_id: int) -> None:
         return
 
     job.status = "RUNNING"
-    job.error_message = None
+    job.error_message = "Starting generation…"
+    job.updated_at = datetime.now(timezone.utc)
     db.commit()
+
+    def on_progress(message: str) -> None:
+        set_job_progress(job_id, message)
 
     try:
         requested_raw = list(job.requested_artifacts or [])
-        if any(item == ArtifactType.CHAPTER_NOTES.value or item.startswith(CHAPTER_NOTES_META_PREFIX) for item in requested_raw):
+        if any(
+            item == ArtifactType.CHAPTER_NOTES.value or item.startswith(CHAPTER_NOTES_META_PREFIX)
+            for item in requested_raw
+        ):
             chapter_number = _chapter_number_from_requested(requested_raw)
             if chapter_number is None:
                 raise ValueError("Chapter notes job is missing CHAPTER:{n} metadata")
             chapter = _get_chapter_from_learning_path(db, job.subject_id, chapter_number)
             if not chapter:
-                raise ValueError(f"Chapter {chapter_number} not found on the learning path. Generate the path first.")
+                raise ValueError(
+                    f"Chapter {chapter_number} not found on the learning path. Generate the path first."
+                )
             notes = get_course_builder_provider().generate_chapter_notes(
                 subject_name=subject.name,
                 chapter=chapter.chapter,
@@ -68,6 +143,7 @@ def _run_course_builder_job(db: Session, job_id: int) -> None:
                 summary=chapter.summary,
                 syllabus_text=job.syllabus_text,
                 syllabus_file_path=job.syllabus_file_url,
+                on_progress=on_progress,
             )
             notes.chapter = chapter.chapter
             notes.chapter_title = chapter.title
@@ -83,13 +159,17 @@ def _run_course_builder_job(db: Session, job_id: int) -> None:
                 syllabus_text=job.syllabus_text,
                 syllabus_file_path=job.syllabus_file_url,
                 requested_artifacts=requested,
+                on_progress=on_progress,
             )
             _save_learning_path(db, job, output)
         job.status = "COMPLETED"
+        job.error_message = None
+        job.updated_at = datetime.now(timezone.utc)
         db.commit()
     except Exception as exc:  # noqa: BLE001 - surface AI/provider errors on the job row.
         job.status = "FAILED"
         job.error_message = str(exc)
+        job.updated_at = datetime.now(timezone.utc)
         db.commit()
 
 
@@ -159,7 +239,10 @@ def _save_learning_path(db: Session, job: CourseBuildJob, output: CourseBuilderO
             created_by_id=job.created_by_id,
             artifact_type=ArtifactType.LEARNING_PATH.value,
             title="AI Learning Path",
-            content=[chapter.model_dump() for chapter in chapters],
+            content=[
+                {**chapter.model_dump(), "assessment": None, "flashcards": chapter.flashcards, "quiz": chapter.quiz}
+                for chapter in chapters
+            ],
             is_published=False,
         )
     )

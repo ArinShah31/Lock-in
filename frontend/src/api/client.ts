@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
+const DEFAULT_TIMEOUT_MS = 12_000;
 
 export class ApiError extends Error {
   status: number;
@@ -24,10 +25,24 @@ export function clearTokens() {
   localStorage.removeItem("astra_user");
 }
 
+function mergeAbortSignals(signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+  return controller.signal;
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
   auth = true,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -39,10 +54,27 @@ export async function api<T>(
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = options.signal
+    ? mergeAbortSignals([options.signal, timeoutSignal])
+    : timeoutSignal;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new ApiError(408, "Request timed out. Is the backend running?");
+    }
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(408, "Request was cancelled or timed out.");
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     let detail = "Request failed";

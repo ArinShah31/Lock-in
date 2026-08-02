@@ -23,15 +23,15 @@ export function McqQuiz({ questions, onSubmit }: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {questions.map((question, index) => {
         const choice = selected[index];
         return (
-          <div key={`${question.question}-${index}`} className="rounded-2xl border border-line bg-ink-soft/40 p-4">
-            <p className="font-medium text-paper">
+          <div key={`${question.question}-${index}`} className="rounded-2xl border border-line bg-ink-soft/40 p-5">
+            <p className="font-medium leading-relaxed text-paper">
               Q{index + 1}. {question.question}
             </p>
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-2.5">
               {question.options.map((option) => {
                 const isSelected = choice === option;
                 const isCorrect = checked && option === question.correct_answer;
@@ -42,7 +42,7 @@ export function McqQuiz({ questions, onSubmit }: Props) {
                     type="button"
                     disabled={checked}
                     onClick={() => setSelected((prev) => ({ ...prev, [index]: option }))}
-                    className={`block w-full rounded-xl border px-3 py-2 text-left text-sm ${
+                    className={`block w-full rounded-xl border px-3.5 py-2.5 text-left text-sm leading-relaxed ${
                       isCorrect
                         ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100"
                         : isWrong
@@ -57,12 +57,12 @@ export function McqQuiz({ questions, onSubmit }: Props) {
                 );
               })}
             </div>
-            {checked ? <p className="mt-2 text-sm text-mist">{question.explanation}</p> : null}
+            {checked ? <p className="mt-3 text-sm leading-relaxed text-mist">{question.explanation}</p> : null}
           </div>
         );
       })}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-line/60 bg-panel/90 py-4 backdrop-blur">
         <PrimaryButton
           disabled={busy || Object.keys(selected).length < questions.length}
           onClick={async () => {
@@ -83,7 +83,11 @@ export function McqQuiz({ questions, onSubmit }: Props) {
           <p className="text-sm text-mist">
             Score: {score.correct}/{score.total}
           </p>
-        ) : null}
+        ) : (
+          <p className="text-sm text-mist">
+            Answered {Object.keys(selected).length}/{questions.length}
+          </p>
+        )}
       </div>
     </div>
   );

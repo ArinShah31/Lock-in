@@ -59,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("astra_user", JSON.stringify(me));
       setUser(me);
     } catch {
+      // Expired/hung backend should never leave the app on a blank spinner.
       logoutLocal();
       setUser(null);
     } finally {

@@ -221,7 +221,7 @@ export function SubjectsPage() {
               <div className="rounded-2xl border border-accent/30 bg-accent/5 p-4">
                 <p className="font-display text-lg text-paper">AI Course Content</p>
                 <p className="mt-1 text-sm text-mist">
-                  Roadmaps, flashcards, quizzes, and assessments are managed in Course Builder — not stacked here.
+                  Roadmaps, flashcards, and quizzes are managed in Course Builder — not stacked here.
                 </p>
                 <Link
                   to="/course-builder"

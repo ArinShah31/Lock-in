@@ -39,14 +39,14 @@ export function AppShell() {
             <p className="mt-1 text-sm text-mist">Academic Intelligence</p>
           </div>
 
-          <nav className="flex flex-1 flex-col gap-1">
+          <nav className="flex flex-1 flex-col gap-2">
             {links.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
                 end={link.to === "/"}
                 className={({ isActive }) =>
-                  `rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                  `rounded-xl px-3 py-3 text-sm font-medium transition ${
                     isActive
                       ? "bg-accent/15 text-accent"
                       : "text-mist hover:bg-white/5 hover:text-paper"

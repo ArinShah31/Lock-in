@@ -107,7 +107,27 @@ class ChapterContent(BaseModel):
     activities: list[str] = Field(default_factory=list)
     flashcards: list[Flashcard] = Field(default_factory=list)
     quiz: list[QuizQuestion] = Field(default_factory=list)
+    # Kept optional for older artifacts; new generations omit assessments.
     assessment: Assessment | None = None
+
+
+class ChapterOutline(BaseModel):
+    chapter: int
+    title: str
+    summary: str
+    timeline: str
+    objectives: list[str] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
+    activities: list[str] = Field(default_factory=list)
+
+
+class CourseOutlineOutput(BaseModel):
+    chapters: list[ChapterOutline] = Field(default_factory=list)
+
+
+class ChapterPracticeOutput(BaseModel):
+    flashcards: list[Flashcard] = Field(default_factory=list)
+    quiz: list[QuizQuestion] = Field(default_factory=list)
 
 
 class CourseBuilderOutput(BaseModel):

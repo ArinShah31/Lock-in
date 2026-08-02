@@ -10,20 +10,20 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 className="font-display text-3xl font-bold text-paper md:text-4xl">{title}</h1>
-        {subtitle ? <p className="mt-1 max-w-2xl text-mist">{subtitle}</p> : null}
+        {subtitle ? <p className="mt-2 max-w-2xl text-mist">{subtitle}</p> : null}
       </div>
       {action}
     </div>
   );
 }
 
-export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function Panel({ children, className = "p-5" }: { children: ReactNode; className?: string }) {
   return (
     <section
-      className={`rounded-3xl border border-line/70 bg-panel/65 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.25)] backdrop-blur ${className}`}
+      className={`rounded-3xl border border-line/70 bg-panel/65 shadow-[0_20px_60px_rgba(0,0,0,0.25)] backdrop-blur ${className}`}
     >
       {children}
     </section>

@@ -123,7 +123,12 @@ export const courseBuilderApi = {
   uploadSyllabus: (subjectId: number, file: File) => {
     const body = new FormData();
     body.append("file", file);
-    return api<Subject>(`/subjects/${subjectId}/course-builder/upload-syllabus`, { method: "POST", body });
+    return api<Subject>(
+      `/subjects/${subjectId}/course-builder/upload-syllabus`,
+      { method: "POST", body },
+      true,
+      60_000,
+    );
   },
   generate: (subjectId: number, artifact_types: CourseArtifactType[] = ["LEARNING_PATH"]) =>
     api<CourseBuildJob>(`/subjects/${subjectId}/course-builder/generate`, {
@@ -154,10 +159,5 @@ export const courseBuilderApi = {
     api<ChapterAttempt>(`/subjects/${subjectId}/course-builder/chapters/${chapterNumber}/quiz-attempt`, {
       method: "POST",
       body: JSON.stringify({ selected_answers }),
-    }),
-  submitAssessmentAttempt: (subjectId: number, chapterNumber: number, answers: string[]) =>
-    api<ChapterAttempt>(`/subjects/${subjectId}/course-builder/chapters/${chapterNumber}/assessment-attempt`, {
-      method: "POST",
-      body: JSON.stringify({ answers }),
     }),
 };
