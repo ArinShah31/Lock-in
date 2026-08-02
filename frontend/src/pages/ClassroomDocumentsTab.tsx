@@ -1,3 +1,4 @@
+import DragOverlay from "../components/DragOverlay";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -131,34 +132,7 @@ export function ClassroomDocumentsTab() {
 
   return (
     <>
-      {isDragging && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            setIsDragging(false);
-
-            const file = e.dataTransfer.files?.[0];
-
-            if (!file) return;
-
-            uploadFile(file);
-          }}
-        >
-          <div className="rounded-2xl border-2 border-dashed border-blue-500 bg-slate-900/90 px-20 py-16 text-center shadow-2xl">
-            <div className="mb-4 text-7xl">📁</div>
-
-            <h2 className="text-3xl font-bold text-white">
-              Drop files to upload
-            </h2>
-
-            <p className="mt-3 text-slate-300">
-              Release your document anywhere to upload
-            </p>
-          </div>
-        </div>
-      )}
+      <DragOverlay onDropFile={uploadFile} />
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
