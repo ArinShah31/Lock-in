@@ -1,4 +1,4 @@
-import { api, clearTokens, setTokens } from "./client";
+import { api, clearTokens, setTokens, API_BASE } from "./client";
 import type {
   AuthResponse,
   Classroom,
@@ -90,6 +90,35 @@ export const classroomsApi = {
 export const contentsApi = {
   listByClassroom: (id: number) =>
     api<Content[]>(`/contents/classrooms/${id}`),
+
+  upload: async (classroomId: number, formData: FormData) => {
+   
+   
+
+   const token = localStorage.getItem("astra_access_token");
+
+   const url = `${API_BASE}/contents/classrooms/${classroomId}`;
+   
+
+   const response = await fetch(url, {
+     method: "POST",
+     headers: token
+       ? {
+          Authorization: `Bearer ${token}`,
+         }
+       : {},
+     body: formData,
+   });
+
+   
+
+   if (!response.ok) {
+     
+     throw new Error("Upload failed");
+   }
+
+   return response.json();
+ },
 };
 
 export const usersApi = {

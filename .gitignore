@@ -33,6 +33,9 @@ node_modules/
 frontend/dist/
 *.tsbuildinfo
 
+# Uploaded files
+backend/uploads/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,6 +1,9 @@
+import { useRef } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { contentsApi } from "../api";
+import { API_BASE } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
 type Content = {
   id: number;
@@ -13,11 +16,34 @@ type Content = {
 };
 
 export function ClassroomDocumentsTab() {
+  
+
   const { classroomId } = useParams();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading, isError } = useQuery({
   queryKey: ["documents", classroomId],
   queryFn: () => contentsApi.listByClassroom(Number(classroomId)),
+});
+
+const uploadMutation = useMutation({
+  mutationFn: (formData: FormData) => {
+    
+    return contentsApi.upload(Number(classroomId), formData);
+  },
+
+  onSuccess: () => {
+    
+    queryClient.invalidateQueries({
+      queryKey: ["documents", classroomId],
+    });
+  },
+
+  onError: (err) => {
+    console.error("Upload failed", err);
+  },
 });
 
   if (isLoading) {
@@ -30,7 +56,61 @@ export function ClassroomDocumentsTab() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Documents</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Documents</h2>
+        
+        <button
+        onClick={() => fileInputRef.current?.click()}
+        className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+            Upload Document
+        </button>
+     </div>
+
+     <input
+     ref={fileInputRef}
+     type="file"
+     className="hidden"
+     onChange={(e) => {
+        
+        
+        
+        
+        
+        const file = e.target.files?.[0];
+        
+        
+        if (!file) {
+          
+          return;
+        }
+        
+        
+        
+        if (!user) {
+          
+            
+          return;
+        }
+        
+        
+        
+        const formData = new FormData();
+        formData.append("title", file.name);
+        formData.append("description", "");
+        formData.append("content_type", "PDF");
+        formData.append("uploaded_by", String(user.id));
+        formData.append("file", file);
+        
+        
+        
+        uploadMutation.mutate(formData);
+        
+        
+        
+        e.target.value = "";
+     }}
+     />
 
       {data?.length === 0 && (
         <p>No documents uploaded yet.</p>
@@ -48,7 +128,7 @@ export function ClassroomDocumentsTab() {
           </p>
 
           <a
-          href={`http://127.0.0.1:8000/${doc.file_path}`}
+          href={`${API_BASE.replace("/api/v1", "")}/${doc.file_path}`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm font-medium text-accent hover:underline"
