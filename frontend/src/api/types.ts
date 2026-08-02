@@ -125,3 +125,48 @@ export type Content = {
   is_active: boolean;
   created_at: string;
 };
+
+export type AssignmentSubmission = {
+  id: number;
+  assignment_id: number;
+  student_id: number;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  submitted_at: string;
+  is_late: boolean;
+  marks: number | null;
+  feedback: string | null;
+  graded_at: string | null;
+  graded_by: number | null;
+  student_full_name?: string | null;
+  student_email?: string | null;
+  is_graded: boolean;
+};
+
+export type Assignment = {
+  id: number;
+  classroom_id: number;
+  created_by: number;
+  title: string;
+  instructions: string | null;
+  max_marks: number;
+  due_at: string;
+  file_name: string | null;
+  file_path: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  is_active: boolean;
+  created_at: string;
+  submitted_count?: number | null;
+  graded_count?: number | null;
+  my_submission?: AssignmentSubmission | null;
+};
+
+export function uploadFileUrl(filePath: string | null | undefined): string | null {
+  if (!filePath) return null;
+  if (filePath.startsWith("http")) return filePath;
+  const origin = import.meta.env.VITE_API_ORIGIN ?? "http://127.0.0.1:8000";
+  return `${origin}/${filePath.replace(/^\/+/, "")}`;
+}

@@ -1,3 +1,4 @@
+from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.classroom import (
     Classroom,
     ClassroomAnnouncement,
@@ -23,4 +24,6 @@ __all__ = [
     "SubjectMaterial",
     "ClassroomContent",
     "ContentType",
+    "Assignment",
+    "AssignmentSubmission",
 ]

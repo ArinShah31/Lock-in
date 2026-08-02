@@ -5,16 +5,6 @@ import { contentsApi } from "../api";
 import { API_BASE } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
-type Content = {
-  id: number;
-  title: string;
-  description: string | null;
-  content_type: string;
-  file_name: string;
-  file_path: string;
-  created_at: string;
-};
-
 export function ClassroomDocumentsTab() {
   const { classroomId } = useParams();
   const { user } = useAuth();
