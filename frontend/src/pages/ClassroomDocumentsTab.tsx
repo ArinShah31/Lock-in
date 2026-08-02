@@ -25,6 +25,7 @@ export function ClassroomDocumentsTab() {
   const [editTitle, setEditTitle] = useState("");
 
   const [editDescription, setEditDescription] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["documents", classroomId],
@@ -103,6 +104,16 @@ export function ClassroomDocumentsTab() {
         </button>
       </div>
 
+      <div className="mt-4">
+        <input
+          type="text"
+          placeholder="🔍 Search documents..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full rounded-lg border border-line bg-slate-800 px-4 py-2 outline-none focus:border-accent"
+        />
+      </div>
+
       <input
         ref={fileInputRef}
         type="file"
@@ -133,58 +144,68 @@ export function ClassroomDocumentsTab() {
 
       {data?.length === 0 && <p>No documents uploaded yet.</p>}
 
-      {data?.map((doc) => (
-        <div key={doc.id} className="rounded-lg border border-line p-4">
-          <div className="flex items-start justify-between">
-            <h3 className="font-semibold">{doc.title}</h3>
+      {data
+        ?.filter((doc) => {
+          const search = searchTerm.toLowerCase();
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setEditingDoc(doc);
-                  setEditTitle(doc.title);
-                  setEditDescription(doc.description ?? "");
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-sky-400 transition-all duration-200 hover:border-sky-500 hover:bg-sky-500/10 hover:scale-105"
-                title="Edit document"
-              >
-                ✏️
-              </button>
+          return (
+            doc.title.toLowerCase().includes(search) ||
+            doc.file_name.toLowerCase().includes(search) ||
+            (doc.description ?? "").toLowerCase().includes(search)
+          );
+        })
+        .map((doc) => (
+          <div key={doc.id} className="rounded-lg border border-line p-4">
+            <div className="flex items-start justify-between">
+              <h3 className="font-semibold">{doc.title}</h3>
 
-              <button
-                onClick={() => {
-                  const confirmed = window.confirm(
-                    "Are you sure you want to delete this document?",
-                  );
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setEditingDoc(doc);
+                    setEditTitle(doc.title);
+                    setEditDescription(doc.description ?? "");
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-sky-400 transition-all duration-200 hover:border-sky-500 hover:bg-sky-500/10 hover:scale-105"
+                  title="Edit document"
+                >
+                  ✏️
+                </button>
 
-                  if (!confirmed) return;
+                <button
+                  onClick={() => {
+                    const confirmed = window.confirm(
+                      "Are you sure you want to delete this document?",
+                    );
 
-                  deleteMutation.mutate(doc.id);
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-red-500 transition-all duration-200 hover:border-red-500 hover:bg-red-500/10 hover:scale-105"
-                title="Delete document"
-              >
-                🗑️
-              </button>
+                    if (!confirmed) return;
+
+                    deleteMutation.mutate(doc.id);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-red-500 transition-all duration-200 hover:border-red-500 hover:bg-red-500/10 hover:scale-105"
+                  title="Delete document"
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
+
+            <p className="text-sm opacity-70">{doc.description}</p>
+
+            <a
+              href={`${API_BASE.replace("/api/v1", "")}/${doc.file_path}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-accent hover:underline"
+            >
+              📄 {doc.file_name}
+            </a>
+
+            <p className="text-xs opacity-60">
+              {new Date(doc.created_at).toLocaleString()}
+            </p>
           </div>
-
-          <p className="text-sm opacity-70">{doc.description}</p>
-
-          <a
-            href={`${API_BASE.replace("/api/v1", "")}/${doc.file_path}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm font-medium text-accent hover:underline"
-          >
-            📄 {doc.file_name}
-          </a>
-
-          <p className="text-xs opacity-60">
-            {new Date(doc.created_at).toLocaleString()}
-          </p>
-        </div>
-      ))}
+        ))}
 
       {/* Edit Modal */}
       {editingDoc && (
