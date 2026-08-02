@@ -16,6 +16,7 @@ export function ClassroomDocumentsTab() {
 
   const [editDescription, setEditDescription] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
   const [isDragging, setIsDragging] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
@@ -109,14 +110,25 @@ export function ClassroomDocumentsTab() {
         </button>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex gap-4">
         <input
           type="text"
           placeholder="🔍 Search documents..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full rounded-lg border border-line bg-slate-800 px-4 py-2 outline-none focus:border-accent"
+          className="flex-1 rounded-lg border border-line bg-slate-800 px-4 py-2 outline-none focus:border-accent"
         />
+
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="rounded-lg border border-line bg-slate-800 px-4 py-2 outline-none focus:border-accent"
+        >
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="az">A - Z</option>
+          <option value="za">Z - A</option>
+        </select>
       </div>
 
       <div
@@ -180,6 +192,28 @@ export function ClassroomDocumentsTab() {
             doc.file_name.toLowerCase().includes(search) ||
             (doc.description ?? "").toLowerCase().includes(search)
           );
+        })
+        .sort((a, b) => {
+          switch (sortBy) {
+            case "oldest":
+              return (
+                new Date(a.created_at).getTime() -
+                new Date(b.created_at).getTime()
+              );
+
+            case "az":
+              return a.title.localeCompare(b.title);
+
+            case "za":
+              return b.title.localeCompare(a.title);
+
+            case "newest":
+            default:
+              return (
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime()
+              );
+          }
         })
         .map((doc) => (
           <div key={doc.id} className="rounded-lg border border-line p-4">
