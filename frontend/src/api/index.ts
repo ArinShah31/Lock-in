@@ -1,4 +1,4 @@
-import { api, apiForm, clearTokens, setTokens } from "./client";
+import { api, apiForm, clearTokens, setTokens, API_BASE } from "./client";
 import type {
   Assignment,
   AssignmentSubmission,
@@ -92,6 +92,55 @@ export const classroomsApi = {
 export const contentsApi = {
   listByClassroom: (id: number) =>
     api<Content[]>(`/contents/classrooms/${id}`),
+
+  upload: async (classroomId: number, formData: FormData) => {
+   
+   
+
+   const token = localStorage.getItem("astra_access_token");
+
+   const url = `${API_BASE}/contents/classrooms/${classroomId}`;
+   
+
+   const response = await fetch(url, {
+     method: "POST",
+     headers: token
+       ? {
+          Authorization: `Bearer ${token}`,
+         }
+       : {},
+     body: formData,
+   });
+
+   
+
+   if (!response.ok) {
+     
+     throw new Error("Upload failed");
+   }
+
+   return response.json();
+ },
+
+ delete: (classroomId: number, contentId: number) =>
+  api<{ message: string }>(
+    `/contents/classrooms/${classroomId}/${contentId}`,
+    {
+      method: "DELETE",
+    },
+   ),
+
+  update: (
+    contentId: number,
+    body: {
+      title?: string;
+      description?: string;
+    },
+  ) =>
+    api<Content>(`/contents/${contentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
 };
 
 export const assignmentsApi = {
