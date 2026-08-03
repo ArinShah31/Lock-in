@@ -5,8 +5,10 @@ import type {
   AuthResponse,
   Classroom,
   ClassroomAnnouncement,
+  ClassroomCourse,
   ClassroomStudent,
   Content,
+  CourseBuildJob,
   Department,
   Institution,
   Subject,
@@ -158,6 +160,77 @@ export const assignmentsApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+};
+
+export const courseBuilderApi = {
+  get: (classroomId: number) => api<ClassroomCourse>(`/classrooms/${classroomId}/course-builder`),
+  uploadSyllabus: (classroomId: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiForm<ClassroomCourse>(`/classrooms/${classroomId}/course-builder/syllabus`, fd);
+  },
+  setSources: (
+    classroomId: number,
+    body: { source_content_ids?: number[]; use_all_documents?: boolean },
+  ) =>
+    api<ClassroomCourse>(`/classrooms/${classroomId}/course-builder/sources`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  generateAll: (classroomId: number) =>
+    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate-all`, { method: "POST" }),
+  generateAssessments: (classroomId: number) =>
+    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate/assessments`, {
+      method: "POST",
+    }),
+  generateStructure: (classroomId: number) =>
+    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate/structure`, {
+      method: "POST",
+    }),
+  generateChapterContent: (classroomId: number, chapterNumber: number) =>
+    api<CourseBuildJob>(
+      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/generate-content`,
+      { method: "POST" },
+    ),
+  generateChapterQuiz: (classroomId: number, chapterNumber: number) =>
+    api<CourseBuildJob>(
+      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/generate-quiz`,
+      { method: "POST" },
+    ),
+  generateSubtopicVideo: (classroomId: number, chapterNumber: number, subtopicIndex: number) =>
+    api<CourseBuildJob>(
+      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/subtopics/${subtopicIndex}/generate-video`,
+      { method: "POST" },
+    ),
+  setSubtopicVideo: (
+    classroomId: number,
+    chapterNumber: number,
+    subtopicIndex: number,
+    youtube_url: string | null,
+  ) =>
+    api<ClassroomCourse>(
+      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/subtopics/${subtopicIndex}/video`,
+      { method: "PATCH", body: JSON.stringify({ youtube_url }) },
+    ),
+  getJob: (classroomId: number, jobId: number) =>
+    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/jobs/${jobId}`),
+  listJobs: (classroomId: number) =>
+    api<CourseBuildJob[]>(`/classrooms/${classroomId}/course-builder/jobs`),
+  publish: (classroomId: number, is_published: boolean) =>
+    api<ClassroomCourse>(`/classrooms/${classroomId}/course-builder/publish`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_published }),
+    }),
+  setChapterLock: (classroomId: number, chapterNumber: number, is_unlocked: boolean) =>
+    api<ClassroomCourse>(`/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/lock`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_unlocked }),
+    }),
+  submitQuiz: (classroomId: number, chapterNumber: number, selected_answers: string[]) =>
+    api<{ score: number | null }>(
+      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/quiz-attempt`,
+      { method: "POST", body: JSON.stringify({ selected_answers }) },
+    ),
 };
 
 export const usersApi = {

@@ -10,6 +10,7 @@ from app.api.routes.subjects import router as subjects_router
 from app.api.routes.users import router as users_router
 from app.api.routes.content import router as content_router
 from app.api.routes.assignments import router as assignments_router
+from app.api.routes.classroom_course_builder import router as course_builder_router
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.models import (  # noqa: F401
@@ -18,9 +19,13 @@ from app.models import (  # noqa: F401
     Classroom,
     ClassroomAnnouncement,
     ClassroomContent,
+    ClassroomCourse,
     ClassroomStudent,
     ClassroomTeacher,
     ContentType,
+    CourseBuildJob,
+    CourseChapterAttempt,
+    CourseChapterLock,
     Department,
     Institution,
     Subject,
@@ -52,6 +57,12 @@ app.add_middleware(
 def on_startup():
     # For initial scaffolding; replace with Alembic migrations in production.
     Base.metadata.create_all(bind=engine)
+    # Course generation runs in background threads; reloads/crashes orphan RUNNING rows.
+    from app.services.classroom_course_builder import fail_orphaned_jobs
+
+    cleared = fail_orphaned_jobs()
+    if cleared:
+        print(f"[course-builder] marked {cleared} orphaned job(s) as FAILED")
 
 
 @app.get("/health")
@@ -67,3 +78,4 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(rbac_router, prefix="/api/v1")
 app.include_router(content_router, prefix="/api/v1")
 app.include_router(assignments_router, prefix="/api/v1")
+app.include_router(course_builder_router, prefix="/api/v1")
