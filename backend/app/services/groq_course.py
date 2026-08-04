@@ -12,9 +12,20 @@ from typing import Any, Callable
 from openai import OpenAI
 
 from app.core.config import settings
+from app.services.lesson_schema import lesson_has_content, normalize_lesson
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-TRANSIENT_MARKERS = ("429", "rate_limit", "rate limit", "503", "timeout", "overloaded")
+GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+TRANSIENT_MARKERS = (
+    "429",
+    "rate_limit",
+    "rate limit",
+    "503",
+    "timeout",
+    "overloaded",
+    "resource_exhausted",
+    "unavailable",
+)
 JSON_FAIL_MARKERS = ("json_validate_failed", "failed to generate json", "json_validate")
 NOTES_MAX_TOKENS = 8192
 INTRO_VIDEO_SKIP = re.compile(
@@ -23,42 +34,38 @@ INTRO_VIDEO_SKIP = re.compile(
 )
 
 TEACHING_SYSTEM = (
-    "You are ASTRA's expert university instructor. Return ONLY valid JSON. "
-    "Write classroom study material for ONE lesson.\n\n"
-    "The goal is NOT to summarize the source material. "
-    "The goal is to TEACH the concept to a student who has limited prior knowledge "
-    "while maintaining university-level technical rigor.\n\n"
-    "Rules:\n"
-    "- Introduce concepts progressively.\n"
-    "- Prefer explanation and reasoning over lists of facts.\n"
-    "- Do not compress important concepts merely to make the content shorter.\n"
-    "- Do not assume knowledge that has not been established as a prerequisite.\n"
-    "- Source materials are context and topic scope only — do not paraphrase them as the lesson.\n"
-    "- You MUST return a COMPLETE valid JSON object (close all braces/quotes). "
-    "Never leave notes_markdown unfinished.\n\n"
-    "For every major concept, cover in this order:\n"
-    "1. Why it is needed\n"
-    "2. Intuitive explanation\n"
-    "3. Formal/technical definition\n"
-    "4. How it works\n"
-    "5. Worked example\n"
-    "6. Practical application\n"
-    "7. Likely misconceptions\n\n"
-    "notes_markdown must be teaching markdown with ## / ### sections — "
-    "substantive, but finish the whole JSON within the response."
+    "You are ASTRA's expert university instructor. Return ONLY valid JSON for ONE subtopic/lesson.\n\n"
+    "Goals: learning quality AND complete JSON that finishes quickly. "
+    "Teach progressively with university-level rigor. Do NOT summarize source materials — teach concepts.\n\n"
+    "Speed/quality bounds:\n"
+    "- 3 to 5 logical sections (choose titles suited to the topic)\n"
+    "- 3 to 5 measurable learning_objectives (Explain/Differentiate/Apply — not vague Understand/Know)\n"
+    "- 1 to 3 concrete examples\n"
+    "- 4 to 8 key_terms with definitions\n"
+    "- 0 to 3 real_world_applications (empty array if not meaningful)\n"
+    "- 0 to 3 common_misconceptions (empty if none are realistic)\n"
+    "- Prefer empty sources/references over fabricated citations or URLs\n"
+    "- No filler, no repetition, no quizzes/flashcards/practice prompts\n"
+    "- Return COMPLETE valid JSON (close all braces/quotes)\n"
 )
 
 TEACHING_MARKDOWN_SYSTEM = (
-    "You are ASTRA's expert university instructor. Write markdown study notes for ONE lesson only. "
-    "Do NOT wrap the answer in JSON or code fences.\n\n"
-    "The goal is NOT to summarize the source material. "
-    "The goal is to TEACH the concept to a student who has limited prior knowledge "
-    "while maintaining university-level technical rigor.\n\n"
-    "Introduce concepts progressively. Prefer explanation and reasoning over lists of facts. "
-    "Do not assume untaught prerequisites.\n\n"
-    "For every major concept cover: why needed, intuition, formal definition, how it works, "
-    "worked example, practical application, likely misconceptions.\n"
-    "Aim for about 1200–2200 words and finish the lesson completely."
+    "You are ASTRA's expert university instructor. Write focused markdown for ONE lesson. "
+    "Do NOT wrap in JSON or code fences. Teach progressively with clear ## section headings "
+    "(about 3–5 sections). Prefer clarity over length. Finish completely."
+)
+
+LESSON_JSON_SCHEMA = (
+    '{"title":"","overview":"","learning_objectives":["Explain ..."],'
+    '"prerequisites":[],'
+    '"sections":[{"title":"","content_markdown":"","key_points":[],'
+    '"sources":[{"title":"","url":"","source_type":"official_documentation"}]}],'
+    '"examples":[{"title":"","context":"","content_markdown":"","takeaway":""}],'
+    '"real_world_applications":[{"title":"","description":""}],'
+    '"common_misconceptions":[{"misconception":"","correction":""}],'
+    '"key_terms":[{"term":"","definition":""}],'
+    '"summary":"",'
+    '"references":[{"title":"","url":"","source_type":"official_documentation"}]}'
 )
 
 
@@ -197,6 +204,93 @@ class GroqStageClient:
         raise RuntimeError(f"Groq {self.stage} text failed after key failover: {last_error}")
 
 
+class GeminiNotesClient:
+    """Gemini 2.5 Flash client for lesson outline + full notes (OpenAI-compatible API)."""
+
+    def __init__(self, *, pinned_key: str | None = None):
+        self.model = settings.gemini_model or "gemini-2.5-flash"
+        pool = settings.gemini_keys_for_notes_pool()
+        if pinned_key:
+            others = [k for k in pool if k != pinned_key]
+            self.keys = [pinned_key, *others]
+        else:
+            self.keys = pool
+        if not self.keys:
+            raise RuntimeError(
+                "No Gemini API keys configured for notes. "
+                "Set GEMINI_API_KEY_NOTES_1 / _2 / _3 in backend/.env"
+            )
+
+    def chat_json(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for key in self.keys:
+            client = OpenAI(api_key=key, base_url=GEMINI_OPENAI_BASE_URL, timeout=180.0)
+            for attempt in range(3):
+                try:
+                    kwargs: dict[str, Any] = {
+                        "model": self.model,
+                        "temperature": 0.35,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                        "response_format": {"type": "json_object"},
+                    }
+                    if max_tokens is not None:
+                        kwargs["max_tokens"] = max_tokens
+                    response = client.chat.completions.create(**kwargs)
+                    content = response.choices[0].message.content or "{}"
+                    data = _extract_json(content)
+                    if not isinstance(data, dict):
+                        raise ValueError("Model returned non-object JSON")
+                    return data
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    if _is_transient(exc) or _is_json_validate_failed(exc):
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    break
+        raise RuntimeError(f"Gemini notes failed after key failover: {last_error}")
+
+    def chat_text(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        last_error: Exception | None = None
+        for key in self.keys:
+            client = OpenAI(api_key=key, base_url=GEMINI_OPENAI_BASE_URL, timeout=180.0)
+            for attempt in range(3):
+                try:
+                    kwargs: dict[str, Any] = {
+                        "model": self.model,
+                        "temperature": 0.35,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                    }
+                    if max_tokens is not None:
+                        kwargs["max_tokens"] = max_tokens
+                    response = client.chat.completions.create(**kwargs)
+                    return (response.choices[0].message.content or "").strip()
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    if _is_transient(exc):
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    break
+        raise RuntimeError(f"Gemini notes text failed after key failover: {last_error}")
+
+
 def generate_structure(*, classroom_name: str, source_text: str) -> list[dict[str, Any]]:
     client = GroqStageClient("STRUCTURE")
     data = client.chat_json(
@@ -244,7 +338,7 @@ def _lesson_outline(
     chapter: dict[str, Any],
     source_text: str,
 ) -> dict[str, Any]:
-    client = GroqStageClient("CHAPTER_CONTENT")
+    client = GeminiNotesClient()
     data = client.chat_json(
         system=(
             "You are ASTRA's curriculum designer. Return ONLY valid JSON. "
@@ -281,11 +375,15 @@ def _lesson_outline(
                 "title": title,
                 "summary": str(lesson.get("summary") or ""),
                 "needs_video": infer_needs_video(title, explicit),
-                "learning_outcomes": [],
-                "notes_markdown": "",
-                "key_terms": [],
+                "overview": str(lesson.get("summary") or ""),
+                "learning_objectives": [],
+                "prerequisites": [],
+                "sections": [],
                 "examples": [],
-                "practice_prompts": [],
+                "real_world_applications": [],
+                "common_misconceptions": [],
+                "key_terms": [],
+                "references": [],
                 "youtube_video_id": None,
                 "youtube_title": None,
                 "youtube_url": None,
@@ -309,25 +407,14 @@ def _notes_context_block(
         f"Chapter {chapter.get('chapter')}: {chapter.get('title')}\n"
         f"Chapter summary: {chapter.get('summary')}\n"
         f"Lesson {lesson.get('lesson')}: {lesson.get('title')}\n"
-        f"Lesson goal: {lesson.get('summary')}\n\n"
+        f"Lesson goal: {lesson.get('summary') or lesson.get('overview')}\n\n"
         f"Source materials (topic scope only — do not summarize):\n{source_text[:8000]}"
     )
 
 
-def _normalize_lesson_notes(data: dict[str, Any], lesson: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "summary": str(data.get("summary") or lesson.get("summary") or ""),
-        "learning_outcomes": _as_str_list(data.get("learning_outcomes")),
-        "notes_markdown": str(data.get("notes_markdown") or "").strip(),
-        "key_terms": _as_str_list(data.get("key_terms")),
-        "examples": _as_str_list(data.get("examples")),
-        "practice_prompts": _as_str_list(data.get("practice_prompts")),
-    }
-
-
 def _write_notes_markdown_fallback(
     *,
-    client: GroqStageClient,
+    client: GeminiNotesClient,
     classroom_name: str,
     chapter: dict[str, Any],
     lesson: dict[str, Any],
@@ -343,22 +430,31 @@ def _write_notes_markdown_fallback(
         system=TEACHING_MARKDOWN_SYSTEM,
         user=(
             f"{context}\n\n"
-            "Write the full lesson notes in markdown now. "
-            "Start with a ## heading for the lesson title. Finish completely."
+            "Write the lesson now with ## headings for each section. Finish completely."
         ),
         max_tokens=NOTES_MAX_TOKENS,
     )
     if markdown.startswith("```"):
         markdown = re.sub(r"^```(?:markdown|md)?\s*", "", markdown)
         markdown = re.sub(r"\s*```$", "", markdown).strip()
-    return {
-        "summary": str(lesson.get("summary") or ""),
-        "learning_outcomes": [],
-        "notes_markdown": markdown,
-        "key_terms": [],
-        "examples": [],
-        "practice_prompts": [],
-    }
+    title = str(lesson.get("title") or "Lesson")
+    return normalize_lesson(
+        {
+            **lesson,
+            "title": title,
+            "overview": str(lesson.get("summary") or lesson.get("overview") or ""),
+            "summary": "",
+            "sections": [
+                {
+                    "title": title,
+                    "content_markdown": markdown,
+                    "key_points": [],
+                    "sources": [],
+                }
+            ],
+        },
+        index=int(lesson.get("lesson") or 1),
+    )
 
 
 def _write_full_lesson_notes(
@@ -369,7 +465,7 @@ def _write_full_lesson_notes(
     source_text: str,
     pinned_key: str | None = None,
 ) -> dict[str, Any]:
-    client = GroqStageClient("CHAPTER_CONTENT", pinned_key=pinned_key)
+    client = GeminiNotesClient(pinned_key=pinned_key)
     context = _notes_context_block(
         classroom_name=classroom_name,
         chapter=chapter,
@@ -378,29 +474,25 @@ def _write_full_lesson_notes(
     )
     base_user = (
         f"{context}\n\n"
-        "Return JSON:\n"
-        '{"summary":"","learning_outcomes":["string outcome 1","string outcome 2"],'
-        '"notes_markdown":"","key_terms":["term"],"examples":["example"],'
-        '"practice_prompts":["prompt"]}\n'
-        "Schema rules:\n"
-        "- learning_outcomes MUST be an array of plain strings (never objects)\n"
-        "- key_terms, examples, practice_prompts MUST be arrays of strings\n"
-        "- notes_markdown must be complete teaching markdown (~1200–2200 words)\n"
-        "- Follow the 7-step treatment for major concepts\n"
-        "- Include worked examples, practical applications, and misconceptions\n"
-        "- End with a brief checklist recap\n"
-        "- Return COMPLETE valid JSON only — close every brace and quote"
+        "Return JSON matching this schema exactly:\n"
+        f"{LESSON_JSON_SCHEMA}\n"
+        "Rules:\n"
+        "- title should match the lesson title\n"
+        "- overview introduces what/why; summary is a short recap only (no new ideas)\n"
+        "- sections: 3–5 progressive teaching sections with content_markdown + key_points\n"
+        "- sources/references: only real known URLs; otherwise use empty arrays "
+        "(never invent citations)\n"
+        "- source_type must be one of: official_documentation, academic_paper, textbook, "
+        "government_source, reputable_website, technical_article, other\n"
+        "- No quizzes, flashcards, practice prompts, or grading content\n"
+        "- Return COMPLETE valid JSON"
     )
     retry_user = (
         f"{context}\n\n"
-        "IMPORTANT: A previous attempt was truncated and failed JSON validation. "
+        "IMPORTANT: Previous output failed JSON validation (often truncation). "
         "Return SHORTER but COMPLETE valid JSON with the same schema. "
-        "Keep pedagogy (7-step treatment) but target ~900–1400 words in notes_markdown "
-        "so the JSON finishes.\n"
-        "learning_outcomes must be an array of plain strings.\n"
-        "Return JSON:\n"
-        '{"summary":"","learning_outcomes":["..."],"notes_markdown":"",'
-        '"key_terms":[],"examples":[],"practice_prompts":[]}'
+        "Use 3 sections, 2 examples, 4 key_terms, empty sources if unsure.\n"
+        f"Schema:\n{LESSON_JSON_SCHEMA}"
     )
 
     last_error: Exception | None = None
@@ -411,10 +503,19 @@ def _write_full_lesson_notes(
                 user=user,
                 max_tokens=NOTES_MAX_TOKENS,
             )
-            normalized = _normalize_lesson_notes(data, lesson)
-            if normalized["notes_markdown"]:
+            merged = {
+                **lesson,
+                **data,
+                "title": str(data.get("title") or lesson.get("title") or "Lesson"),
+                "needs_video": lesson.get("needs_video"),
+                "youtube_video_id": lesson.get("youtube_video_id"),
+                "youtube_title": lesson.get("youtube_title"),
+                "youtube_url": lesson.get("youtube_url"),
+            }
+            normalized = normalize_lesson(merged, index=int(lesson.get("lesson") or 1))
+            if lesson_has_content(normalized):
                 return normalized
-            raise ValueError("Empty notes_markdown in JSON response")
+            raise ValueError("Empty sections in structured lesson response")
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             if attempt < 2 and (_is_json_validate_failed(exc) or _is_transient(exc)):
@@ -453,11 +554,11 @@ def generate_chapter_content(
     if not lessons:
         raise ValueError("No lessons returned for chapter content")
 
-    pool = settings.groq_keys_for_notes_pool()
+    pool = settings.gemini_keys_for_notes_pool()
     if not pool:
         raise RuntimeError(
-            "No Groq API keys configured for notes. "
-            "Set GROQ_API_KEY_STRUCTURE / NOTES / QUIZ in backend/.env"
+            "No Gemini API keys configured for notes. "
+            "Set GEMINI_API_KEY_NOTES_1 / _2 / _3 in backend/.env"
         )
 
     progress_lock = threading.Lock()
@@ -471,22 +572,26 @@ def generate_chapter_content(
             on_progress(message)
 
     def placeholder_lesson(lesson: dict[str, Any], error: str) -> dict[str, Any]:
-        updated = dict(lesson)
-        updated.update(
+        title = str(lesson.get("title") or "Lesson")
+        return normalize_lesson(
             {
-                "summary": str(lesson.get("summary") or ""),
-                "learning_outcomes": [],
-                "notes_markdown": (
-                    f"## {lesson.get('title')}\n\n"
-                    f"Study notes could not be generated for this lesson ({error}). "
-                    "Use Regenerate content to retry.\n"
-                ),
-                "key_terms": [],
-                "examples": [],
-                "practice_prompts": [],
-            }
+                **lesson,
+                "title": title,
+                "overview": str(lesson.get("summary") or ""),
+                "sections": [
+                    {
+                        "title": title,
+                        "content_markdown": (
+                            f"Study notes could not be generated for this lesson ({error}). "
+                            "Use Regenerate content to retry."
+                        ),
+                        "key_points": [],
+                        "sources": [],
+                    }
+                ],
+            },
+            index=int(lesson.get("lesson") or 1),
         )
-        return updated
 
     def fill_one(index: int, lesson: dict[str, Any]) -> tuple[int, dict[str, Any], str | None]:
         nonlocal done_count
@@ -500,12 +605,11 @@ def generate_chapter_content(
                 source_text=source_text,
                 pinned_key=key,
             )
-            updated = dict(lesson)
-            updated.update(notes)
-            if not updated.get("notes_markdown"):
-                updated["notes_markdown"] = (
-                    f"## {updated.get('title')}\n\n"
-                    f"{updated.get('summary') or 'Study notes could not be generated. Regenerate this chapter.'}\n"
+            updated = normalize_lesson({**lesson, **notes}, index=index + 1)
+            if not lesson_has_content(updated):
+                updated = placeholder_lesson(
+                    lesson,
+                    "empty structured content",
                 )
             with progress_lock:
                 done_count += 1
@@ -528,7 +632,6 @@ def generate_chapter_content(
             else:
                 filled_by_index[idx] = filled
 
-    # One serial retry for failed lessons (often helps after parallel rate/truncation pressure).
     still_failed: list[tuple[int, dict[str, Any], str]] = []
     for idx, lesson, err in failed:
         report(f"Retrying notes {idx + 1}/{total}: {lesson.get('title')}")
@@ -540,9 +643,8 @@ def generate_chapter_content(
                 source_text=source_text,
                 pinned_key=pool[idx % len(pool)],
             )
-            updated = dict(lesson)
-            updated.update(notes)
-            if not updated.get("notes_markdown"):
+            updated = normalize_lesson({**lesson, **notes}, index=idx + 1)
+            if not lesson_has_content(updated):
                 raise ValueError("Empty notes after retry")
             filled_by_index[idx] = updated
             with progress_lock:
@@ -580,14 +682,25 @@ def _notes_excerpts(chapter: dict[str, Any], *, per_lesson: int = 1200, total_ca
     parts: list[str] = []
     used = 0
     for lesson in chapter_lessons(chapter):
-        title = str(lesson.get("title") or "Lesson")
-        notes = str(lesson.get("notes_markdown") or "").strip()
-        if not notes:
-            summary = str(lesson.get("summary") or "").strip()
+        normalized = normalize_lesson(lesson if isinstance(lesson, dict) else {})
+        title = str(normalized.get("title") or "Lesson")
+        chunks: list[str] = []
+        overview = str(normalized.get("overview") or "").strip()
+        if overview:
+            chunks.append(overview)
+        for section in normalized.get("sections") or []:
+            if not isinstance(section, dict):
+                continue
+            body = str(section.get("content_markdown") or "").strip()
+            if body:
+                chunks.append(f"## {section.get('title') or 'Section'}\n{body}")
+        text = "\n\n".join(chunks).strip()
+        if not text:
+            summary = str(normalized.get("summary") or "").strip()
             if summary:
                 parts.append(f"### {title}\n{summary}")
             continue
-        excerpt = notes[:per_lesson]
+        excerpt = text[:per_lesson]
         chunk = f"### {title}\n{excerpt}"
         if used + len(chunk) > total_cap:
             break

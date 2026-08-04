@@ -34,6 +34,7 @@ from app.schemas.classroom_course import (
 )
 from app.services.classroom_course_builder import start_job
 from app.services import groq_course
+from app.services.lesson_schema import lesson_has_content, normalize_lesson
 from app.services.youtube import extract_youtube_id
 
 router = APIRouter(tags=["course-builder"])
@@ -117,26 +118,34 @@ def _course_out(
         for idx, st in enumerate(lessons_raw, start=1):
             if not isinstance(st, dict):
                 continue
-            title = str(st.get("title") or f"Lesson {idx}")
-            needs = st.get("needs_video")
+            normalized = normalize_lesson(st, index=idx)
+            title = str(normalized.get("title") or f"Lesson {idx}")
+            needs = normalized.get("needs_video")
             needs_video = groq_course.infer_needs_video(
                 title,
                 needs if isinstance(needs, bool) else None,
             )
             lessons.append(
                 LessonOut(
-                    lesson=int(st.get("lesson") or idx),
+                    lesson=int(normalized.get("lesson") or idx),
                     title=title,
-                    summary=str(st.get("summary") or ""),
-                    learning_outcomes=_as_str_list(st.get("learning_outcomes")),
-                    notes_markdown=str(st.get("notes_markdown") or ""),
-                    key_terms=_as_str_list(st.get("key_terms")),
-                    examples=_as_str_list(st.get("examples")),
-                    practice_prompts=_as_str_list(st.get("practice_prompts")),
+                    overview=str(normalized.get("overview") or ""),
+                    learning_objectives=list(normalized.get("learning_objectives") or []),
+                    prerequisites=list(normalized.get("prerequisites") or []),
+                    sections=list(normalized.get("sections") or []),
+                    examples=list(normalized.get("examples") or []),
+                    real_world_applications=list(normalized.get("real_world_applications") or []),
+                    common_misconceptions=list(normalized.get("common_misconceptions") or []),
+                    key_terms=list(normalized.get("key_terms") or []),
+                    summary=str(normalized.get("summary") or ""),
+                    references=list(normalized.get("references") or []),
+                    learning_outcomes=list(normalized.get("learning_objectives") or []),
+                    notes_markdown="",
+                    practice_prompts=[],
                     needs_video=needs_video,
-                    youtube_video_id=st.get("youtube_video_id"),
-                    youtube_title=st.get("youtube_title"),
-                    youtube_url=st.get("youtube_url"),
+                    youtube_video_id=normalized.get("youtube_video_id"),
+                    youtube_title=normalized.get("youtube_title"),
+                    youtube_url=normalized.get("youtube_url"),
                 )
             )
         flashcards = []
@@ -178,7 +187,9 @@ def _course_out(
                 quiz=[] if locked_for_viewer else quiz,
                 is_unlocked=unlocked,
                 is_locked_for_viewer=locked_for_viewer,
-                content_ready=bool(lessons_raw),
+                content_ready=any(
+                    lesson_has_content(st) for st in lessons_raw if isinstance(st, dict)
+                ),
                 quiz_ready=bool(ch.get("quiz")),
             )
         )

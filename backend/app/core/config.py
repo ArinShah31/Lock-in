@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     groq_api_key_notes: str = ""
     groq_api_key_quiz: str = ""
     groq_model: str = "llama-3.1-8b-instant"
+    gemini_api_key_notes_1: str = ""
+    gemini_api_key_notes_2: str = ""
+    gemini_api_key_notes_3: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     youtube_api_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
@@ -46,9 +50,17 @@ class Settings(BaseSettings):
                 keys.append(key)
         return keys
 
-    def groq_keys_for_notes_pool(self) -> list[str]:
-        """All configured Groq keys for parallel lesson-note workers."""
-        return self._all_groq_keys()
+    def gemini_keys_for_notes_pool(self) -> list[str]:
+        """Gemini keys for parallel lesson-note workers."""
+        keys: list[str] = []
+        for key in (
+            self.gemini_api_key_notes_1.strip(),
+            self.gemini_api_key_notes_2.strip(),
+            self.gemini_api_key_notes_3.strip(),
+        ):
+            if key and key not in keys:
+                keys.append(key)
+        return keys
 
 
 settings = Settings()

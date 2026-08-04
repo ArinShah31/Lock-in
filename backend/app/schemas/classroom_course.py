@@ -1,17 +1,70 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+SourceType = Literal[
+    "official_documentation",
+    "academic_paper",
+    "textbook",
+    "government_source",
+    "reputable_website",
+    "technical_article",
+    "other",
+]
+
+
+class SourceOut(BaseModel):
+    title: str = ""
+    url: str = ""
+    source_type: SourceType = "other"
+
+
+class SectionOut(BaseModel):
+    title: str
+    content_markdown: str = ""
+    key_points: list[str] = Field(default_factory=list)
+    sources: list[SourceOut] = Field(default_factory=list)
+
+
+class ExampleOut(BaseModel):
+    title: str = "Example"
+    context: str = ""
+    content_markdown: str = ""
+    takeaway: str = ""
+
+
+class ApplicationOut(BaseModel):
+    title: str = "Application"
+    description: str = ""
+
+
+class MisconceptionOut(BaseModel):
+    misconception: str
+    correction: str
+
+
+class KeyTermOut(BaseModel):
+    term: str
+    definition: str = ""
 
 
 class LessonOut(BaseModel):
     lesson: int = 1
     title: str
+    overview: str = ""
+    learning_objectives: list[str] = Field(default_factory=list)
+    prerequisites: list[str] = Field(default_factory=list)
+    sections: list[SectionOut] = Field(default_factory=list)
+    examples: list[ExampleOut] = Field(default_factory=list)
+    real_world_applications: list[ApplicationOut] = Field(default_factory=list)
+    common_misconceptions: list[MisconceptionOut] = Field(default_factory=list)
+    key_terms: list[KeyTermOut] = Field(default_factory=list)
     summary: str = ""
+    references: list[SourceOut] = Field(default_factory=list)
+    # Legacy aliases (empty / mirrored for older clients)
     learning_outcomes: list[str] = Field(default_factory=list)
     notes_markdown: str = ""
-    key_terms: list[str] = Field(default_factory=list)
-    examples: list[str] = Field(default_factory=list)
     practice_prompts: list[str] = Field(default_factory=list)
     needs_video: bool = True
     youtube_video_id: str | None = None

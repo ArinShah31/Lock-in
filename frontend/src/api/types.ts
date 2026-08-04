@@ -171,15 +171,57 @@ export function uploadFileUrl(filePath: string | null | undefined): string | nul
   return `${origin}/${filePath.replace(/^\/+/, "")}`;
 }
 
+export type CourseSource = {
+  title: string;
+  url: string;
+  source_type: string;
+};
+
+export type CourseSection = {
+  title: string;
+  content_markdown: string;
+  key_points: string[];
+  sources: CourseSource[];
+};
+
+export type CourseExample = {
+  title: string;
+  context: string;
+  content_markdown: string;
+  takeaway: string;
+};
+
+export type CourseApplication = {
+  title: string;
+  description: string;
+};
+
+export type CourseMisconception = {
+  misconception: string;
+  correction: string;
+};
+
+export type CourseKeyTerm = {
+  term: string;
+  definition: string;
+};
+
 export type CourseLesson = {
   lesson: number;
   title: string;
+  overview: string;
+  learning_objectives: string[];
+  prerequisites: string[];
+  sections: CourseSection[];
+  examples: CourseExample[];
+  real_world_applications: CourseApplication[];
+  common_misconceptions: CourseMisconception[];
+  key_terms: CourseKeyTerm[];
   summary: string;
-  learning_outcomes: string[];
-  notes_markdown: string;
-  key_terms: string[];
-  examples: string[];
-  practice_prompts: string[];
+  references: CourseSource[];
+  learning_outcomes?: string[];
+  notes_markdown?: string;
+  practice_prompts?: string[];
   needs_video: boolean;
   youtube_video_id: string | null;
   youtube_title: string | null;
