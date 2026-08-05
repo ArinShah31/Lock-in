@@ -192,3 +192,18 @@ export const subjectsApi = {
     body: { title: string; material_type?: string; file_url?: string; content_text?: string },
   ) => api<SubjectMaterial>(`/subjects/${id}/materials`, { method: "POST", body: JSON.stringify(body) }),
 };
+
+export type ChatResponse = {
+  document_answer: string;
+  additional_explanation?: string;
+  used_document: boolean;
+  used_general_knowledge: boolean;
+};
+
+export const aiApi = {
+  chat: (body: { classroom_id: number; question: string }) =>
+    api<ChatResponse>("/ai/chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};

@@ -1,13 +1,14 @@
 from google import genai
-
 from app.core.config import settings
 
-client = genai.Client(
-    api_key=settings.gemini_api_key
-)
+
+def get_client():
+    api_key = settings.gemini_api_key or "DUMMY_KEY"
+    return genai.Client(api_key=api_key)
 
 
 def generate_embedding(text: str):
+    client = get_client()
     response = client.models.embed_content(
         model=settings.gemini_embedding_model,
         contents=text,

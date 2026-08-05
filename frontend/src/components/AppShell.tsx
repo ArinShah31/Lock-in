@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { aiApi } from "../api";
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -45,6 +46,7 @@ export function AppShell() {
 
   // Local RAG Chat State for Student Course Builder AI Dock
   const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "assistant" | "user"; text: string }>>([
     {
       role: "assistant",
@@ -58,23 +60,44 @@ export function AppShell() {
     if (classroomsSection) setClassroomsOpen(true);
   }, [classroomsSection]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || chatLoading) return;
 
     const userText = chatInput.trim();
     setChatMessages((prev) => [...prev, { role: "user", text: userText }]);
     setChatInput("");
+    setChatLoading(true);
 
-    setTimeout(() => {
+    const match = location.pathname.match(/\/classrooms\/(\d+)/);
+    const classroomId = match ? Number(match[1]) : 1;
+
+    try {
+      const res = await aiApi.chat({
+        classroom_id: classroomId,
+        question: userText,
+      });
+
+      let answerText = res.document_answer || "";
+      if (res.additional_explanation) {
+        answerText += `\n\n📌 Note: ${res.additional_explanation}`;
+      }
+      if (!answerText) {
+        answerText = "No relevant context found in the uploaded classroom documents.";
+      }
+
+      setChatMessages((prev) => [...prev, { role: "assistant", text: answerText }]);
+    } catch (err: any) {
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          text: `RAG Pipeline Response [Source Document Context]: Analyzing classroom documents for "${userText}". (Full vector search integration ready upon branch merge).`,
+          text: err?.message || "Could not fetch RAG response. Please verify backend AI service.",
         },
       ]);
-    }, 600);
+    } finally {
+      setChatLoading(false);
+    }
   };
 
   const flatLinks: FlatLink[] = [
@@ -426,10 +449,13 @@ export function AppShell() {
               />
               <button
                 type="submit"
-                className="bg-[#4f46e5] text-white p-2 rounded-lg hover:bg-[#4338ca] transition-all shadow-xs flex items-center justify-center"
+                disabled={chatLoading}
+                className="bg-[#4f46e5] text-white p-2 rounded-lg hover:bg-[#4338ca] transition-all shadow-xs flex items-center justify-center disabled:opacity-50"
                 title="Send Message"
               >
-                <span className="material-symbols-outlined text-sm">send</span>
+                <span className={`material-symbols-outlined text-sm ${chatLoading ? "animate-spin" : ""}`}>
+                  {chatLoading ? "sync" : "send"}
+                </span>
               </button>
             </form>
           </div>
