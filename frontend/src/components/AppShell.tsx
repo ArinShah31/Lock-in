@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { aiApi, codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
-import { aiApi } from "../api";
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -26,6 +27,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const isTeacher = user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
   const isStudent = user?.role === "STUDENT";
+  const showCodingTab = isTeacher || isStudent;
 
   const classroomsSection =
     location.pathname === "/classrooms" || location.pathname.startsWith("/classrooms/");
@@ -39,6 +41,14 @@ export function AppShell() {
 
   const [classroomsOpen, setClassroomsOpen] = useState(classroomsSection);
   const [agentDockOpen, setAgentDockOpen] = useState(true);
+
+  const codingAccess = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+    enabled: showCodingTab,
+    staleTime: 30_000,
+  });
+  const codingEnabled = codingAccess.data?.enabled === true;
 
   // Auto-hide Left Sidebar States (Windows Taskbar style)
   const [sidebarPinned, setSidebarPinned] = useState(false);
@@ -132,6 +142,12 @@ export function AppShell() {
       label: "Subjects",
       icon: "menu_book",
       show: user?.role !== "SUPER_ADMIN" && user?.role !== "STUDENT",
+    },
+    {
+      to: "/coding",
+      label: codingEnabled ? "Coding" : "Coding (off)",
+      icon: "code",
+      show: showCodingTab,
     },
   ].filter((l) => l.show);
 

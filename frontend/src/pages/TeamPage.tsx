@@ -134,8 +134,8 @@ export function TeamPage() {
       <ErrorText message={error} />
 
       <Panel className="mb-6">
-        <h2 className="mb-1 font-display text-xl text-paper">{createTitle}</h2>
-        <p className="mb-4 text-sm text-mist">{createHint}</p>
+        <h2 className="mb-1 font-display text-xl text-[#031635]">{createTitle}</h2>
+        <p className="mb-4 text-sm text-[#44474e]">{createHint}</p>
         <FormGrid onSubmit={onSubmit}>
           <Field label="Full name">
             <input
@@ -205,7 +205,7 @@ export function TeamPage() {
       </Panel>
 
       <Panel>
-        <h2 className="mb-4 font-display text-xl text-paper">Team members</h2>
+        <h2 className="mb-4 font-display text-xl text-[#031635]">Team members</h2>
         {!members.data?.length ? (
           <EmptyState title="No members yet" body="Created accounts will appear here." />
         ) : (
@@ -215,18 +215,18 @@ export function TeamPage() {
               return (
                 <li
                   key={m.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e1e3e4] px-3 py-2 text-sm"
                 >
                   <div>
-                    <span className="font-medium text-paper">{m.full_name}</span>
-                    <span className="text-mist">
+                    <span className="font-medium text-[#031635]">{m.full_name}</span>
+                    <span className="text-[#44474e]">
                       {" "}
                       · {m.email} · {roleLabel[m.role] ?? m.role}
                       {m.department_id ? ` · Dept ${m.department_id}` : ""}
                     </span>
                   </div>
                   {user?.role === "HOD" && isTeacher ? (
-                    <label className="flex items-center gap-2 text-xs text-mist">
+                    <label className="flex items-center gap-2 text-xs text-[#44474e]">
                       <span>Coding platform</span>
                       <input
                         type="checkbox"

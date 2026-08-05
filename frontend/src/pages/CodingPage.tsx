@@ -121,7 +121,7 @@ export function CodingPage() {
         <PageHeader title="Coding" subtitle="Opening your coding workspace…" />
         <Panel>
           <ErrorText message={ssoError} />
-          <p className="text-sm text-mist">
+          <p className="text-sm text-[#44474e]">
             {redirecting ? "Redirecting to the coding platform…" : "Waiting…"}
           </p>
         </Panel>
@@ -355,7 +355,7 @@ function TeacherCodingWorkspace() {
             type="button"
             onClick={() => setTab(t)}
             className={`rounded-xl px-3 py-1.5 text-sm capitalize ${
-              tab === t ? "bg-accent text-ink" : "border border-line text-mist"
+              tab === t ? "bg-[#031635] text-white" : "border border-[#e1e3e4] text-[#44474e]"
             }`}
           >
             {t}
@@ -366,7 +366,7 @@ function TeacherCodingWorkspace() {
       {tab === "bank" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <Panel>
-            <h2 className="mb-4 font-display text-xl text-paper">New question</h2>
+            <h2 className="mb-4 font-display text-xl text-[#031635]">New question</h2>
             <form
               className="flex flex-col gap-4"
               onSubmit={(e: FormEvent) => {
@@ -446,15 +446,15 @@ function TeacherCodingWorkspace() {
             </form>
           </Panel>
           <Panel>
-            <h2 className="mb-4 font-display text-xl text-paper">Question bank</h2>
+            <h2 className="mb-4 font-display text-xl text-[#031635]">Question bank</h2>
             {!questions.data?.length ? (
               <EmptyState title="No questions yet" body="Create your first coding question." />
             ) : (
               <ul className="space-y-2">
                 {questions.data.map((q) => (
-                  <li key={q.id} className="rounded-xl border border-line px-3 py-2 text-sm">
-                    <div className="font-medium text-paper">{q.title}</div>
-                    <div className="text-mist">
+                  <li key={q.id} className="rounded-xl border border-[#e1e3e4] px-3 py-2 text-sm">
+                    <div className="font-medium text-[#031635]">{q.title}</div>
+                    <div className="text-[#44474e]">
                       #{q.id} · {q.language} · {q.difficulty} · {q.question_type}
                     </div>
                   </li>
@@ -468,7 +468,7 @@ function TeacherCodingWorkspace() {
       {tab === "tests" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <Panel>
-            <h2 className="mb-4 font-display text-xl text-paper">Create test (E→M→H)</h2>
+            <h2 className="mb-4 font-display text-xl text-[#031635]">Create test (E→M→H)</h2>
             <form
               className="flex flex-col gap-4"
               onSubmit={(e: FormEvent) => {
@@ -533,8 +533,8 @@ function TeacherCodingWorkspace() {
             </form>
           </Panel>
           <Panel>
-            <h2 className="mb-3 font-display text-xl text-paper">Your tests</h2>
-            {assignMsg ? <p className="mb-3 text-sm text-accent">{assignMsg}</p> : null}
+            <h2 className="mb-3 font-display text-xl text-[#031635]">Your tests</h2>
+            {assignMsg ? <p className="mb-3 text-sm text-[#031635]">{assignMsg}</p> : null}
             {!tests.data?.length ? (
               <EmptyState title="No tests yet" body="Build a progressive 3-question test." />
             ) : (
@@ -542,15 +542,15 @@ function TeacherCodingWorkspace() {
                 {tests.data.map((t) => {
                   const selectedClassroomId = classroomByTest[t.id] || 0;
                   return (
-                    <li key={t.id} className="rounded-xl border border-line p-3 text-sm">
-                      <div className="font-medium text-paper">{t.title}</div>
-                      <div className="text-mist">
-                        Invite <span className="text-accent">{t.invite_code}</span> · {t.duration_minutes}{" "}
+                    <li key={t.id} className="rounded-xl border border-[#e1e3e4] p-3 text-sm">
+                      <div className="font-medium text-[#031635]">{t.title}</div>
+                      <div className="text-[#44474e]">
+                        Invite <span className="text-[#031635]">{t.invite_code}</span> · {t.duration_minutes}{" "}
                         min · {t.is_published_results ? "results published" : "results private"}
                       </div>
                       <div className="mt-3 flex flex-col gap-2">
                         <label className="block space-y-1.5">
-                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-mist">
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#44474e]">
                             Classroom
                           </span>
                           <select
@@ -578,7 +578,7 @@ function TeacherCodingWorkspace() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            className="rounded-xl border border-line px-3 py-2 text-mist disabled:opacity-50"
+                            className="rounded-xl border border-[#e1e3e4] px-3 py-2 text-[#44474e] disabled:opacity-50"
                             disabled={!selectedClassroomId || assignClassroom.isPending}
                             onClick={() => {
                               setError(null);
@@ -593,7 +593,7 @@ function TeacherCodingWorkspace() {
                           </button>
                           <button
                             type="button"
-                            className="rounded-xl border border-line px-3 py-2 text-mist"
+                            className="rounded-xl border border-[#e1e3e4] px-3 py-2 text-[#44474e]"
                             onClick={() => {
                               setSelectedTestId(t.id);
                               setTab("results");
@@ -604,7 +604,7 @@ function TeacherCodingWorkspace() {
                           {!t.is_published_results ? (
                             <button
                               type="button"
-                              className="rounded-xl bg-accent px-3 py-2 font-semibold text-ink"
+                              className="rounded-xl bg-[#031635] px-3 py-2 font-semibold text-white"
                               onClick={() => publish.mutate(t.id)}
                             >
                               Publish
@@ -624,7 +624,7 @@ function TeacherCodingWorkspace() {
       {tab === "results" ? (
         <Panel>
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <h2 className="font-display text-xl text-paper">Attempts</h2>
+            <h2 className="font-display text-xl text-[#031635]">Attempts</h2>
             <select
               className={inputClass}
               value={selectedTestId ?? ""}
@@ -639,11 +639,11 @@ function TeacherCodingWorkspace() {
             </select>
           </div>
           {(attempts.data || []).map((a) => (
-            <div key={a.assignment_id} className="mb-3 rounded-xl border border-line p-3 text-sm">
-              <div className="font-medium text-paper">
+            <div key={a.assignment_id} className="mb-3 rounded-xl border border-[#e1e3e4] p-3 text-sm">
+              <div className="font-medium text-[#031635]">
                 {a.student_name} · {a.student_email}
               </div>
-              <div className="text-mist">
+              <div className="text-[#44474e]">
                 {a.session_status || "not started"} · violations {a.violation_score ?? 0} · avg{" "}
                 {a.average_score ?? "—"}
               </div>
@@ -653,28 +653,28 @@ function TeacherCodingWorkspace() {
                   const codeOpen = openCodeKey === codeKey;
                   const isEditing = editingEvalId != null && editingEvalId === ev.eval_run_id;
                   return (
-                    <div key={codeKey} className="rounded-lg border border-line/80 bg-ink-soft/40 p-3">
+                    <div key={codeKey} className="rounded-lg border border-[#e1e3e4]/80 bg-[#f8f9fa] p-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                          <div className="font-medium text-paper">
+                          <div className="font-medium text-[#031635]">
                             {ev.question_title}{" "}
-                            <span className="text-xs font-normal text-mist">
+                            <span className="text-xs font-normal text-[#44474e]">
                               ({ev.difficulty}
                               {ev.language ? ` · ${ev.language}` : ""})
                             </span>
                           </div>
-                          <div className="mt-1 text-mist">
+                          <div className="mt-1 text-[#44474e]">
                             Score {ev.total_score} · {ev.verdict}
                             {ev.scores?.teacher_override ? (
                               <span className="ml-2 text-xs text-amber-300">teacher edited</span>
                             ) : null}
                           </div>
-                          {!isEditing ? <p className="mt-1 text-mist">{ev.feedback}</p> : null}
+                          {!isEditing ? <p className="mt-1 text-[#44474e]">{ev.feedback}</p> : null}
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            className="rounded-lg border border-line px-3 py-1 text-xs text-mist"
+                            className="rounded-lg border border-[#e1e3e4] px-3 py-1 text-xs text-[#44474e]"
                             onClick={() => setOpenCodeKey(codeOpen ? null : codeKey)}
                           >
                             {codeOpen ? "Hide code" : "View code"}
@@ -682,7 +682,7 @@ function TeacherCodingWorkspace() {
                           {ev.eval_run_id ? (
                             <button
                               type="button"
-                              className="rounded-lg bg-accent/20 px-3 py-1 text-xs text-accent"
+                              className="rounded-lg bg-[#031635]/10 px-3 py-1 text-xs text-[#031635]"
                               onClick={() => (isEditing ? setEditingEvalId(null) : startEdit(ev))}
                             >
                               {isEditing ? "Cancel" : "Edit result"}
@@ -691,13 +691,13 @@ function TeacherCodingWorkspace() {
                         </div>
                       </div>
                       {codeOpen ? (
-                        <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-line bg-ink p-3 text-xs text-paper whitespace-pre-wrap">
+                        <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-[#e1e3e4] bg-[#191c1d] p-3 text-xs text-white whitespace-pre-wrap">
                           {ev.code?.trim() ? ev.code : "(no code submitted)"}
                         </pre>
                       ) : null}
                       {isEditing ? (
                         <form
-                          className="mt-3 grid gap-2 rounded-lg border border-line p-3"
+                          className="mt-3 grid gap-2 rounded-lg border border-[#e1e3e4] p-3"
                           onSubmit={(e) => {
                             e.preventDefault();
                             if (!ev.eval_run_id) return;
@@ -751,7 +751,7 @@ function TeacherCodingWorkspace() {
                     </div>
                   );
                 })}
-                {!a.evals.length ? <p className="text-mist">No graded submissions yet.</p> : null}
+                {!a.evals.length ? <p className="text-[#44474e]">No graded submissions yet.</p> : null}
               </div>
             </div>
           ))}
