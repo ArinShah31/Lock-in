@@ -19,6 +19,7 @@ from app.schemas.assignment import (
     AssignmentOut,
     AssignmentSubmissionOut,
     GradeSubmissionRequest,
+    StudentAssignmentFeedItem,
 )
 
 router = APIRouter(tags=["assignments"])
@@ -189,6 +190,91 @@ async def create_assignment(
     db.commit()
     db.refresh(assignment)
     return _assignment_out(assignment, submitted_count=0, graded_count=0)
+
+
+def _normalize_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+@router.get("/me/assignments", response_model=list[StudentAssignmentFeedItem])
+def list_my_assignments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Student feed of assignments across all enrolled classrooms."""
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only students can view the assignment feed",
+        )
+
+    memberships = (
+        db.query(ClassroomStudent.classroom_id, Classroom.name)
+        .join(Classroom, Classroom.id == ClassroomStudent.classroom_id)
+        .filter(
+            ClassroomStudent.student_id == current_user.id,
+            ClassroomStudent.status == MembershipStatus.APPROVED,
+            ClassroomStudent.is_active.is_(True),
+            Classroom.is_active.is_(True),
+        )
+        .all()
+    )
+    if not memberships:
+        return []
+
+    classroom_names = {row.classroom_id: row.name for row in memberships}
+    classroom_ids = list(classroom_names.keys())
+
+    assignments = (
+        db.query(Assignment)
+        .filter(
+            Assignment.classroom_id.in_(classroom_ids),
+            Assignment.is_active.is_(True),
+        )
+        .order_by(Assignment.due_at.asc())
+        .limit(50)
+        .all()
+    )
+    if not assignments:
+        return []
+
+    assignment_ids = [a.id for a in assignments]
+    submissions = (
+        db.query(AssignmentSubmission)
+        .filter(
+            AssignmentSubmission.assignment_id.in_(assignment_ids),
+            AssignmentSubmission.student_id == current_user.id,
+        )
+        .all()
+    )
+    submission_by_assignment = {s.assignment_id: s for s in submissions}
+
+    now = datetime.now(timezone.utc)
+    items: list[StudentAssignmentFeedItem] = []
+    for assignment in assignments:
+        sub = submission_by_assignment.get(assignment.id)
+        my_submission = _submission_out(sub, current_user) if sub else None
+        due = _normalize_utc(assignment.due_at)
+        is_overdue = sub is None and due < now
+        base = _assignment_out(assignment, my_submission=my_submission)
+        items.append(
+            StudentAssignmentFeedItem(
+                **base.model_dump(),
+                classroom_name=classroom_names.get(assignment.classroom_id, "Classroom"),
+                is_overdue=is_overdue,
+            )
+        )
+
+    # Overdue first (oldest due), then the rest by due_at ascending
+    items.sort(
+        key=lambda item: (
+            0 if item.is_overdue else 1,
+            _normalize_utc(item.due_at),
+        )
+    )
+    return items
 
 
 @router.get("/classrooms/{classroom_id}/assignments", response_model=list[AssignmentOut])

@@ -50,4 +50,12 @@ class GradeSubmissionRequest(BaseModel):
     feedback: str | None = None
 
 
+class StudentAssignmentFeedItem(AssignmentOut):
+    """Cross-classroom assignment row for the student home tracker."""
+
+    classroom_name: str
+    is_overdue: bool = False
+
+
 AssignmentOut.model_rebuild()
+StudentAssignmentFeedItem.model_rebuild()

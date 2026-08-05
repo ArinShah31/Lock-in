@@ -164,6 +164,11 @@ export type Assignment = {
   my_submission?: AssignmentSubmission | null;
 };
 
+export type StudentAssignmentFeedItem = Assignment & {
+  classroom_name: string;
+  is_overdue: boolean;
+};
+
 export function uploadFileUrl(filePath: string | null | undefined): string | null {
   if (!filePath) return null;
   if (filePath.startsWith("http")) return filePath;
