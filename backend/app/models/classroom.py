@@ -104,6 +104,13 @@ class Classroom(Base):
         cascade="all, delete-orphan",
     )
 
+    course = relationship(
+        "ClassroomCourse",
+        back_populates="classroom",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
     subjects = relationship(
         "Subject",
         back_populates="classroom",

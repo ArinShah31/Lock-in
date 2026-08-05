@@ -164,9 +164,128 @@ export type Assignment = {
   my_submission?: AssignmentSubmission | null;
 };
 
+export type StudentAssignmentFeedItem = Assignment & {
+  classroom_name: string;
+  is_overdue: boolean;
+};
+
 export function uploadFileUrl(filePath: string | null | undefined): string | null {
   if (!filePath) return null;
   if (filePath.startsWith("http")) return filePath;
   const origin = import.meta.env.VITE_API_ORIGIN ?? "http://127.0.0.1:8000";
   return `${origin}/${filePath.replace(/^\/+/, "")}`;
 }
+
+export type CourseSource = {
+  title: string;
+  url: string;
+  source_type: string;
+};
+
+export type CourseSection = {
+  title: string;
+  content_markdown: string;
+  key_points: string[];
+  sources: CourseSource[];
+};
+
+export type CourseExample = {
+  title: string;
+  context: string;
+  content_markdown: string;
+  takeaway: string;
+};
+
+export type CourseApplication = {
+  title: string;
+  description: string;
+};
+
+export type CourseMisconception = {
+  misconception: string;
+  correction: string;
+};
+
+export type CourseKeyTerm = {
+  term: string;
+  definition: string;
+};
+
+export type CourseLesson = {
+  lesson: number;
+  title: string;
+  overview: string;
+  learning_objectives: string[];
+  prerequisites: string[];
+  sections: CourseSection[];
+  examples: CourseExample[];
+  real_world_applications: CourseApplication[];
+  common_misconceptions: CourseMisconception[];
+  key_terms: CourseKeyTerm[];
+  summary: string;
+  references: CourseSource[];
+  learning_outcomes?: string[];
+  notes_markdown?: string;
+  practice_prompts?: string[];
+  needs_video: boolean;
+  youtube_video_id: string | null;
+  youtube_title: string | null;
+  youtube_url: string | null;
+};
+
+export type CourseFlashcard = {
+  question: string;
+  answer: string;
+  topic?: string;
+};
+
+export type CourseQuizQuestion = {
+  question: string;
+  options: string[];
+  correct_answer: string;
+  explanation?: string;
+};
+
+export type CourseChapter = {
+  chapter: number;
+  title: string;
+  summary: string;
+  timeline: string;
+  objectives: string[];
+  topics: string[];
+  activities: string[];
+  lessons: CourseLesson[];
+  subtopics?: CourseLesson[];
+  flashcards: CourseFlashcard[];
+  quiz: CourseQuizQuestion[];
+  is_unlocked: boolean;
+  is_locked_for_viewer: boolean;
+  content_ready: boolean;
+  quiz_ready: boolean;
+};
+
+export type ClassroomCourse = {
+  id: number;
+  classroom_id: number;
+  title: string;
+  syllabus_file_name: string | null;
+  source_content_ids: number[];
+  is_published: boolean;
+  chapters: CourseChapter[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type CourseBuildJob = {
+  id: number;
+  classroom_id: number;
+  course_id: number;
+  stage: string;
+  chapter_number: number | null;
+  subtopic_index: number | null;
+  status: string;
+  progress_message: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
