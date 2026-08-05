@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     youtube_api_key: str = ""
 
+    # Coding platform integration
+    coding_platform_api_url: str = "http://127.0.0.1:8011/api/v1"
+    coding_platform_frontend_url: str = "http://127.0.0.1:5180"
+    coding_sync_secret: str = "change_me_coding_sync_secret"
+    coding_sso_secret: str = "change_me_coding_sso_secret"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     def _all_groq_keys(self) -> list[str]:

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 
 const roleLabel: Record<string, string> = {
@@ -23,13 +25,22 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const isTeacher = user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
+  const showCodingTab = isTeacher || user?.role === "STUDENT";
   const classroomsSection =
     location.pathname === "/classrooms" || location.pathname.startsWith("/classrooms/");
   const onYourClassrooms =
     location.pathname === "/classrooms" || /^\/classrooms\/\d+(\/.*)?$/.test(location.pathname);
   const onCreateClassroom = location.pathname === "/classrooms/new";
+  const onCoding = location.pathname === "/coding" || location.pathname.startsWith("/coding/");
 
   const [classroomsOpen, setClassroomsOpen] = useState(classroomsSection);
+
+  const codingAccess = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+    enabled: showCodingTab,
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (classroomsSection) setClassroomsOpen(true);
@@ -77,12 +88,41 @@ export function AppShell() {
     }`;
   }
 
+  const codingEnabled = codingAccess.data?.enabled === true;
+  const codingDisabledHint =
+    codingAccess.data?.reason || "Ask your HOD to enable the coding platform.";
+
+  const [codingLaunchError, setCodingLaunchError] = useState<string | null>(null);
+  const [codingLaunching, setCodingLaunching] = useState(false);
+
+  async function launchStudentCoding() {
+    setCodingLaunchError(null);
+    if (!codingEnabled) {
+      navigate("/coding");
+      return;
+    }
+    setCodingLaunching(true);
+    try {
+      const { token, frontend_url } = await codingPlatformApi.ssoToken();
+      window.location.assign(`${frontend_url}/sso?token=${encodeURIComponent(token)}`);
+    } catch (e) {
+      setCodingLaunching(false);
+      const message = e instanceof Error ? e.message : "Could not open coding platform";
+      setCodingLaunchError(message);
+      sessionStorage.setItem("coding_launch_error", message);
+      navigate("/coding");
+    }
+  }
+
   const mobileLinks: { to: string; label: string; end?: boolean }[] = [
     ...flatLinks.map((l) => ({ to: l.to, label: l.label, end: l.end })),
   ];
   if (isTeacher) {
     mobileLinks.push({ to: "/classrooms", label: "Your classrooms", end: true });
     mobileLinks.push({ to: "/classrooms/new", label: "Create classroom" });
+  }
+  if (showCodingTab) {
+    mobileLinks.push({ to: "/coding", label: codingEnabled ? "Coding" : "Coding (off)" });
   }
 
   return (
@@ -163,6 +203,45 @@ export function AppShell() {
                       </NavLink>
                     </li>
                   </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showCodingTab ? (
+              <div>
+                {user?.role === "STUDENT" ? (
+                  <button
+                    type="button"
+                    className={topLinkClass(onCoding || codingLaunching)}
+                    disabled={codingLaunching}
+                    onClick={() => void launchStudentCoding()}
+                  >
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span>{codingLaunching ? "Opening coding…" : "Coding"}</span>
+                      {!codingEnabled ? (
+                        <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-mist">
+                          Off
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                ) : (
+                  <NavLink to="/coding" className={topLinkClass(onCoding)}>
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span>Coding</span>
+                      {!codingEnabled ? (
+                        <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-mist">
+                          Off
+                        </span>
+                      ) : null}
+                    </span>
+                  </NavLink>
+                )}
+                {!codingEnabled && onCoding ? (
+                  <p className="mt-1 px-3 text-[11px] leading-snug text-mist/90">{codingDisabledHint}</p>
+                ) : null}
+                {codingLaunchError ? (
+                  <p className="mt-1 px-3 text-[11px] leading-snug text-red-300">{codingLaunchError}</p>
                 ) : null}
               </div>
             ) : null}

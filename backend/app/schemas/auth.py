@@ -33,10 +33,15 @@ class UserOut(BaseModel):
     email: EmailStr
     role: UserRole
     is_active: bool
+    coding_platform_enabled: bool = False
     institution_id: int | None = None
     department_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CodingPlatformToggleRequest(BaseModel):
+    enabled: bool
 
 
 class AuthResponse(BaseModel):

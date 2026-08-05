@@ -243,6 +243,23 @@ export const usersApi = {
     institution_id?: number | null;
     department_id?: number | null;
   }) => api<User>("/users", { method: "POST", body: JSON.stringify(body) }),
+  setCodingPlatform: (userId: number, enabled: boolean) =>
+    api<User>(`/users/${userId}/coding-platform`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+};
+
+export const codingPlatformApi = {
+  access: () =>
+    api<{ enabled: boolean; reason: string | null; frontend_url: string }>("/coding-platform/access"),
+  students: () =>
+    api<{ id: number; full_name: string; email: string }[]>("/coding-platform/students"),
+  ssoToken: () =>
+    api<{ token: string; frontend_url: string; expires_in_seconds: number }>(
+      "/coding-platform/sso-token",
+      { method: "POST" },
+    ),
 };
 
 export const subjectsApi = {

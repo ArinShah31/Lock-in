@@ -12,6 +12,7 @@ export type User = {
   email: string;
   role: UserRole;
   is_active: boolean;
+  coding_platform_enabled?: boolean;
   institution_id: number | null;
   department_id: number | null;
 };

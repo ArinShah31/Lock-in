@@ -13,6 +13,7 @@ from app.core.security import (
 )
 from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, TokenPair, UserOut
+from app.services.coding_platform_sync import sync_user_to_coding_platform
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -60,6 +61,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    sync_user_to_coding_platform(user)
 
     tokens = TokenPair(
         access_token=create_access_token(subject=str(user.id), role=user.role.value),
@@ -76,6 +78,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+
+    sync_user_to_coding_platform(user)
 
     tokens = TokenPair(
         access_token=create_access_token(subject=str(user.id), role=user.role.value),
@@ -105,5 +109,7 @@ def refresh_tokens(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
+def me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Keep coding-platform identity in sync whenever the session is restored.
+    sync_user_to_coding_platform(current_user)
     return UserOut.model_validate(current_user)
