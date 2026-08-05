@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { contentsApi } from "../api";
 import { API_BASE } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import type { Content } from "../api/types";
 
 export function ClassroomDocumentsTab() {
   const { classroomId } = useParams();

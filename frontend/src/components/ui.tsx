@@ -12,8 +12,8 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="font-display text-3xl font-bold text-paper md:text-4xl">{title}</h1>
-        {subtitle ? <p className="mt-1 max-w-2xl text-mist">{subtitle}</p> : null}
+        <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635] tracking-tight">{title}</h1>
+        {subtitle ? <p className="mt-1 text-sm text-[#44474e] max-w-2xl">{subtitle}</p> : null}
       </div>
       {action}
     </div>
@@ -23,7 +23,7 @@ export function PageHeader({
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <section
-      className={`rounded-3xl border border-line/70 bg-panel/65 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.25)] backdrop-blur ${className}`}
+      className={`rounded-xl border border-[#e1e3e4] bg-white p-5 shadow-xs transition-shadow hover:shadow-md ${className}`}
     >
       {children}
     </section>
@@ -39,14 +39,14 @@ export function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-mist">{label}</span>
+      <span className="text-xs font-semibold uppercase tracking-wider text-[#44474e]">{label}</span>
       {children}
     </label>
   );
 }
 
 export const inputClass =
-  "w-full rounded-xl border border-line bg-ink-soft/80 px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-mist/50 focus:border-accent/50";
+  "w-full rounded-md border border-[#c5c6cf] bg-[#f8f9fa] px-3.5 py-2.5 text-sm text-[#191c1d] outline-none transition placeholder:text-[#75777f] focus:border-[#031635] focus:bg-white focus:ring-1 focus:ring-[#031635]";
 
 export function PrimaryButton({
   children,
@@ -64,7 +64,30 @@ export function PrimaryButton({
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex items-center justify-center rounded-md bg-[#031635] px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-[#1a2b4b] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SecondaryButton({
+  children,
+  type = "button",
+  disabled,
+  onClick,
+}: {
+  children: ReactNode;
+  type?: "button" | "submit";
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex items-center justify-center rounded-md border border-[#3f5d9b] bg-transparent px-4 py-2.5 text-sm font-semibold text-[#3f5d9b] transition hover:bg-[#3f5d9b]/10 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {children}
     </button>
@@ -84,7 +107,7 @@ export function GhostButton({
     <button
       type={type}
       onClick={onClick}
-      className="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-mist transition hover:border-accent/40 hover:text-paper"
+      className="inline-flex items-center justify-center rounded-md border border-[#e1e3e4] bg-white px-4 py-2.5 text-sm font-medium text-[#44474e] transition hover:bg-[#f3f4f5] hover:text-[#191c1d]"
     >
       {children}
     </button>
@@ -93,14 +116,14 @@ export function GhostButton({
 
 export function ErrorText({ message }: { message?: string | null }) {
   if (!message) return null;
-  return <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{message}</p>;
+  return <p className="mb-4 rounded-md border border-[#ba1a1a]/30 bg-[#ffdad6]/50 px-3.5 py-2.5 text-sm font-medium text-[#ba1a1a]">{message}</p>;
 }
 
 export function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-line px-4 py-10 text-center">
-      <p className="font-display text-xl text-paper">{title}</p>
-      <p className="mt-2 text-sm text-mist">{body}</p>
+    <div className="rounded-xl border border-dashed border-[#c5c6cf] bg-[#f8f9fa] px-4 py-10 text-center">
+      <p className="font-display text-lg font-semibold text-[#191c1d]">{title}</p>
+      <p className="mt-1 text-sm text-[#44474e]">{body}</p>
     </div>
   );
 }
