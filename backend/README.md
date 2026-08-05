@@ -7,7 +7,9 @@
    - `pip install -r requirements.txt`
 3. Copy `.env.example` to `.env` and adjust values.
 4. Run the API:
-   - `uvicorn app.main:app --reload`
+   - Dev (reload only `app/` so temp files outside it do not kill long-running course jobs):
+     - `uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000`
+   - Long Generate-all runs (recommended): drop `--reload` so the worker is not killed mid-job.
 
 ## Implemented Modules
 

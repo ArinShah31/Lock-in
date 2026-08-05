@@ -66,6 +66,15 @@ export function TeamPage() {
     onError: (err: Error) => setError(err.message),
   });
 
+  const toggleCoding = useMutation({
+    mutationFn: ({ userId, enabled }: { userId: number; enabled: boolean }) =>
+      usersApi.setCodingPlatform(userId, enabled),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -201,16 +210,37 @@ export function TeamPage() {
           <EmptyState title="No members yet" body="Created accounts will appear here." />
         ) : (
           <ul className="space-y-2">
-            {members.data.map((m) => (
-              <li key={m.id} className="rounded-xl border border-line px-3 py-2 text-sm">
-                <span className="font-medium text-paper">{m.full_name}</span>
-                <span className="text-mist">
-                  {" "}
-                  · {m.email} · {roleLabel[m.role] ?? m.role}
-                  {m.department_id ? ` · Dept ${m.department_id}` : ""}
-                </span>
-              </li>
-            ))}
+            {members.data.map((m) => {
+              const isTeacher = m.role === "CLASS_TEACHER" || m.role === "SUBJECT_TEACHER";
+              return (
+                <li
+                  key={m.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2 text-sm"
+                >
+                  <div>
+                    <span className="font-medium text-paper">{m.full_name}</span>
+                    <span className="text-mist">
+                      {" "}
+                      · {m.email} · {roleLabel[m.role] ?? m.role}
+                      {m.department_id ? ` · Dept ${m.department_id}` : ""}
+                    </span>
+                  </div>
+                  {user?.role === "HOD" && isTeacher ? (
+                    <label className="flex items-center gap-2 text-xs text-mist">
+                      <span>Coding platform</span>
+                      <input
+                        type="checkbox"
+                        checked={!!m.coding_platform_enabled}
+                        disabled={toggleCoding.isPending}
+                        onChange={(e) =>
+                          toggleCoding.mutate({ userId: m.id, enabled: e.target.checked })
+                        }
+                      />
+                    </label>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Panel>

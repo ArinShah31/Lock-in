@@ -10,6 +10,7 @@ import { ClassroomDetailsTab } from "./pages/ClassroomDetailsTab";
 import { ClassroomDocumentsTab } from "./pages/ClassroomDocumentsTab";
 import { ClassroomLayout } from "./pages/ClassroomLayout";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
+import { CodingPage } from "./pages/CodingPage";
 import { CreateClassroomPage } from "./pages/CreateClassroomPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InstitutionsPage } from "./pages/InstitutionsPage";
@@ -52,6 +53,7 @@ export default function App() {
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
                 <Route path="/team" element={<TeamPage />} />
+                <Route path="/coding" element={<CodingPage />} />
               </Route>
             </Route>
 

@@ -98,16 +98,19 @@ export function GhostButton({
   children,
   onClick,
   type = "button",
+  disabled,
 }: {
   children: ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";
+  disabled?: boolean;
 }) {
   return (
     <button
       type={type}
       onClick={onClick}
-      className="inline-flex items-center justify-center rounded-md border border-[#e1e3e4] bg-white px-4 py-2.5 text-sm font-medium text-[#44474e] transition hover:bg-[#f3f4f5] hover:text-[#191c1d]"
+      disabled={disabled}
+      className="inline-flex items-center justify-center rounded-md border border-[#e1e3e4] bg-white px-4 py-2.5 text-sm font-medium text-[#44474e] transition hover:bg-[#f3f4f5] hover:text-[#191c1d] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {children}
     </button>

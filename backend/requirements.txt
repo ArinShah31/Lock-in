@@ -17,3 +17,5 @@ lxml
 requests
 httpx
 tenacity
+openai
+pypdf

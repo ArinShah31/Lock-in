@@ -1,0 +1,638 @@
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
+
+from app.core.config import settings
+from app.core.database import get_db
+from app.deps import require_student, require_teacher
+from app.models import (
+    AssignmentStatus,
+    CodeDraft,
+    CodeSubmission,
+    CodingTest,
+    CodingTestQuestion,
+    EvalRun,
+    ProctorEvent,
+    Question,
+    SessionStatus,
+    TestAssignment,
+    TestSession,
+    User,
+)
+from app.schemas import (
+    AssignByCodeRequest,
+    AssignmentOut,
+    AttemptResultOut,
+    DraftSaveRequest,
+    EvalOut,
+    EvalUpdateRequest,
+    ExamQuestionOut,
+    ProctorEventRequest,
+    SessionOut,
+    StudentResultOut,
+    SubmitResponse,
+)
+from app.services.evaluator import evaluate_submission, event_weight
+
+student_router = APIRouter(prefix="/student", tags=["student"])
+results_router = APIRouter(prefix="/results", tags=["results"])
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _ensure_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _remaining(session: TestSession) -> int:
+    ends = _ensure_aware(session.ends_at)
+    return max(0, int((ends - _utcnow()).total_seconds()))
+
+
+def _get_active_session(db: Session, assignment_id: int) -> TestSession | None:
+    return (
+        db.query(TestSession)
+        .filter(TestSession.assignment_id == assignment_id)
+        .order_by(TestSession.id.desc())
+        .first()
+    )
+
+
+def _expire_if_needed(db: Session, session: TestSession, assignment: TestAssignment) -> TestSession:
+    if session.status == SessionStatus.IN_PROGRESS and _remaining(session) <= 0:
+        _finalize_session(db, session, assignment, blocked=False, expired=True)
+        db.refresh(session)
+    return session
+
+
+def _finalize_session(
+    db: Session,
+    session: TestSession,
+    assignment: TestAssignment,
+    *,
+    blocked: bool,
+    expired: bool = False,
+) -> None:
+    if session.status in {SessionStatus.SUBMITTED, SessionStatus.BLOCKED, SessionStatus.EXPIRED}:
+        return
+
+    test = assignment.coding_test
+    links = (
+        db.query(CodingTestQuestion)
+        .filter(CodingTestQuestion.coding_test_id == test.id)
+        .order_by(CodingTestQuestion.order_index)
+        .all()
+    )
+    for link in links:
+        draft = (
+            db.query(CodeDraft)
+            .filter(CodeDraft.session_id == session.id, CodeDraft.question_id == link.question_id)
+            .first()
+        )
+        code = draft.code if draft else (link.question.starter_code or "")
+        existing = (
+            db.query(CodeSubmission)
+            .filter(CodeSubmission.session_id == session.id, CodeSubmission.question_id == link.question_id)
+            .first()
+        )
+        if not existing:
+            existing = CodeSubmission(
+                session_id=session.id,
+                question_id=link.question_id,
+                code=code,
+                language=link.question.language,
+            )
+            db.add(existing)
+            db.flush()
+        eval_existing = db.query(EvalRun).filter(EvalRun.submission_id == existing.id).first()
+        if not eval_existing:
+            result = evaluate_submission(
+                question=link.question,
+                code=existing.code,
+                language=existing.language,
+            )
+            db.add(
+                EvalRun(
+                    submission_id=existing.id,
+                    scores=result["scores"],
+                    total_score=result["total_score"],
+                    verdict=result["verdict"],
+                    feedback=result["feedback"],
+                    raw_llm=result.get("raw_llm"),
+                    error_message=result.get("error_message"),
+                )
+            )
+
+    if blocked:
+        session.status = SessionStatus.BLOCKED
+        assignment.status = AssignmentStatus.BLOCKED
+    elif expired:
+        session.status = SessionStatus.EXPIRED
+        assignment.status = AssignmentStatus.SUBMITTED
+    else:
+        session.status = SessionStatus.SUBMITTED
+        assignment.status = AssignmentStatus.SUBMITTED
+    session.submitted_at = _utcnow()
+    db.commit()
+
+
+@student_router.post("/join", response_model=AssignmentOut)
+def join_by_invite(
+    payload: AssignByCodeRequest,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    test = (
+        db.query(CodingTest)
+        .filter(CodingTest.invite_code == payload.invite_code.upper().strip(), CodingTest.is_active.is_(True))
+        .first()
+    )
+    if not test:
+        raise HTTPException(status_code=404, detail="Invalid invite code")
+    existing = (
+        db.query(TestAssignment)
+        .filter(TestAssignment.coding_test_id == test.id, TestAssignment.student_id == student.id)
+        .first()
+    )
+    if existing:
+        return AssignmentOut(
+            id=existing.id,
+            coding_test_id=test.id,
+            student_id=student.id,
+            status=existing.status,
+            test_title=test.title,
+            duration_minutes=test.duration_minutes,
+            is_published_results=test.is_published_results,
+        )
+    row = TestAssignment(coding_test_id=test.id, student_id=student.id, status=AssignmentStatus.ASSIGNED)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return AssignmentOut(
+        id=row.id,
+        coding_test_id=test.id,
+        student_id=student.id,
+        status=row.status,
+        test_title=test.title,
+        duration_minutes=test.duration_minutes,
+        is_published_results=test.is_published_results,
+    )
+
+
+@student_router.get("/assignments", response_model=list[AssignmentOut])
+def my_assignments(db: Session = Depends(get_db), student: User = Depends(require_student)):
+    rows = db.query(TestAssignment).filter(TestAssignment.student_id == student.id).all()
+    out: list[AssignmentOut] = []
+    for row in rows:
+        test = db.query(CodingTest).filter(CodingTest.id == row.coding_test_id).first()
+        out.append(
+            AssignmentOut(
+                id=row.id,
+                coding_test_id=row.coding_test_id,
+                student_id=student.id,
+                status=row.status,
+                test_title=test.title if test else None,
+                duration_minutes=test.duration_minutes if test else None,
+                is_published_results=bool(test and test.is_published_results),
+            )
+        )
+    return out
+
+
+@student_router.post("/assignments/{assignment_id}/start", response_model=SessionOut)
+def start_session(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    assignment = (
+        db.query(TestAssignment)
+        .filter(TestAssignment.id == assignment_id, TestAssignment.student_id == student.id)
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if assignment.status in {AssignmentStatus.SUBMITTED, AssignmentStatus.BLOCKED}:
+        raise HTTPException(status_code=400, detail="Assignment already finished")
+
+    existing = _get_active_session(db, assignment.id)
+    if existing and existing.status == SessionStatus.IN_PROGRESS:
+        existing = _expire_if_needed(db, existing, assignment)
+        if existing.status == SessionStatus.IN_PROGRESS:
+            return SessionOut(
+                id=existing.id,
+                assignment_id=assignment.id,
+                started_at=existing.started_at,
+                ends_at=existing.ends_at,
+                status=existing.status,
+                violation_score=existing.violation_score,
+                current_question_order=existing.current_question_order,
+                remaining_seconds=_remaining(existing),
+            )
+
+    test = assignment.coding_test
+    started = _utcnow()
+    session = TestSession(
+        assignment_id=assignment.id,
+        started_at=started,
+        ends_at=started + timedelta(minutes=test.duration_minutes),
+        status=SessionStatus.IN_PROGRESS,
+        violation_score=0.0,
+        current_question_order=1,
+    )
+    assignment.status = AssignmentStatus.IN_PROGRESS
+    db.add(session)
+    # seed drafts with starter code
+    links = (
+        db.query(CodingTestQuestion)
+        .filter(CodingTestQuestion.coding_test_id == test.id)
+        .all()
+    )
+    db.flush()
+    for link in links:
+        db.add(
+            CodeDraft(
+                session_id=session.id,
+                question_id=link.question_id,
+                code=link.question.starter_code or "",
+            )
+        )
+    db.commit()
+    db.refresh(session)
+    return SessionOut(
+        id=session.id,
+        assignment_id=assignment.id,
+        started_at=session.started_at,
+        ends_at=session.ends_at,
+        status=session.status,
+        violation_score=session.violation_score,
+        current_question_order=session.current_question_order,
+        remaining_seconds=_remaining(session),
+    )
+
+
+@student_router.get("/sessions/{session_id}", response_model=SessionOut)
+def get_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    session = db.query(TestSession).filter(TestSession.id == session_id).first()
+    if not session or session.assignment.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = _expire_if_needed(db, session, session.assignment)
+    return SessionOut(
+        id=session.id,
+        assignment_id=session.assignment_id,
+        started_at=session.started_at,
+        ends_at=session.ends_at,
+        status=session.status,
+        violation_score=session.violation_score,
+        current_question_order=session.current_question_order,
+        remaining_seconds=_remaining(session),
+    )
+
+
+@student_router.get("/sessions/{session_id}/questions", response_model=list[ExamQuestionOut])
+def exam_questions(
+    session_id: int,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    session = db.query(TestSession).filter(TestSession.id == session_id).first()
+    if not session or session.assignment.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = _expire_if_needed(db, session, session.assignment)
+    links = (
+        db.query(CodingTestQuestion)
+        .filter(CodingTestQuestion.coding_test_id == session.assignment.coding_test_id)
+        .order_by(CodingTestQuestion.order_index)
+        .all()
+    )
+    out: list[ExamQuestionOut] = []
+    for link in links:
+        draft = (
+            db.query(CodeDraft)
+            .filter(CodeDraft.session_id == session.id, CodeDraft.question_id == link.question_id)
+            .first()
+        )
+        out.append(
+            ExamQuestionOut(
+                order_index=link.order_index,
+                difficulty=link.required_difficulty,
+                question_id=link.question_id,
+                title=link.question.title,
+                prompt_markdown=link.question.prompt_markdown,
+                starter_code=link.question.starter_code,
+                language=link.question.language,
+                unlocked=link.order_index <= session.current_question_order,
+                draft_code=draft.code if draft else None,
+            )
+        )
+    return out
+
+
+@student_router.post("/sessions/{session_id}/draft")
+def save_draft(
+    session_id: int,
+    payload: DraftSaveRequest,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    session = db.query(TestSession).filter(TestSession.id == session_id).first()
+    if not session or session.assignment.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != SessionStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="Session is not active")
+    session = _expire_if_needed(db, session, session.assignment)
+    if session.status != SessionStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="Session ended")
+
+    link = (
+        db.query(CodingTestQuestion)
+        .filter(
+            CodingTestQuestion.coding_test_id == session.assignment.coding_test_id,
+            CodingTestQuestion.question_id == payload.question_id,
+        )
+        .first()
+    )
+    if not link:
+        raise HTTPException(status_code=400, detail="Question not on this test")
+    if link.order_index > session.current_question_order:
+        raise HTTPException(status_code=400, detail="Question is locked")
+
+    draft = (
+        db.query(CodeDraft)
+        .filter(CodeDraft.session_id == session.id, CodeDraft.question_id == payload.question_id)
+        .first()
+    )
+    if not draft:
+        draft = CodeDraft(session_id=session.id, question_id=payload.question_id, code=payload.code)
+        db.add(draft)
+    else:
+        draft.code = payload.code
+        draft.updated_at = _utcnow()
+
+    # sequential unlock: saving current max unlocked advances to next
+    if link.order_index == session.current_question_order and session.current_question_order < 3:
+        session.current_question_order += 1
+
+    db.commit()
+    return {"ok": True, "current_question_order": session.current_question_order}
+
+
+@student_router.post("/sessions/{session_id}/event", response_model=SessionOut)
+def report_event(
+    session_id: int,
+    payload: ProctorEventRequest,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    session = db.query(TestSession).filter(TestSession.id == session_id).first()
+    if not session or session.assignment.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != SessionStatus.IN_PROGRESS:
+        return SessionOut(
+            id=session.id,
+            assignment_id=session.assignment_id,
+            started_at=session.started_at,
+            ends_at=session.ends_at,
+            status=session.status,
+            violation_score=session.violation_score,
+            current_question_order=session.current_question_order,
+            remaining_seconds=_remaining(session),
+        )
+
+    weight = event_weight(payload.event_type, payload.duration_seconds)
+    db.add(
+        ProctorEvent(
+            session_id=session.id,
+            event_type=payload.event_type,
+            weight=weight,
+            detail=payload.detail,
+        )
+    )
+    session.violation_score = float(session.violation_score) + weight
+    warning = None
+    if weight > 0:
+        warning = f"Proctor warning (+{weight}). Score={session.violation_score:.1f}/{settings.violation_block_threshold}"
+    blocked = False
+    if session.violation_score >= settings.violation_block_threshold:
+        _finalize_session(db, session, session.assignment, blocked=True)
+        blocked = True
+        warning = "Session blocked due to repeated integrity violations. Your work was submitted."
+    else:
+        db.commit()
+        db.refresh(session)
+
+    return SessionOut(
+        id=session.id,
+        assignment_id=session.assignment_id,
+        started_at=session.started_at,
+        ends_at=session.ends_at,
+        status=session.status,
+        violation_score=session.violation_score,
+        current_question_order=session.current_question_order,
+        remaining_seconds=_remaining(session),
+        warning=warning,
+    )
+
+
+@student_router.post("/sessions/{session_id}/submit", response_model=SubmitResponse)
+def submit_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    session = db.query(TestSession).filter(TestSession.id == session_id).first()
+    if not session or session.assignment.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != SessionStatus.IN_PROGRESS:
+        if session.status in {SessionStatus.SUBMITTED, SessionStatus.BLOCKED, SessionStatus.EXPIRED}:
+            return SubmitResponse(
+                message="Your Test Is Successfully Submitted",
+                session_id=session.id,
+                status=session.status,
+            )
+        raise HTTPException(status_code=400, detail="Cannot submit this session")
+
+    if _remaining(session) <= 0:
+        _finalize_session(db, session, session.assignment, blocked=False, expired=True)
+    else:
+        _finalize_session(db, session, session.assignment, blocked=False)
+    db.refresh(session)
+    return SubmitResponse(
+        message="Your Test Is Successfully Submitted",
+        session_id=session.id,
+        status=session.status,
+    )
+
+
+@student_router.get("/assignments/{assignment_id}/results", response_model=StudentResultOut)
+def student_results(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    assignment = (
+        db.query(TestAssignment)
+        .filter(TestAssignment.id == assignment_id, TestAssignment.student_id == student.id)
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    test = assignment.coding_test
+    if not test.is_published_results:
+        return StudentResultOut(
+            test_title=test.title,
+            published=False,
+            message="Results are not published yet. Your teacher will release them soon.",
+        )
+    session = _get_active_session(db, assignment.id)
+    if not session:
+        return StudentResultOut(test_title=test.title, published=True, message="No attempt found.", evals=[])
+    evals = _session_evals(db, session)
+    avg = round(sum(e.total_score for e in evals) / len(evals), 2) if evals else None
+    return StudentResultOut(test_title=test.title, published=True, evals=evals, average_score=avg)
+
+
+def _session_evals(db: Session, session: TestSession) -> list[EvalOut]:
+    subs = db.query(CodeSubmission).filter(CodeSubmission.session_id == session.id).all()
+    out: list[EvalOut] = []
+    for sub in subs:
+        q = db.query(Question).filter(Question.id == sub.question_id).first()
+        ev = db.query(EvalRun).filter(EvalRun.submission_id == sub.id).first()
+        if not q or not ev:
+            continue
+        out.append(
+            EvalOut(
+                eval_run_id=ev.id,
+                submission_id=sub.id,
+                question_id=q.id,
+                question_title=q.title,
+                difficulty=q.difficulty,
+                language=sub.language,
+                code=sub.code,
+                total_score=ev.total_score,
+                verdict=ev.verdict,
+                feedback=ev.feedback,
+                scores=ev.scores or {},
+            )
+        )
+    return out
+
+
+def _verdict_from_score(score: float) -> str:
+    if score >= 70:
+        return "PASS"
+    if score >= 50:
+        return "BORDERLINE"
+    return "FAIL"
+
+
+@results_router.get("/tests/{test_id}/attempts", response_model=list[AttemptResultOut])
+def teacher_attempts(
+    test_id: int,
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    test = db.query(CodingTest).filter(CodingTest.id == test_id, CodingTest.created_by_id == teacher.id).first()
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    assignments = db.query(TestAssignment).filter(TestAssignment.coding_test_id == test.id).all()
+    out: list[AttemptResultOut] = []
+    for assignment in assignments:
+        student = db.query(User).filter(User.id == assignment.student_id).first()
+        session = _get_active_session(db, assignment.id)
+        evals = _session_evals(db, session) if session else []
+        avg = round(sum(e.total_score for e in evals) / len(evals), 2) if evals else None
+        out.append(
+            AttemptResultOut(
+                assignment_id=assignment.id,
+                student_id=assignment.student_id,
+                student_name=student.full_name if student else "?",
+                student_email=student.email if student else "?",
+                session_id=session.id if session else None,
+                session_status=session.status if session else None,
+                violation_score=session.violation_score if session else None,
+                evals=evals,
+                average_score=avg,
+            )
+        )
+    return out
+
+
+@results_router.patch("/evals/{eval_run_id}", response_model=EvalOut)
+def teacher_update_eval(
+    eval_run_id: int,
+    payload: EvalUpdateRequest,
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    ev = db.query(EvalRun).filter(EvalRun.id == eval_run_id).first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="Eval not found")
+    sub = db.query(CodeSubmission).filter(CodeSubmission.id == ev.submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    session = db.query(TestSession).filter(TestSession.id == sub.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    test = session.assignment.coding_test
+    if test.created_by_id != teacher.id:
+        raise HTTPException(status_code=403, detail="Not your test")
+
+    q = db.query(Question).filter(Question.id == sub.question_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    score = float(payload.total_score)
+    verdict = (payload.verdict or "").strip().upper() or _verdict_from_score(score)
+    if verdict not in {"PASS", "BORDERLINE", "FAIL", "ERROR"}:
+        verdict = _verdict_from_score(score)
+
+    ev.total_score = round(score, 2)
+    ev.feedback = payload.feedback.strip()
+    ev.verdict = verdict
+    # Keep rubric breakdown roughly consistent for display
+    scores = dict(ev.scores or {})
+    scores["teacher_override"] = True
+    scores["correctness"] = score
+    ev.scores = scores
+    flag_modified(ev, "scores")
+    db.commit()
+    db.refresh(ev)
+
+    return EvalOut(
+        eval_run_id=ev.id,
+        submission_id=sub.id,
+        question_id=q.id,
+        question_title=q.title,
+        difficulty=q.difficulty,
+        language=sub.language,
+        code=sub.code,
+        total_score=ev.total_score,
+        verdict=ev.verdict,
+        feedback=ev.feedback,
+        scores=ev.scores or {},
+    )
+
+
+@results_router.post("/tests/{test_id}/publish")
+def publish_results(
+    test_id: int,
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    test = db.query(CodingTest).filter(CodingTest.id == test_id, CodingTest.created_by_id == teacher.id).first()
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    test.is_published_results = True
+    db.commit()
+    return {"ok": True, "is_published_results": True}

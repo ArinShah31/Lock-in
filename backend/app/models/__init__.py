@@ -6,6 +6,12 @@ from app.models.classroom import (
     ClassroomTeacher,
     MembershipStatus,
 )
+from app.models.classroom_course import (
+    ClassroomCourse,
+    CourseBuildJob,
+    CourseChapterAttempt,
+    CourseChapterLock,
+)
 from app.models.content import ClassroomContent, ContentType
 from app.models.institution import Department, Institution
 from app.models.subject import Subject, SubjectMaterial
@@ -26,4 +32,8 @@ __all__ = [
     "ContentType",
     "Assignment",
     "AssignmentSubmission",
+    "ClassroomCourse",
+    "CourseBuildJob",
+    "CourseChapterLock",
+    "CourseChapterAttempt",
 ]
