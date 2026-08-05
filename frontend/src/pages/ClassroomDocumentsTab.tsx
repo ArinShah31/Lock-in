@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { contentsApi } from "../api";
 import { API_BASE } from "../api/client";
+import type { Content } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 
 export function ClassroomDocumentsTab() {
