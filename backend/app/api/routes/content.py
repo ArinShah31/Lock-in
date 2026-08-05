@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.models.classroom import Classroom
 from app.models.content import ClassroomContent, ContentType
 from app.schemas.content import ContentOut, ContentUpdate
+from app.ai.indexing.service import index_document
 
 router = APIRouter(
     prefix="/contents",
@@ -69,6 +70,18 @@ async def upload_content(
     db.add(content)
     db.commit()
     db.refresh(content)
+
+    print("Starting AI indexing...")
+
+    try:
+        index_document(
+            classroom_id=classroom.id,
+            document_id=content.id,
+            file_path=content.file_path,
+        )
+        print("AI indexing finished.")
+    except Exception as e:
+        print(f"AI indexing failed: {e}")
 
     return content
 

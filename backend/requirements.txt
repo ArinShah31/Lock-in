@@ -5,3 +5,15 @@ pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
+
+google-genai
+qdrant-client
+python-dotenv
+pymupdf
+python-docx
+python-pptx
+numpy
+lxml
+requests
+httpx
+tenacity

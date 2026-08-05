@@ -10,6 +10,7 @@ from app.api.routes.subjects import router as subjects_router
 from app.api.routes.users import router as users_router
 from app.api.routes.content import router as content_router
 from app.api.routes.assignments import router as assignments_router
+from app.api.routes.ai import router as ai_router
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.models import (  # noqa: F401
@@ -67,3 +68,4 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(rbac_router, prefix="/api/v1")
 app.include_router(content_router, prefix="/api/v1")
 app.include_router(assignments_router, prefix="/api/v1")
+app.include_router(ai_router, prefix="/api/v1")
