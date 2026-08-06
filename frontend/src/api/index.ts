@@ -212,11 +212,15 @@ export const assignmentsApi = {
 };
 
 export const courseBuilderApi = {
-  get: (classroomId: number) => api<ClassroomCourse>(`/classrooms/${classroomId}/course-builder`),
+  get: (classroomId: number) =>
+    api<ClassroomCourse>(`/classrooms/${classroomId}/course-builder`),
   uploadSyllabus: (classroomId: number, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return apiForm<ClassroomCourse>(`/classrooms/${classroomId}/course-builder/syllabus`, fd);
+    return apiForm<ClassroomCourse>(
+      `/classrooms/${classroomId}/course-builder/syllabus`,
+      fd,
+    );
   },
   setSources: (
     classroomId: number,
@@ -227,15 +231,24 @@ export const courseBuilderApi = {
       body: JSON.stringify(body),
     }),
   generateAll: (classroomId: number) =>
-    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate-all`, { method: "POST" }),
+    api<CourseBuildJob>(
+      `/classrooms/${classroomId}/course-builder/generate-all`,
+      { method: "POST" },
+    ),
   generateAssessments: (classroomId: number) =>
-    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate/assessments`, {
-      method: "POST",
-    }),
+    api<CourseBuildJob>(
+      `/classrooms/${classroomId}/course-builder/generate/assessments`,
+      {
+        method: "POST",
+      },
+    ),
   generateStructure: (classroomId: number) =>
-    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate/structure`, {
-      method: "POST",
-    }),
+    api<CourseBuildJob>(
+      `/classrooms/${classroomId}/course-builder/generate/structure`,
+      {
+        method: "POST",
+      },
+    ),
   generateChapterContent: (classroomId: number, chapterNumber: number) =>
     api<CourseBuildJob>(
       `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/generate-content`,
@@ -246,7 +259,11 @@ export const courseBuilderApi = {
       `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/generate-quiz`,
       { method: "POST" },
     ),
-  generateSubtopicVideo: (classroomId: number, chapterNumber: number, subtopicIndex: number) =>
+  generateSubtopicVideo: (
+    classroomId: number,
+    chapterNumber: number,
+    subtopicIndex: number,
+  ) =>
     api<CourseBuildJob>(
       `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/subtopics/${subtopicIndex}/generate-video`,
       { method: "POST" },
@@ -262,7 +279,9 @@ export const courseBuilderApi = {
       { method: "PATCH", body: JSON.stringify({ youtube_url }) },
     ),
   getJob: (classroomId: number, jobId: number) =>
-    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/jobs/${jobId}`),
+    api<CourseBuildJob>(
+      `/classrooms/${classroomId}/course-builder/jobs/${jobId}`,
+    ),
   listJobs: (classroomId: number) =>
     api<CourseBuildJob[]>(`/classrooms/${classroomId}/course-builder/jobs`),
   publish: (classroomId: number, is_published: boolean) =>
@@ -270,12 +289,23 @@ export const courseBuilderApi = {
       method: "PATCH",
       body: JSON.stringify({ is_published }),
     }),
-  setChapterLock: (classroomId: number, chapterNumber: number, is_unlocked: boolean) =>
-    api<ClassroomCourse>(`/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/lock`, {
-      method: "PATCH",
-      body: JSON.stringify({ is_unlocked }),
-    }),
-  submitQuiz: (classroomId: number, chapterNumber: number, selected_answers: string[]) =>
+  setChapterLock: (
+    classroomId: number,
+    chapterNumber: number,
+    is_unlocked: boolean,
+  ) =>
+    api<ClassroomCourse>(
+      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/lock`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ is_unlocked }),
+      },
+    ),
+  submitQuiz: (
+    classroomId: number,
+    chapterNumber: number,
+    selected_answers: string[],
+  ) =>
     api<{ score: number | null }>(
       `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/quiz-attempt`,
       { method: "POST", body: JSON.stringify({ selected_answers }) },
@@ -301,9 +331,13 @@ export const usersApi = {
 
 export const codingPlatformApi = {
   access: () =>
-    api<{ enabled: boolean; reason: string | null; frontend_url: string }>("/coding-platform/access"),
+    api<{ enabled: boolean; reason: string | null; frontend_url: string }>(
+      "/coding-platform/access",
+    ),
   students: () =>
-    api<{ id: number; full_name: string; email: string }[]>("/coding-platform/students"),
+    api<{ id: number; full_name: string; email: string }[]>(
+      "/coding-platform/students",
+    ),
   ssoToken: () =>
     api<{ token: string; frontend_url: string; expires_in_seconds: number }>(
       "/coding-platform/sso-token",
@@ -348,19 +382,6 @@ export const subjectsApi = {
     },
   ) =>
     api<SubjectMaterial>(`/subjects/${id}/materials`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-};
-
-export const aiApi = {
-  chat: (body: { classroom_id: number; question: string }) =>
-    api<{
-      document_answer: string;
-      additional_explanation: string;
-      used_document: boolean;
-      used_general_knowledge: boolean;
-    }>("/ai/chat", {
       method: "POST",
       body: JSON.stringify(body),
     }),

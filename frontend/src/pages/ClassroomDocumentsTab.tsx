@@ -13,7 +13,7 @@ function getFileUrl(filePath: string) {
   }
   const cleanPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
   const backendBase = (
-    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
+    import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api/v1"
   ).replace(/\/api\/v1\/?$/, "");
   return `${backendBase}${cleanPath}`;
 }
