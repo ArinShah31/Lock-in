@@ -13,6 +13,7 @@ from app.api.routes.content import router as content_router
 from app.api.routes.assignments import router as assignments_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.classroom_course_builder import router as course_builder_router
+from app.api.routes.practice import router as practice_router
 from app.core.config import settings
 from app.core.database import Base, engine
 from sqlalchemy import inspect, text
@@ -29,6 +30,7 @@ from app.models import (  # noqa: F401
     CourseBuildJob,
     CourseChapterAttempt,
     CourseChapterLock,
+    PracticeAssessmentLock,
     Department,
     Institution,
     Subject,
@@ -103,4 +105,5 @@ app.include_router(content_router, prefix="/api/v1")
 app.include_router(assignments_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
 app.include_router(course_builder_router, prefix="/api/v1")
+app.include_router(practice_router, prefix="/api/v1")
 app.include_router(coding_platform_router, prefix="/api/v1")

@@ -15,6 +15,7 @@ import { CreateClassroomPage } from "./pages/CreateClassroomPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InstitutionsPage } from "./pages/InstitutionsPage";
 import { LoginPage } from "./pages/LoginPage";
+import { PracticePage } from "./pages/PracticePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SubjectsPage } from "./pages/SubjectsPage";
 import { TeamPage } from "./pages/TeamPage";
@@ -53,6 +54,7 @@ export default function App() {
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
                 <Route path="/team" element={<TeamPage />} />
+                <Route path="/practice" element={<PracticePage />} />
                 <Route path="/coding" element={<CodingPage />} />
               </Route>
             </Route>

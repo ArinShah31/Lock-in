@@ -117,3 +117,28 @@ class CourseChapterAttempt(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+
+class PracticeAssessmentLock(Base):
+    __tablename__ = "practice_assessment_locks"
+    __table_args__ = (
+        UniqueConstraint(
+            "classroom_id",
+            "assessment_kind",
+            "target_key",
+            name="uq_practice_assessment_lock",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), nullable=False, index=True)
+    assessment_kind: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    target_key: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    is_unlocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )

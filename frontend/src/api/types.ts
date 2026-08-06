@@ -290,3 +290,81 @@ export type CourseBuildJob = {
   created_at: string;
   updated_at: string;
 };
+
+export type PracticeQuestion = {
+  question: string;
+  options: string[];
+};
+
+export type PracticeQuiz = {
+  chapter_number: number;
+  title: string;
+  summary: string;
+  topic_label: string;
+  question_count: number;
+  latest_score: number | null;
+  latest_attempted_at: string | null;
+  questions: PracticeQuestion[];
+};
+
+export type PracticeFlashcard = {
+  id: string;
+  question: string;
+  answer: string;
+  cue: string;
+};
+
+export type PracticeFlashcardDeck = {
+  id: string;
+  title: string;
+  subject: string;
+  summary: string;
+  focus: string;
+  estimated_time: string;
+  mastery_hint: string;
+  cards: PracticeFlashcard[];
+};
+
+export type PracticeAssessment = {
+  assessment_kind: string;
+  target_key: string;
+  title: string;
+  meta: string;
+  detail: string;
+  question_count: number;
+  duration_minutes: number;
+  is_locked: boolean;
+  latest_score: number | null;
+  latest_attempted_at: string | null;
+  questions: PracticeQuestion[];
+};
+
+export type PracticeSummary = {
+  source_document_count: number;
+  ready_quizzes: number;
+  flashcard_decks: number;
+  locked_assessments: number;
+  completed_quizzes: number;
+  completed_assessments: number;
+};
+
+export type PracticeOverview = {
+  classroom_id: number;
+  classroom_name: string;
+  course_title: string | null;
+  source_document_count: number;
+  summary: PracticeSummary;
+  quizzes: PracticeQuiz[];
+  flashcard_decks: PracticeFlashcardDeck[];
+  topic_assessments: PracticeAssessment[];
+  subject_assessments: PracticeAssessment[];
+};
+
+export type PracticeAttempt = {
+  id: number;
+  classroom_id: number;
+  score: number | null;
+  attempt_type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
