@@ -70,6 +70,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refreshMe();
   }, [refreshMe]);
 
+  useEffect(() => {
+    const onSessionExpired = () => {
+      logoutLocal();
+      setUser(null);
+    };
+    window.addEventListener("astra:session-expired", onSessionExpired);
+    return () => window.removeEventListener("astra:session-expired", onSessionExpired);
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,

@@ -1,5 +1,5 @@
-import { FormEvent, useMemo, useState } from "react";
-import { useOutletContext, useParams } from "react-router-dom";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignmentsApi } from "../api";
 import type { Assignment, AssignmentSubmission, Classroom } from "../api/types";
@@ -32,6 +32,7 @@ function statusLabel(a: Assignment, isTeacher: boolean): string {
 export function ClassroomAssignmentsTab() {
   const { classroom } = useOutletContext<OutletCtx>();
   const { classroomId } = useParams();
+  const [searchParams] = useSearchParams();
   const id = Number(classroomId);
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -58,6 +59,13 @@ export function ClassroomAssignmentsTab() {
     queryFn: () => assignmentsApi.listByClassroom(id),
     enabled: !Number.isNaN(id),
   });
+
+  useEffect(() => {
+    const raw = searchParams.get("assignment");
+    if (!raw) return;
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed)) setSelectedId(parsed);
+  }, [searchParams]);
 
   const selected = useMemo(
     () => assignments.data?.find((a) => a.id === selectedId) ?? null,
