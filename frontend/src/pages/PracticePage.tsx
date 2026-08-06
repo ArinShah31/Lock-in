@@ -588,7 +588,7 @@ function AssessmentGrid({
 }
 
 export function PracticePage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [section, setSection] = useState<PracticeSection>("quizzes");
   const [assessmentSection, setAssessmentSection] = useState<AssessmentSection>("topic");
   const [classroom, setClassroom] = useState<Classroom | null>(null);
@@ -602,6 +602,12 @@ export function PracticePage() {
   const [submitState, setSubmitState] = useState<{ kind: "quiz" | "assessment"; loading: boolean } | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (user?.role !== "STUDENT") {
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -627,6 +633,7 @@ export function PracticePage() {
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Could not load practice space");
+          setClassroom(null);
           setPractice(null);
         }
       } finally {
@@ -640,7 +647,7 @@ export function PracticePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authLoading, user?.id, user?.role]);
 
   useEffect(() => {
     setFlippedFlashcards(new Set());
@@ -712,7 +719,7 @@ export function PracticePage() {
     return <Navigate to="/" replace />;
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="space-y-6">
         <PageHeader title="Practise" subtitle="Loading your classroom practice space..." />
@@ -721,6 +728,15 @@ export function PracticePage() {
           <div className="h-4 w-full animate-pulse rounded bg-[#eef2f6]" />
           <div className="h-4 w-2/3 animate-pulse rounded bg-[#eef2f6]" />
         </Panel>
+      </div>
+    );
+  }
+
+  if (error && !classroom) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Practise" subtitle="This space becomes available after you join a classroom." />
+        <EmptyState title="Could not load practice" body={error} />
       </div>
     );
   }

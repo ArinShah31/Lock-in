@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { classroomsApi } from "../api";
+import { useAuth } from "../auth/AuthContext";
 import { ErrorText, PageHeader, Panel } from "../components/ui";
 
 function tabClass({ isActive }: { isActive: boolean }) {
@@ -14,8 +15,10 @@ function tabClass({ isActive }: { isActive: boolean }) {
 
 export function ClassroomLayout() {
   const { classroomId } = useParams();
+  const { user } = useAuth();
   const id = classroomId ? Number(classroomId) : NaN;
   const invalid = Number.isNaN(id);
+  const isStudent = user?.role === "STUDENT";
 
   const classroom = useQuery({
     queryKey: ["classroom", id],
@@ -84,7 +87,7 @@ export function ClassroomLayout() {
         </NavLink>
 
         <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
-          Course builder
+          {isStudent ? "Course" : "Course builder"}
         </NavLink>
 
         <NavLink to={`/classrooms/${id}/documents`} className={tabClass}>
