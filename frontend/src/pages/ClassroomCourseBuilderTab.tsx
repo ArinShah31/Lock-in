@@ -19,6 +19,7 @@ import {
   inputClass,
   PrimaryButton,
 } from "../components/ui";
+import { StudentCourseView } from "./StudentCourseView";
 
 type OutletCtx = { classroom: Classroom };
 
@@ -1010,10 +1011,22 @@ export function ClassroomCourseBuilderTab() {
     setExpandedSections(new Set());
   }
 
-  if (course.isLoading) return <p className="text-sm text-mist">Loading course builder…</p>;
-  if (course.isError) return <ErrorText message="Failed to load course builder." />;
+  if (course.isLoading) {
+    return <p className="text-sm text-mist">{isTeacher ? "Loading course builder…" : "Loading course…"}</p>;
+  }
+  if (course.isError) {
+    return <ErrorText message={isTeacher ? "Failed to load course builder." : "Failed to load course."} />;
+  }
 
   const data = course.data as ClassroomCourse;
+
+  // Student study UI lives in StudentCourseView — teacher builder below stays unchanged.
+  // Revert: restore this early-return block + delete StudentCourseView.tsx, or
+  // `git checkout backup/before-student-course-ui -- frontend/src/pages/`
+  if (!isTeacher) {
+    if (!user) return <ErrorText message="Sign in to view this course." />;
+    return <StudentCourseView course={data} classroomId={id} userId={user.id} />;
+  }
   const status = teacherStatusLabel({
     hasSources,
     hasChapters: !!data.chapters.length,
