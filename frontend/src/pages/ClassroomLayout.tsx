@@ -2,7 +2,6 @@ import { NavLink, Navigate, Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { classroomsApi } from "../api";
 import { ErrorText, PageHeader, Panel } from "../components/ui";
-import { AIPanel } from "../components/AIPanel";
 
 function tabClass({ isActive }: { isActive: boolean }) {
   return [
@@ -104,9 +103,7 @@ export function ClassroomLayout() {
           </Panel>
         </div>
 
-        <div className="xl:col-span-2">
-          <AIPanel />
-        </div>
+        <div className="xl:col-span-2"></div>
       </div>
     </div>
   );
