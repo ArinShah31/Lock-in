@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { classroomsApi } from "../api";
+import { useAuth } from "../auth/AuthContext";
 import { ErrorText, PageHeader, Panel } from "../components/ui";
 
 function tabClass({ isActive }: { isActive: boolean }) {
@@ -12,8 +13,10 @@ function tabClass({ isActive }: { isActive: boolean }) {
 
 export function ClassroomLayout() {
   const { classroomId } = useParams();
+  const { user } = useAuth();
   const id = classroomId ? Number(classroomId) : NaN;
   const invalid = Number.isNaN(id);
+  const isStudent = user?.role === "STUDENT";
 
   const classroom = useQuery({
     queryKey: ["classroom", id],
@@ -58,26 +61,26 @@ export function ClassroomLayout() {
       </div>
 
       <div className="mb-6 flex gap-6 border-b border-line">
-  <NavLink to={`/classrooms/${id}/dashboard`} className={tabClass}>
-    Dashboard
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/dashboard`} className={tabClass}>
+          Dashboard
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/details`} className={tabClass}>
-    Details
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/details`} className={tabClass}>
+          Details
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
-    Course builder
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
+          {isStudent ? "Course" : "Course builder"}
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/documents`} className={tabClass}>
-    Documents
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/documents`} className={tabClass}>
+          Documents
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/assignments`} className={tabClass}>
-    Assignments
-  </NavLink>
-</div>
+        <NavLink to={`/classrooms/${id}/assignments`} className={tabClass}>
+          Assignments
+        </NavLink>
+      </div>
 
       <Panel>
         <Outlet context={{ classroom: c }} />
