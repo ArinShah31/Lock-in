@@ -1,8 +1,9 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { classroomsApi, institutionsApi, subjectsApi } from "../api";
+import { classroomsApi, codingPlatformApi, institutionsApi, subjectsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import { TeacherCodingAnalyticsPanel } from "../components/TeacherCodingAnalyticsPanel";
 import {
   EmptyState,
   ErrorText,
@@ -253,9 +254,15 @@ function TeacherDashboardView() {
   const navigate = useNavigate();
   const classrooms = useQuery({ queryKey: ["classrooms"], queryFn: classroomsApi.list });
   const subjects = useQuery({ queryKey: ["subjects"], queryFn: subjectsApi.list });
+  const codingAccess = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+    staleTime: 30_000,
+  });
 
   const activeClassrooms = classrooms.data?.length ?? 0;
   const activeSubjects = subjects.data?.length ?? 0;
+  const codingEnabled = codingAccess.data?.enabled === true;
 
   return (
     <div className="space-y-6">
@@ -310,6 +317,8 @@ function TeacherDashboardView() {
           <p className="text-xs text-[#75777f] mt-1">Full management access</p>
         </Panel>
       </div>
+
+      <TeacherCodingAnalyticsPanel enabled={codingEnabled} />
 
       {/* Classrooms List */}
       <Panel>

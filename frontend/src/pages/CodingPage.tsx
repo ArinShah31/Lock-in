@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "react-router-dom";
 import { codingPlatformApi, classroomsApi } from "../api";
 import {
   clearCodingToken,
   codingApi,
-  getCodingToken,
-  setCodingToken,
+  ensureCodingSession,
   type AttemptEval,
   type AttemptRow,
   type CodingQuestion,
@@ -44,22 +44,6 @@ function readResultsMode(): ResultsViewMode {
 function statusLabel(status: string | null | undefined) {
   if (!status) return "not started";
   return status.toLowerCase().replace(/_/g, " ");
-}
-
-async function ensureCodingSession() {
-  if (getCodingToken()) return;
-  const { token } = await codingPlatformApi.ssoToken();
-  const data = await fetch("/coding-api/v1/auth/sso", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
-  });
-  if (!data.ok) {
-    const err = await data.json().catch(() => ({}));
-    throw new Error(err.detail || "SSO exchange failed");
-  }
-  const body = (await data.json()) as { access_token: string };
-  setCodingToken(body.access_token);
 }
 
 export function CodingPage() {
@@ -152,18 +136,30 @@ export function CodingPage() {
 
 function TeacherCodingWorkspace() {
   const qc = useQueryClient();
+  const location = useLocation();
+  const navState = (location.state as {
+    tab?: "bank" | "tests" | "results";
+    resultsMode?: ResultsViewMode;
+    selectedTestId?: number | null;
+    selectedStudentId?: number | null;
+  } | null) ?? null;
+
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"bank" | "tests" | "results">("bank");
+  const [tab, setTab] = useState<"bank" | "tests" | "results">(navState?.tab ?? "bank");
   const [error, setError] = useState<string | null>(null);
   const [openCodeKey, setOpenCodeKey] = useState<string | null>(null);
   const [editingEvalId, setEditingEvalId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ total_score: 0, feedback: "", verdict: "PASS" });
-  const [selectedTestId, setSelectedTestId] = useState<number | null>(null);
+  const [selectedTestId, setSelectedTestId] = useState<number | null>(navState?.selectedTestId ?? null);
   const [classroomByTest, setClassroomByTest] = useState<Record<number, number>>({});
   const [assignMsg, setAssignMsg] = useState<string | null>(null);
-  const [resultsMode, setResultsMode] = useState<ResultsViewMode>(() => readResultsMode());
-  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+  const [resultsMode, setResultsMode] = useState<ResultsViewMode>(
+    () => navState?.resultsMode ?? readResultsMode(),
+  );
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(
+    navState?.selectedStudentId ?? null,
+  );
   const [selectedStudentAttemptId, setSelectedStudentAttemptId] = useState<number | null>(null);
 
   const [qForm, setQForm] = useState({

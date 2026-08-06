@@ -34,6 +34,10 @@ from app.schemas import (
     StudentResultOut,
     StudentResultSummaryOut,
     SubmitResponse,
+    TeacherCodingAnalyticsOut,
+    AnalyticsBucketOut,
+    AnalyticsRiskStudentOut,
+    AnalyticsTestBreakdownOut,
 )
 from app.services.evaluator import evaluate_submission, event_weight
 
@@ -569,6 +573,167 @@ def teacher_attempts(
             )
         )
     return out
+
+
+@results_router.get("/analytics", response_model=TeacherCodingAnalyticsOut)
+def teacher_coding_analytics(
+    student_id: int | None = None,
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    """Aggregate analytics across all tests owned by this teacher.
+
+    Optional student_id scopes charts to one assigned student.
+    """
+    tests = (
+        db.query(CodingTest)
+        .filter(CodingTest.created_by_id == teacher.id, CodingTest.is_active.is_(True))
+        .all()
+    )
+    test_ids = [t.id for t in tests]
+    threshold = float(settings.violation_block_threshold)
+
+    participation = {"assigned": 0, "started": 0, "submitted": 0, "not_started": 0}
+    score_buckets = [
+        AnalyticsBucketOut(label="0–19", count=0),
+        AnalyticsBucketOut(label="20–39", count=0),
+        AnalyticsBucketOut(label="40–59", count=0),
+        AnalyticsBucketOut(label="60–79", count=0),
+        AnalyticsBucketOut(label="80–100", count=0),
+    ]
+    verdict_counts = {"PASS": 0, "BORDERLINE": 0, "FAIL": 0, "ERROR": 0}
+    risk: list[AnalyticsRiskStudentOut] = []
+    per_test: list[AnalyticsTestBreakdownOut] = []
+    scored_attempt_count = 0
+    focus_name: str | None = None
+    focus_email: str | None = None
+
+    empty = TeacherCodingAnalyticsOut(
+        test_count=len(tests),
+        participation=participation,
+        score_distribution=score_buckets,
+        verdict_mix=[AnalyticsBucketOut(label=k, count=0) for k in verdict_counts],
+        proctor_risk=[],
+        violation_threshold=threshold,
+        scored_attempt_count=0,
+        student_id=student_id,
+        student_name=None,
+        student_email=None,
+        per_test=[],
+    )
+
+    if not test_ids:
+        return empty
+
+    query = (
+        db.query(TestAssignment, CodingTest, User)
+        .join(CodingTest, CodingTest.id == TestAssignment.coding_test_id)
+        .join(User, User.id == TestAssignment.student_id)
+        .filter(TestAssignment.coding_test_id.in_(test_ids))
+    )
+    if student_id is not None:
+        query = query.filter(TestAssignment.student_id == student_id)
+    rows = query.order_by(CodingTest.id.asc()).all()
+
+    if student_id is not None and not rows:
+        student = db.query(User).filter(User.id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        empty.student_name = student.full_name
+        empty.student_email = student.email
+        return empty
+
+    for assignment, test, student in rows:
+        if focus_name is None:
+            focus_name = student.full_name
+            focus_email = student.email
+
+        participation["assigned"] += 1
+        session = _get_active_session(db, assignment.id)
+        if not session:
+            participation["not_started"] += 1
+            if student_id is not None:
+                per_test.append(
+                    AnalyticsTestBreakdownOut(
+                        test_id=test.id,
+                        test_title=test.title,
+                        assignment_id=assignment.id,
+                        session_status=None,
+                        average_score=None,
+                        violation_score=None,
+                        eval_count=0,
+                    )
+                )
+            continue
+
+        participation["started"] += 1
+        if session.status == SessionStatus.SUBMITTED:
+            participation["submitted"] += 1
+
+        violation = float(session.violation_score or 0)
+        if violation >= max(threshold / 2, 1) or session.status == SessionStatus.BLOCKED:
+            risk.append(
+                AnalyticsRiskStudentOut(
+                    student_id=student.id,
+                    student_name=student.full_name,
+                    student_email=student.email,
+                    test_id=test.id,
+                    test_title=test.title,
+                    assignment_id=assignment.id,
+                    violation_score=violation,
+                    session_status=session.status,
+                )
+            )
+
+        evals = _session_evals(db, session)
+        avg = None
+        if evals:
+            avg = round(sum(e.total_score for e in evals) / len(evals), 2)
+            scored_attempt_count += 1
+            # One verdict per test attempt (avg across questions), not per question.
+            verdict_key = _verdict_from_score(avg)
+            if verdict_key not in verdict_counts:
+                verdict_key = "ERROR"
+            verdict_counts[verdict_key] += 1
+            if avg < 20:
+                score_buckets[0].count += 1
+            elif avg < 40:
+                score_buckets[1].count += 1
+            elif avg < 60:
+                score_buckets[2].count += 1
+            elif avg < 80:
+                score_buckets[3].count += 1
+            else:
+                score_buckets[4].count += 1
+
+        if student_id is not None:
+            per_test.append(
+                AnalyticsTestBreakdownOut(
+                    test_id=test.id,
+                    test_title=test.title,
+                    assignment_id=assignment.id,
+                    session_status=session.status,
+                    average_score=avg,
+                    violation_score=violation,
+                    eval_count=len(evals),
+                )
+            )
+
+    risk.sort(key=lambda r: r.violation_score, reverse=True)
+
+    return TeacherCodingAnalyticsOut(
+        test_count=len(tests) if student_id is None else len(per_test),
+        participation=participation,
+        score_distribution=score_buckets,
+        verdict_mix=[AnalyticsBucketOut(label=k, count=v) for k, v in verdict_counts.items()],
+        proctor_risk=risk[:12],
+        violation_threshold=threshold,
+        scored_attempt_count=scored_attempt_count,
+        student_id=student_id,
+        student_name=focus_name if student_id is not None else None,
+        student_email=focus_email if student_id is not None else None,
+        per_test=per_test,
+    )
 
 
 @results_router.get("/students", response_model=list[StudentResultSummaryOut])
