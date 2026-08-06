@@ -2,11 +2,14 @@ import { NavLink, Navigate, Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { classroomsApi } from "../api";
 import { ErrorText, PageHeader, Panel } from "../components/ui";
+import { AIPanel } from "../components/AIPanel";
 
 function tabClass({ isActive }: { isActive: boolean }) {
   return [
     "border-b-2 px-1 pb-2 text-sm font-semibold transition",
-    isActive ? "border-accent text-paper" : "border-transparent text-mist hover:text-paper",
+    isActive
+      ? "border-accent text-paper"
+      : "border-transparent text-mist hover:text-paper",
   ].join(" ");
 }
 
@@ -34,9 +37,21 @@ export function ClassroomLayout() {
   if (classroom.isError || !classroom.data) {
     return (
       <div>
-        <PageHeader title="Classroom" subtitle="Could not load this classroom." />
-        <ErrorText message={classroom.error instanceof Error ? classroom.error.message : "Not found"} />
-        <NavLink to="/classrooms" className="text-sm font-semibold text-accent hover:underline">
+        <PageHeader
+          title="Classroom"
+          subtitle="Could not load this classroom."
+        />
+        <ErrorText
+          message={
+            classroom.error instanceof Error
+              ? classroom.error.message
+              : "Not found"
+          }
+        />
+        <NavLink
+          to="/classrooms"
+          className="text-sm font-semibold text-accent hover:underline"
+        >
           Back to classrooms
         </NavLink>
       </div>
@@ -52,36 +67,47 @@ export function ClassroomLayout() {
         subtitle={`${c.code}${c.academic_year ? ` · ${c.academic_year}` : ""}${c.is_active ? "" : " · Inactive"}`}
       />
       <div className="mb-4">
-        <NavLink to="/classrooms" className="text-sm font-semibold text-accent hover:underline">
+        <NavLink
+          to="/classrooms"
+          className="text-sm font-semibold text-accent hover:underline"
+        >
           ← Back to classrooms
         </NavLink>
       </div>
 
       <div className="mb-6 flex gap-6 border-b border-line">
-  <NavLink to={`/classrooms/${id}/dashboard`} className={tabClass}>
-    Dashboard
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/dashboard`} className={tabClass}>
+          Dashboard
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/details`} className={tabClass}>
-    Details
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/details`} className={tabClass}>
+          Details
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
-    Course builder
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
+          Course builder
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/documents`} className={tabClass}>
-    Documents
-  </NavLink>
+        <NavLink to={`/classrooms/${id}/documents`} className={tabClass}>
+          Documents
+        </NavLink>
 
-  <NavLink to={`/classrooms/${id}/assignments`} className={tabClass}>
-    Assignments
-  </NavLink>
-</div>
+        <NavLink to={`/classrooms/${id}/assignments`} className={tabClass}>
+          Assignments
+        </NavLink>
+      </div>
 
-      <Panel>
-        <Outlet context={{ classroom: c }} />
-      </Panel>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <div className="xl:col-span-3">
+          <Panel>
+            <Outlet context={{ classroom: c }} />
+          </Panel>
+        </div>
+
+        <div className="xl:col-span-2">
+          <AIPanel />
+        </div>
+      </div>
     </div>
   );
 }

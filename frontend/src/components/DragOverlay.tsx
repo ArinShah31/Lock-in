@@ -62,8 +62,8 @@ export default function DragOverlay({ onDropFile }: DragOverlayProps) {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
-      <div className="rounded-3xl border-4 border-dashed border-cyan-400 px-20 py-16 text-center shadow-2xl">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="scale-100 rounded-3xl border-4 border-dashed border-cyan-400 bg-slate-900/70 px-20 py-16 text-center shadow-2xl transition-all duration-200">
         <div className="text-7xl">📁</div>
 
         <h2 className="mt-6 text-3xl font-bold text-white">

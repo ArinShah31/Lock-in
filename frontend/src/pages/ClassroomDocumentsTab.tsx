@@ -292,7 +292,7 @@ export function ClassroomDocumentsTab() {
               <p className="text-sm opacity-70">{doc.description}</p>
 
               <a
-                href={`${API_BASE.replace("/api/v1", "")}/${doc.file_path}`}
+                href={`http://127.0.0.1:8000/${doc.file_path}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-accent hover:underline"

@@ -23,10 +23,19 @@ export const authApi = {
     role: UserRole;
     institution_id?: number | null;
     department_id?: number | null;
-  }) => api<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify(body) }, false),
+  }) =>
+    api<AuthResponse>(
+      "/auth/register",
+      { method: "POST", body: JSON.stringify(body) },
+      false,
+    ),
 
   login: (body: { email: string; password: string }) =>
-    api<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(body) }, false),
+    api<AuthResponse>(
+      "/auth/login",
+      { method: "POST", body: JSON.stringify(body) },
+      false,
+    ),
 
   me: () => api<User>("/auth/me"),
 };
@@ -43,13 +52,32 @@ export function logoutLocal() {
 export const institutionsApi = {
   list: () => api<Institution[]>("/institutions"),
   create: (body: { name: string; code: string; address?: string }) =>
-    api<Institution>("/institutions", { method: "POST", body: JSON.stringify(body) }),
-  update: (id: number, body: Partial<{ name: string; code: string; address: string; is_active: boolean }>) =>
-    api<Institution>(`/institutions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  deactivate: (id: number) => api<Institution>(`/institutions/${id}`, { method: "DELETE" }),
-  listDepartments: (id: number) => api<Department[]>(`/institutions/${id}/departments`),
+    api<Institution>("/institutions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  update: (
+    id: number,
+    body: Partial<{
+      name: string;
+      code: string;
+      address: string;
+      is_active: boolean;
+    }>,
+  ) =>
+    api<Institution>(`/institutions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deactivate: (id: number) =>
+    api<Institution>(`/institutions/${id}`, { method: "DELETE" }),
+  listDepartments: (id: number) =>
+    api<Department[]>(`/institutions/${id}/departments`),
   createDepartment: (id: number, body: { name: string; code: string }) =>
-    api<Department>(`/institutions/${id}/departments`, { method: "POST", body: JSON.stringify(body) }),
+    api<Department>(`/institutions/${id}/departments`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
 
 export const classroomsApi = {
@@ -62,26 +90,45 @@ export const classroomsApi = {
     code: string;
     academic_year?: string;
     description?: string;
-  }) => api<Classroom>("/classrooms", { method: "POST", body: JSON.stringify(body) }),
+  }) =>
+    api<Classroom>("/classrooms", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   get: (id: number) => api<Classroom>(`/classrooms/${id}`),
   update: (id: number, body: Record<string, unknown>) =>
-    api<Classroom>(`/classrooms/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  deactivate: (id: number) => api<Classroom>(`/classrooms/${id}`, { method: "DELETE" }),
+    api<Classroom>(`/classrooms/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deactivate: (id: number) =>
+    api<Classroom>(`/classrooms/${id}`, { method: "DELETE" }),
   join: (join_code: string) =>
     api<ClassroomStudent>("/classrooms/join", {
       method: "POST",
       body: JSON.stringify({ join_code }),
     }),
   myJoinRequests: () => api<ClassroomStudent[]>("/classrooms/my-join-requests"),
-  listJoinRequests: (id: number) => api<ClassroomStudent[]>(`/classrooms/${id}/join-requests`),
+  listJoinRequests: (id: number) =>
+    api<ClassroomStudent[]>(`/classrooms/${id}/join-requests`),
   approveJoin: (id: number, studentId: number) =>
-    api<ClassroomStudent>(`/classrooms/${id}/join-requests/${studentId}/approve`, { method: "POST" }),
+    api<ClassroomStudent>(
+      `/classrooms/${id}/join-requests/${studentId}/approve`,
+      { method: "POST" },
+    ),
   rejectJoin: (id: number, studentId: number) =>
-    api<ClassroomStudent>(`/classrooms/${id}/join-requests/${studentId}/reject`, { method: "POST" }),
-  listStudents: (id: number) => api<ClassroomStudent[]>(`/classrooms/${id}/students`),
+    api<ClassroomStudent>(
+      `/classrooms/${id}/join-requests/${studentId}/reject`,
+      { method: "POST" },
+    ),
+  listStudents: (id: number) =>
+    api<ClassroomStudent[]>(`/classrooms/${id}/students`),
   removeStudent: (id: number, studentId: number) =>
-    api<ClassroomStudent>(`/classrooms/${id}/students/${studentId}`, { method: "DELETE" }),
-  listAnnouncements: (id: number) => api<ClassroomAnnouncement[]>(`/classrooms/${id}/announcements`),
+    api<ClassroomStudent>(`/classrooms/${id}/students/${studentId}`, {
+      method: "DELETE",
+    }),
+  listAnnouncements: (id: number) =>
+    api<ClassroomAnnouncement[]>(`/classrooms/${id}/announcements`),
   createAnnouncement: (id: number, body: { title: string; body: string }) =>
     api<ClassroomAnnouncement>(`/classrooms/${id}/announcements`, {
       method: "POST",
@@ -90,45 +137,37 @@ export const classroomsApi = {
 };
 
 export const contentsApi = {
-  listByClassroom: (id: number) =>
-    api<Content[]>(`/contents/classrooms/${id}`),
+  listByClassroom: (id: number) => api<Content[]>(`/contents/classrooms/${id}`),
 
   upload: async (classroomId: number, formData: FormData) => {
-   
-   
+    const token = localStorage.getItem("astra_access_token");
 
-   const token = localStorage.getItem("astra_access_token");
+    const url = `${API_BASE}/contents/classrooms/${classroomId}`;
 
-   const url = `${API_BASE}/contents/classrooms/${classroomId}`;
-   
+    const response = await fetch(url, {
+      method: "POST",
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : {},
+      body: formData,
+    });
 
-   const response = await fetch(url, {
-     method: "POST",
-     headers: token
-       ? {
-          Authorization: `Bearer ${token}`,
-         }
-       : {},
-     body: formData,
-   });
+    if (!response.ok) {
+      throw new Error("Upload failed");
+    }
 
-   
+    return response.json();
+  },
 
-   if (!response.ok) {
-     
-     throw new Error("Upload failed");
-   }
-
-   return response.json();
- },
-
- delete: (classroomId: number, contentId: number) =>
-  api<{ message: string }>(
-    `/contents/classrooms/${classroomId}/${contentId}`,
-    {
-      method: "DELETE",
-    },
-   ),
+  delete: (classroomId: number, contentId: number) =>
+    api<{ message: string }>(
+      `/contents/classrooms/${classroomId}/${contentId}`,
+      {
+        method: "DELETE",
+      },
+    ),
 
   update: (
     contentId: number,
@@ -150,14 +189,24 @@ export const assignmentsApi = {
   create: (classroomId: number, formData: FormData) =>
     apiForm<Assignment>(`/classrooms/${classroomId}/assignments`, formData),
   submit: (assignmentId: number, formData: FormData) =>
-    apiForm<AssignmentSubmission>(`/assignments/${assignmentId}/submissions`, formData),
+    apiForm<AssignmentSubmission>(
+      `/assignments/${assignmentId}/submissions`,
+      formData,
+    ),
   listSubmissions: (assignmentId: number) =>
     api<AssignmentSubmission[]>(`/assignments/${assignmentId}/submissions`),
-  grade: (assignmentId: number, studentId: number, body: { marks: number; feedback?: string }) =>
-    api<AssignmentSubmission>(`/assignments/${assignmentId}/submissions/${studentId}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
+  grade: (
+    assignmentId: number,
+    studentId: number,
+    body: { marks: number; feedback?: string },
+  ) =>
+    api<AssignmentSubmission>(
+      `/assignments/${assignmentId}/submissions/${studentId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+    ),
 };
 
 export const usersApi = {
@@ -174,21 +223,55 @@ export const usersApi = {
 
 export const subjectsApi = {
   list: () => api<Subject[]>("/subjects"),
-  listByClassroom: (classroomId: number) => api<Subject[]>(`/classrooms/${classroomId}/subjects`),
+  listByClassroom: (classroomId: number) =>
+    api<Subject[]>(`/classrooms/${classroomId}/subjects`),
   create: (body: {
     classroom_id: number;
     teacher_id: number;
     name: string;
     code: string;
     description?: string;
-  }) => api<Subject>("/subjects", { method: "POST", body: JSON.stringify(body) }),
+  }) =>
+    api<Subject>("/subjects", { method: "POST", body: JSON.stringify(body) }),
   update: (id: number, body: Record<string, unknown>) =>
-    api<Subject>(`/subjects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  updateSyllabus: (id: number, body: { syllabus_text?: string; syllabus_file_url?: string }) =>
-    api<Subject>(`/subjects/${id}/syllabus`, { method: "PUT", body: JSON.stringify(body) }),
-  listMaterials: (id: number) => api<SubjectMaterial[]>(`/subjects/${id}/materials`),
+    api<Subject>(`/subjects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  updateSyllabus: (
+    id: number,
+    body: { syllabus_text?: string; syllabus_file_url?: string },
+  ) =>
+    api<Subject>(`/subjects/${id}/syllabus`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  listMaterials: (id: number) =>
+    api<SubjectMaterial[]>(`/subjects/${id}/materials`),
   addMaterial: (
     id: number,
-    body: { title: string; material_type?: string; file_url?: string; content_text?: string },
-  ) => api<SubjectMaterial>(`/subjects/${id}/materials`, { method: "POST", body: JSON.stringify(body) }),
+    body: {
+      title: string;
+      material_type?: string;
+      file_url?: string;
+      content_text?: string;
+    },
+  ) =>
+    api<SubjectMaterial>(`/subjects/${id}/materials`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};
+
+export const aiApi = {
+  chat: (body: { classroom_id: number; question: string }) =>
+    api<{
+      document_answer: string;
+      additional_explanation: string;
+      used_document: boolean;
+      used_general_knowledge: boolean;
+    }>("/ai/chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
