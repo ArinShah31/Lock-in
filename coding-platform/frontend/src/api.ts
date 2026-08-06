@@ -19,15 +19,20 @@ export async function api<T>(path: string, options: RequestInit = {}, auth = tru
   }
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
-    let message = res.statusText;
+    let message = res.statusText || `Request failed (${res.status})`;
     try {
       const data = await res.json();
-      message = data.detail?.toString?.() || data.detail || message;
-      if (Array.isArray(data.detail)) {
+      if (typeof data.detail === "string") {
+        message = data.detail;
+      } else if (Array.isArray(data.detail)) {
         message = data.detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join("; ");
+      } else if (data.detail != null) {
+        message = String(data.detail);
       }
     } catch {
-      /* ignore */
+      if (res.status === 404) {
+        message = "Coding API not reachable (check Vite proxy → port 8011)";
+      }
     }
     throw new ApiError(res.status, message);
   }

@@ -440,19 +440,18 @@ export const AuthComponent = ({
       if (authStep === "fullName" && isFullNameValid) setAuthStep("email");
       else if (authStep === "email" && isEmailValid) setAuthStep("password");
       else if (authStep === "password" && isPasswordValid) setAuthStep("confirmPassword");
-    } else {
-      if (authStep === "email" && isEmailValid) setAuthStep("password");
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (
-        (mode === "login" && authStep === "password") ||
-        (mode === "register" && authStep === "confirmPassword")
-      ) {
-        handleFinalSubmit(e);
+      if (mode === "login") {
+        if (isEmailValid && isPasswordValid) void handleFinalSubmit(e);
+        return;
+      }
+      if (authStep === "confirmPassword") {
+        void handleFinalSubmit(e);
       } else {
         handleProgressStep();
       }
@@ -663,7 +662,7 @@ export const AuthComponent = ({
               </motion.div>
             )}
 
-            {authStep === "password" && (
+            {mode === "register" && authStep === "password" && (
               <motion.div
                 key="password-header"
                 initial={{ y: 6, opacity: 0 }}
@@ -675,7 +674,7 @@ export const AuthComponent = ({
                 <BlurFade delay={0} className="w-full">
                   <div className="text-center">
                     <p className="font-serif font-normal text-4xl sm:text-5xl tracking-tight text-slate-900 whitespace-nowrap">
-                      {mode === "login" ? "Enter your password" : "Create password"}
+                      Create password
                     </p>
                   </div>
                 </BlurFade>
@@ -769,7 +768,7 @@ export const AuthComponent = ({
               </BlurFade>
             )}
 
-            {/* Step: Email */}
+            {/* Step: Email (+ password on login so browser can show saved accounts) */}
             {authStep === "email" && (
               <BlurFade key="email-field" className="w-full space-y-4">
                 <div className="relative w-full">
@@ -781,6 +780,8 @@ export const AuthComponent = ({
                       </div>
                       <input
                         type="email"
+                        name="email"
+                        autoComplete={mode === "login" ? "username" : "email"}
                         placeholder="Email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -792,17 +793,62 @@ export const AuthComponent = ({
                   </div>
                 </div>
 
+                {mode === "login" && (
+                  <div className="relative w-full">
+                    <div className="glass-input-wrap w-full">
+                      <div className="glass-input">
+                        <span className="glass-input-text-area"></span>
+                        <div className="relative z-10 flex-shrink-0 flex items-center justify-center w-11 pl-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="text-slate-700 hover:text-slate-900"
+                            tabIndex={-1}
+                          >
+                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                          </button>
+                        </div>
+                        <input
+                          ref={passwordInputRef}
+                          type={showPassword ? "text" : "password"}
+                          name="password"
+                          autoComplete="current-password"
+                          placeholder="Password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          className="relative z-10 h-12 w-full bg-transparent text-slate-900 placeholder:text-slate-500 px-2 text-base focus:outline-none font-semibold"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-2 pt-1">
-                  <GlassButton
-                    type="button"
-                    onClick={handleProgressStep}
-                    disabled={!isEmailValid}
-                    size="sm"
-                    className="w-full flex items-center justify-center gap-2"
-                  >
-                    <span className="text-base font-bold">Continue to Password</span>
-                    <ArrowRight className="w-5 h-5 text-slate-800" />
-                  </GlassButton>
+                  {mode === "login" ? (
+                    <GlassButton
+                      type="button"
+                      onClick={handleFinalSubmit}
+                      disabled={!isEmailValid || !isPasswordValid}
+                      size="sm"
+                      className="w-full flex items-center justify-center gap-2"
+                    >
+                      <span className="text-base font-bold">Sign In</span>
+                      <ArrowRight className="w-5 h-5 text-slate-800" />
+                    </GlassButton>
+                  ) : (
+                    <GlassButton
+                      type="button"
+                      onClick={handleProgressStep}
+                      disabled={!isEmailValid}
+                      size="sm"
+                      className="w-full flex items-center justify-center gap-2"
+                    >
+                      <span className="text-base font-bold">Continue to Password</span>
+                      <ArrowRight className="w-5 h-5 text-slate-800" />
+                    </GlassButton>
+                  )}
 
                   {mode === "register" && (
                     <button
@@ -817,8 +863,8 @@ export const AuthComponent = ({
               </BlurFade>
             )}
 
-            {/* Step: Password */}
-            {authStep === "password" && (
+            {/* Step: Password (register only) */}
+            {mode === "register" && authStep === "password" && (
               <BlurFade key="password-field" className="w-full space-y-4">
                 <div className="relative w-full">
                   <div className="glass-input-wrap w-full">
@@ -836,6 +882,8 @@ export const AuthComponent = ({
                       <input
                         ref={passwordInputRef}
                         type={showPassword ? "text" : "password"}
+                        name="new-password"
+                        autoComplete="new-password"
                         placeholder="Password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -848,29 +896,16 @@ export const AuthComponent = ({
                 </div>
 
                 <div className="flex flex-col gap-2 pt-1">
-                  {mode === "login" ? (
-                    <GlassButton
-                      type="button"
-                      onClick={handleFinalSubmit}
-                      disabled={!isPasswordValid}
-                      size="sm"
-                      className="w-full flex items-center justify-center gap-2"
-                    >
-                      <span className="text-base font-bold">Sign In</span>
-                      <ArrowRight className="w-5 h-5 text-slate-800" />
-                    </GlassButton>
-                  ) : (
-                    <GlassButton
-                      type="button"
-                      onClick={handleProgressStep}
-                      disabled={!isPasswordValid}
-                      size="sm"
-                      className="w-full flex items-center justify-center gap-2"
-                    >
-                      <span className="text-base font-bold">Next: Confirm Password</span>
-                      <ArrowRight className="w-5 h-5 text-slate-800" />
-                    </GlassButton>
-                  )}
+                  <GlassButton
+                    type="button"
+                    onClick={handleProgressStep}
+                    disabled={!isPasswordValid}
+                    size="sm"
+                    className="w-full flex items-center justify-center gap-2"
+                  >
+                    <span className="text-base font-bold">Next: Confirm Password</span>
+                    <ArrowRight className="w-5 h-5 text-slate-800" />
+                  </GlassButton>
 
                   <button
                     type="button"
@@ -902,6 +937,8 @@ export const AuthComponent = ({
                       <input
                         ref={confirmPasswordInputRef}
                         type={showConfirmPassword ? "text" : "password"}
+                        name="confirm-password"
+                        autoComplete="new-password"
                         placeholder="Confirm Password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}

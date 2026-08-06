@@ -41,11 +41,15 @@ export function SsoPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-slate-200">
       {error ? (
-        <div className="rounded-xl border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-100">
-          {error}
+        <div className="max-w-md rounded-xl border border-red-500/60 bg-red-950 px-5 py-4 text-sm text-red-50 shadow-lg">
+          <p className="mb-1 font-semibold text-red-200">Could not sign you in</p>
+          <p className="text-red-100/90">{error}</p>
+          <a href="/login" className="mt-3 inline-block text-xs text-slate-300 underline">
+            Go to coding login
+          </a>
         </div>
       ) : (
-        <p className="text-sm text-slate-400">Signing you in…</p>
+        <p className="text-base text-slate-200">Signing you in…</p>
       )}
     </div>
   );
