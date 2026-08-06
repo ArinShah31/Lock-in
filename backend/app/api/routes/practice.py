@@ -1,4 +1,5 @@
 from math import ceil
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -29,6 +30,7 @@ from app.schemas.practice import (
 )
 
 router = APIRouter(tags=["practice"])
+logger = logging.getLogger(__name__)
 
 ASSESSMENT_TOPIC = "ASSESSMENT_TOPIC"
 ASSESSMENT_SUBJECT = "ASSESSMENT_SUBJECT"
@@ -140,14 +142,17 @@ def _bootstrap_practice_content(
 
     chapters = list((course.content or {}).get("chapters") or [])
     if _needs_practice_regeneration(chapters, source_changed=source_changed):
-        chapters = generate_practice_chapters(
-            classroom_name=classroom.name,
-            syllabus_text=course.syllabus_text,
-            syllabus_path=course.syllabus_file_path,
-            syllabus_name=course.syllabus_file_name,
-            documents=documents,
-        )
-        _save_chapters(db, course, chapters)
+        try:
+            chapters = generate_practice_chapters(
+                classroom_name=classroom.name,
+                syllabus_text=course.syllabus_text,
+                syllabus_path=course.syllabus_file_path,
+                syllabus_name=course.syllabus_file_name,
+                documents=documents,
+            )
+            _save_chapters(db, course, chapters)
+        except Exception as exc:
+            logger.warning("Practice generation skipped for classroom %s: %s", classroom.id, exc)
     return course
 
 
