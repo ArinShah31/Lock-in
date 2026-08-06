@@ -41,7 +41,7 @@ async function exchangeSsoToken(): Promise<void> {
 }
 
 /** Validate cached coding JWT or mint a fresh one via ASTRA SSO. */
-export async function ensureCodingSession(force = false): Promise<void> {
+export async function ensureCodingSession(force = false, expectedEmail?: string): Promise<void> {
   if (!force) {
     const existing = getCodingToken();
     if (existing) {
@@ -49,7 +49,11 @@ export async function ensureCodingSession(force = false): Promise<void> {
         const res = await fetch(`${CODING_API_BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${existing}` },
         });
-        if (res.ok) return;
+        if (res.ok) {
+          if (!expectedEmail) return;
+          const user = (await res.json()) as { email?: string };
+          if (user.email?.toLowerCase() === expectedEmail.toLowerCase()) return;
+        }
       } catch {
         /* fall through to re-SSO */
       }

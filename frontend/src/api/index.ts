@@ -12,6 +12,8 @@ import type {
   Department,
   Institution,
   StudentAssignmentFeedItem,
+  PracticeAttempt,
+  PracticeOverview,
   Subject,
   SubjectMaterial,
   User,
@@ -312,6 +314,25 @@ export const courseBuilderApi = {
       `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/quiz-attempt`,
       { method: "POST", body: JSON.stringify({ selected_answers }) },
     ),
+};
+
+export const practiceApi = {
+  get: (classroomId: number) => api<PracticeOverview>(`/classrooms/${classroomId}/practice`),
+  submitQuiz: (classroomId: number, chapterNumber: number, selected_answers: string[]) =>
+    api<PracticeAttempt>(`/classrooms/${classroomId}/practice/quizzes/${chapterNumber}/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ selected_answers }),
+    }),
+  submitAssessment: (
+    classroomId: number,
+    assessmentKind: string,
+    targetKey: string,
+    selected_answers: string[],
+  ) =>
+    api<PracticeAttempt>(`/classrooms/${classroomId}/practice/assessments/${assessmentKind}/${targetKey}/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ selected_answers }),
+    }),
 };
 
 export const usersApi = {

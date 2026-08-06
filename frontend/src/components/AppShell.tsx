@@ -157,6 +157,12 @@ export function AppShell() {
       icon: "code",
       show: showCodingTab,
     },
+    {
+      to: "/practice",
+      label: "Practise",
+      icon: "local_library",
+      show: isStudent,
+    },
   ].filter((l) => l.show);
 
   function navItemClass(isActive: boolean) {

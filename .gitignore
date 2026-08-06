@@ -18,6 +18,7 @@ ENV/
 
 # Environment secrets
 .env
+backend/.env
 
 # SQLite databases
 *.db

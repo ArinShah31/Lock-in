@@ -131,10 +131,10 @@ export function CodingPage() {
     );
   }
 
-  return <TeacherCodingWorkspace />;
+  return <TeacherCodingWorkspace expectedEmail={user?.email} />;
 }
 
-function TeacherCodingWorkspace() {
+function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
   const qc = useQueryClient();
   const location = useLocation();
   const navState = (location.state as {
@@ -180,9 +180,10 @@ function TeacherCodingWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
     void (async () => {
       try {
-        await ensureCodingSession();
+        await ensureCodingSession(false, expectedEmail);
         if (!cancelled) setReady(true);
       } catch (e) {
         clearCodingToken();
@@ -192,15 +193,15 @@ function TeacherCodingWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [expectedEmail]);
 
   const questions = useQuery({
-    queryKey: ["coding-questions"],
+    queryKey: ["coding-questions", expectedEmail],
     queryFn: () => codingApi<CodingQuestion[]>("/teacher/questions"),
     enabled: ready,
   });
   const tests = useQuery({
-    queryKey: ["coding-tests"],
+    queryKey: ["coding-tests", expectedEmail],
     queryFn: () => codingApi<CodingTest[]>("/teacher/tests"),
     enabled: ready,
   });
@@ -210,17 +211,17 @@ function TeacherCodingWorkspace() {
     enabled: ready,
   });
   const attempts = useQuery({
-    queryKey: ["coding-attempts", selectedTestId],
+    queryKey: ["coding-attempts", expectedEmail, selectedTestId],
     queryFn: () => codingApi<AttemptRow[]>(`/results/tests/${selectedTestId}/attempts`),
     enabled: ready && selectedTestId != null && tab === "results" && resultsMode === "tests",
   });
   const resultStudents = useQuery({
-    queryKey: ["coding-result-students"],
+    queryKey: ["coding-result-students", expectedEmail],
     queryFn: () => codingApi<StudentResultSummary[]>("/results/students"),
     enabled: ready && tab === "results" && resultsMode === "students",
   });
   const studentAttempts = useQuery({
-    queryKey: ["coding-student-attempts", selectedStudentId],
+    queryKey: ["coding-student-attempts", expectedEmail, selectedStudentId],
     queryFn: () => codingApi<AttemptRow[]>(`/results/students/${selectedStudentId}/attempts`),
     enabled:
       ready &&

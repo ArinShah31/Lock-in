@@ -11,6 +11,7 @@ from app.models.classroom_course import (
     CourseBuildJob,
     CourseChapterAttempt,
     CourseChapterLock,
+    PracticeAssessmentLock,
 )
 from app.models.content import ClassroomContent, ContentType
 from app.models.institution import Department, Institution
@@ -36,4 +37,5 @@ __all__ = [
     "CourseBuildJob",
     "CourseChapterLock",
     "CourseChapterAttempt",
+    "PracticeAssessmentLock",
 ]
