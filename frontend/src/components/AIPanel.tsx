@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { aiApi } from "../api";
+import ReactMarkdown from "react-markdown";
 
 export function AIPanel() {
   const { classroomId } = useParams();
@@ -43,7 +44,9 @@ export function AIPanel() {
         {loading ? (
           <p>Thinking...</p>
         ) : answer ? (
-          <p>{answer}</p>
+          <div className="prose prose-sm max-w-none whitespace-pre-wrap">
+            <ReactMarkdown>{answer}</ReactMarkdown>
+          </div>
         ) : (
           <p className="text-sm text-mist">
             Ask anything about the documents uploaded in this classroom.
