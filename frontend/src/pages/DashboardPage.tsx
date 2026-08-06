@@ -1,13 +1,9 @@
-import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { classroomsApi, institutionsApi, subjectsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import {
   EmptyState,
-  ErrorText,
-  Field,
-  inputClass,
   Panel,
   PrimaryButton,
   SecondaryButton,
@@ -16,11 +12,6 @@ import {
 // --- Student Dashboard View (Matching Starred Lumina Student Dashboard) ---
 function StudentDashboardView() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const [joinCode, setJoinCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const classrooms = useQuery({ queryKey: ["classrooms"], queryFn: classroomsApi.list });
   const pendingRequests = useQuery({
@@ -28,99 +19,41 @@ function StudentDashboardView() {
     queryFn: classroomsApi.myJoinRequests,
   });
 
-  const joinMutation = useMutation({
-    mutationFn: (code: string) => classroomsApi.join(code),
-    onSuccess: async () => {
-      setJoinCode("");
-      setSuccess("Join request sent successfully! Awaiting teacher approval.");
-      await qc.invalidateQueries({ queryKey: ["my-join-requests"] });
-    },
-    onError: (err: Error) => setError(err.message),
-  });
-
-  function handleJoinSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    joinMutation.mutate(joinCode.trim().toUpperCase());
-  }
-
   const enrolledCount = classrooms.data?.length ?? 0;
   const pendingCount = pendingRequests.data?.length ?? 0;
 
   return (
     <div className="space-y-6">
-      {/* Lumina Banner */}
-      <div className="rounded-xl border border-[#e1e3e4] bg-white p-6 shadow-xs relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#eef2ff] text-[#4f46e5] text-xs font-semibold mb-2">
-              <span className="material-symbols-outlined text-sm">auto_awesome</span>
-              <span>Lumina Student Intelligence Workspace</span>
+      {/* Top row: welcome banner + Time Engine */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:items-start">
+        <div className="rounded-xl border border-[#e1e3e4] bg-white p-6 shadow-xs relative overflow-hidden">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#eef2ff] text-[#4f46e5] text-xs font-semibold mb-2">
+                <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                <span>Lumina Student Intelligence Workspace</span>
+              </div>
+              <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635]">
+                Welcome back, {user?.full_name.split(" ")[0]}!
+              </h1>
+              <p className="academic-text text-[#44474e] text-sm mt-1">
+                "Continuous academic rigor and organized study intervals yield peak retention."
+              </p>
             </div>
-            <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635]">
-              Welcome back, {user?.full_name.split(" ")[0]}!
-            </h1>
-            <p className="academic-text text-[#44474e] text-sm mt-1">
-              "Continuous academic rigor and organized study intervals yield peak retention."
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-center px-4 py-2 bg-[#f8f9fa] border border-[#e1e3e4] rounded-lg">
-              <p className="text-xs text-[#75777f] uppercase font-bold tracking-wider">Classrooms</p>
-              <p className="font-display text-xl font-bold text-[#031635]">{enrolledCount}</p>
-            </div>
-            <div className="text-center px-4 py-2 bg-[#f8f9fa] border border-[#e1e3e4] rounded-lg">
-              <p className="text-xs text-[#75777f] uppercase font-bold tracking-wider">Pending</p>
-              <p className="font-display text-xl font-bold text-[#3f5d9b]">{pendingCount}</p>
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="text-center px-4 py-2 bg-[#f8f9fa] border border-[#e1e3e4] rounded-lg">
+                <p className="text-xs text-[#75777f] uppercase font-bold tracking-wider">Classrooms</p>
+                <p className="font-display text-xl font-bold text-[#031635]">{enrolledCount}</p>
+              </div>
+              <div className="text-center px-4 py-2 bg-[#f8f9fa] border border-[#e1e3e4] rounded-lg">
+                <p className="text-xs text-[#75777f] uppercase font-bold tracking-wider">Pending</p>
+                <p className="font-display text-xl font-bold text-[#3f5d9b]">{pendingCount}</p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <ErrorText message={error} />
-      {success ? (
-        <div className="rounded-md border border-[#4f46e5]/30 bg-[#eef2ff] p-3 text-sm text-[#4f46e5] font-medium flex items-center gap-2">
-          <span className="material-symbols-outlined text-base">check_circle</span>
-          <span>{success}</span>
-        </div>
-      ) : null}
-
-      {/* Join Classroom Card */}
-      <Panel>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="font-display text-lg font-bold text-[#031635] flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#3f5d9b]">vpn_key</span>
-              Join a Classroom
-            </h2>
-            <p className="text-xs text-[#44474e]">Enter the 5-character join code provided by your teacher.</p>
-          </div>
-        </div>
-        <form onSubmit={handleJoinSubmit} className="flex flex-col sm:flex-row gap-3 items-end">
-          <div className="flex-1">
-            <Field label="Join Code">
-              <input
-                className={`${inputClass} font-mono tracking-widest text-center uppercase text-base font-bold`}
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase().slice(0, 5))}
-                maxLength={5}
-                minLength={5}
-                placeholder="e.g. AB12C"
-                required
-              />
-            </Field>
-          </div>
-          <PrimaryButton type="submit" disabled={joinMutation.isPending}>
-            {joinMutation.isPending ? "Sending Request..." : "Request Access"}
-          </PrimaryButton>
-        </form>
-      </Panel>
-
-      {/* Grid: Time Engine Schedule & Enrolled Classrooms */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Lumina Time Engine Panel */}
-        <Panel className="lg:col-span-1">
+        <Panel className="h-fit">
           <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#e1e3e4]">
             <h3 className="font-display font-bold text-[#031635] text-base flex items-center gap-2">
               <span className="material-symbols-outlined text-[#4f46e5]">schedule</span>
@@ -131,117 +64,30 @@ function StudentDashboardView() {
 
           <div className="space-y-4">
             <div className="timeline-node pl-8">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-bold text-[#031635]">09:00 AM — Academic Orientation</p>
-                <span className="text-[10px] bg-[#eef2ff] text-[#4f46e5] px-2 py-0.5 rounded font-bold">Today</span>
+                <span className="shrink-0 text-[10px] bg-[#eef2ff] text-[#4f46e5] px-2 py-0.5 rounded font-bold">Today</span>
               </div>
               <p className="text-xs text-[#44474e] mt-0.5">Review registered subjects & syllabus outline.</p>
             </div>
 
             <div className="timeline-node pl-8">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-bold text-[#031635]">11:30 AM — Course Builder Sync</p>
-                <span className="text-[10px] bg-[#f8f9fa] border border-[#e1e3e4] text-[#44474e] px-2 py-0.5 rounded font-bold">Upcoming</span>
+                <span className="shrink-0 text-[10px] bg-[#f8f9fa] border border-[#e1e3e4] text-[#44474e] px-2 py-0.5 rounded font-bold">Upcoming</span>
               </div>
               <p className="text-xs text-[#44474e] mt-0.5">Access new material uploaded by class faculty.</p>
             </div>
 
             <div className="timeline-node pl-8">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-bold text-[#031635]">05:00 PM — Assignment Submission</p>
-                <span className="text-[10px] bg-[#ffdad6] text-[#ba1a1a] px-2 py-0.5 rounded font-bold">Due Soon</span>
+                <span className="shrink-0 text-[10px] bg-[#ffdad6] text-[#ba1a1a] px-2 py-0.5 rounded font-bold">Due Soon</span>
               </div>
               <p className="text-xs text-[#44474e] mt-0.5">Check classroom assignments tab for deadlines.</p>
             </div>
           </div>
         </Panel>
-
-        {/* Enrolled Classrooms Grid */}
-        <div className="lg:col-span-2 space-y-4">
-          <Panel>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display font-bold text-[#031635] text-base flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#3f5d9b]">auto_stories</span>
-                Your Classrooms
-              </h3>
-              <button
-                onClick={() => navigate("/classrooms")}
-                className="text-xs text-[#3f5d9b] font-semibold hover:underline"
-              >
-                View All →
-              </button>
-            </div>
-
-            {classrooms.isLoading ? (
-              <p className="text-sm text-[#75777f]">Loading classrooms...</p>
-            ) : !classrooms.data?.length ? (
-              <EmptyState
-                title="No active classrooms"
-                body="Enter a 5-character join code above to request access to your class."
-              />
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {classrooms.data.map((c) => (
-                  <div
-                    key={c.id}
-                    onClick={() => navigate(`/classrooms/${c.id}/dashboard`)}
-                    className="p-4 rounded-lg border border-[#e1e3e4] bg-[#f8f9fa] hover:bg-white hover:border-[#031635] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] font-bold text-[#3f5d9b] uppercase tracking-wider">
-                          Code: {c.code}
-                        </span>
-                        <span className="text-[10px] bg-[#e8edf5] text-[#031635] px-2 py-0.5 rounded font-medium">
-                          {c.academic_year || "Active"}
-                        </span>
-                      </div>
-                      <h4 className="font-display font-bold text-[#031635] text-base group-hover:text-[#3f5d9b] transition-colors">
-                        {c.name}
-                      </h4>
-                      {c.description ? (
-                        <p className="text-xs text-[#44474e] mt-1 line-clamp-2">{c.description}</p>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-4 pt-2 border-t border-[#e1e3e4] flex items-center justify-between text-xs text-[#44474e]">
-                      <span>Enter Workspace</span>
-                      <span className="material-symbols-outlined text-sm text-[#031635] group-hover:translate-x-1 transition-transform">
-                        arrow_forward
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          {/* Pending Requests */}
-          {pendingRequests.data?.length ? (
-            <Panel>
-              <h3 className="font-display font-bold text-[#031635] text-sm mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-600 text-base">pending</span>
-                Pending Join Requests ({pendingRequests.data.length})
-              </h3>
-              <div className="space-y-2">
-                {pendingRequests.data.map((r) => (
-                  <div
-                    key={r.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50/50 text-xs"
-                  >
-                    <div>
-                      <p className="font-semibold text-[#031635]">{r.classroom_name || `Classroom #${r.classroom_id}`}</p>
-                      <p className="text-[#44474e]">{r.classroom_code ? `Code: ${r.classroom_code}` : ""}</p>
-                    </div>
-                    <span className="px-2 py-1 rounded bg-amber-100 text-amber-800 font-bold text-[10px] uppercase">
-                      Awaiting Teacher Approval
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Panel>
-          ) : null}
-        </div>
       </div>
     </div>
   );

@@ -376,17 +376,26 @@ export function AppShell() {
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <span className="material-symbols-outlined absolute left-3 top-2 text-[#75777f] text-sm">search</span>
-              <input
-                type="text"
-                placeholder="Search knowledge base & classrooms..."
-                className="bg-[#f8f9fa] border border-[#e1e3e4] rounded-md pl-9 pr-4 py-1.5 text-xs text-[#191c1d] focus:bg-white focus:border-[#031635] focus:outline-none w-64 transition-all"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              title="Notifications (coming soon)"
+              className="flex size-9 items-center justify-center rounded-full border border-[#e1e3e4] bg-[#f8f9fa] text-[#44474e] transition hover:bg-white hover:text-[#031635]"
+            >
+              <span className="material-symbols-outlined text-xl">notifications</span>
+            </button>
+            <button
+              type="button"
+              title={user ? `${user.full_name} (profile coming soon)` : "Profile (coming soon)"}
+              className="flex size-9 items-center justify-center rounded-full bg-[#031635] text-sm font-bold text-white transition hover:bg-[#1a2b4b]"
+            >
+              {user?.full_name?.charAt(0)?.toUpperCase() || (
+                <span className="material-symbols-outlined text-lg">person</span>
+              )}
+            </button>
             {showAgentDock && (
               <button
+                type="button"
                 onClick={() => setAgentDockOpen(!agentDockOpen)}
                 className="text-[#44474e] hover:text-[#031635] p-1.5 rounded-md hover:bg-[#f3f4f5] transition-colors"
                 title="Toggle Lumina AI Agent Dock"
@@ -398,7 +407,7 @@ export function AppShell() {
         </header>
 
         {/* Main Content Outlet */}
-        <main className="flex-1 p-4 md:p-8 animate-rise max-w-6xl w-full">
+        <main className="flex-1 p-4 md:p-8 animate-rise w-full min-w-0">
           <Outlet />
         </main>
       </div>
