@@ -191,6 +191,57 @@ class AttemptResultOut(BaseModel):
     violation_score: float | None
     evals: list[EvalOut] = []
     average_score: float | None = None
+    test_id: int | None = None
+    test_title: str | None = None
+
+
+class StudentResultSummaryOut(BaseModel):
+    student_id: int
+    student_name: str
+    student_email: str
+    assignment_count: int
+    started_count: int
+    submitted_count: int
+
+
+class AnalyticsBucketOut(BaseModel):
+    label: str
+    count: int
+
+
+class AnalyticsRiskStudentOut(BaseModel):
+    student_id: int
+    student_name: str
+    student_email: str
+    test_id: int
+    test_title: str
+    assignment_id: int
+    violation_score: float
+    session_status: SessionStatus | None = None
+
+
+class AnalyticsTestBreakdownOut(BaseModel):
+    test_id: int
+    test_title: str
+    assignment_id: int
+    session_status: SessionStatus | None = None
+    average_score: float | None = None
+    violation_score: float | None = None
+    eval_count: int = 0
+
+
+class TeacherCodingAnalyticsOut(BaseModel):
+    test_count: int
+    participation: dict[str, int]
+    score_distribution: list[AnalyticsBucketOut]
+    verdict_mix: list[AnalyticsBucketOut]
+    proctor_risk: list[AnalyticsRiskStudentOut]
+    violation_threshold: float
+    scored_attempt_count: int
+    student_id: int | None = None
+    student_name: str | None = None
+    student_email: str | None = None
+    per_test: list[AnalyticsTestBreakdownOut] = []
 
 
 class StudentResultOut(BaseModel):

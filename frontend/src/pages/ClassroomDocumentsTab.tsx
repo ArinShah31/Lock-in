@@ -163,16 +163,16 @@ export function ClassroomDocumentsTab() {
         <div className="mt-4 flex gap-4">
           <input
             type="text"
-            placeholder="🔍 Search documents..."
+            placeholder="Search documents…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 rounded-lg border border-line bg-slate-800 px-4 py-2 outline-none focus:border-accent"
+            className="flex-1 rounded-md border border-[#c5c6cf] bg-[#f8f9fa] px-3.5 py-2.5 text-sm text-[#191c1d] outline-none transition placeholder:text-[#75777f] focus:border-[#031635] focus:bg-white focus:ring-1 focus:ring-[#031635]"
           />
 
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="rounded-lg border border-line bg-slate-800 px-4 py-2 outline-none focus:border-accent"
+            className="rounded-md border border-[#c5c6cf] bg-[#f8f9fa] px-3.5 py-2.5 text-sm text-[#191c1d] outline-none transition focus:border-[#031635] focus:bg-white focus:ring-1 focus:ring-[#031635]"
           >
             <option value="newest">Newest</option>
             <option value="oldest">Oldest</option>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { aiApi, codingPlatformApi } from "../api";
+import { aiApi, classroomsApi, codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 
 const roleLabel: Record<string, string> = {
@@ -34,6 +34,7 @@ export function AppShell() {
   const onYourClassrooms =
     location.pathname === "/classrooms" || /^\/classrooms\/\d+(\/.*)?$/.test(location.pathname);
   const onCreateClassroom = location.pathname === "/classrooms/new";
+  const activeClassroomId = location.pathname.match(/^\/classrooms\/(\d+)/)?.[1] ?? "";
 
   // AI Agent Dock condition: Only visible for STUDENT in Course Builder
   const isCourseBuilderRoute = location.pathname.includes("/course-builder");
@@ -49,6 +50,13 @@ export function AppShell() {
     staleTime: 30_000,
   });
   const codingEnabled = codingAccess.data?.enabled === true;
+
+  const teacherClassrooms = useQuery({
+    queryKey: ["classrooms"],
+    queryFn: classroomsApi.list,
+    enabled: isTeacher,
+    staleTime: 30_000,
+  });
 
   // Auto-hide Left Sidebar States (Windows Taskbar style)
   const [sidebarPinned, setSidebarPinned] = useState(false);
@@ -280,11 +288,44 @@ export function AppShell() {
               </div>
 
               {isTeacher && isExpanded && classroomsOpen ? (
-                <div className="ml-7 mt-1 border-l border-[#c5c6cf] pl-2 space-y-1">
+                <div className="ml-7 mt-1 border-l border-[#c5c6cf] pl-2 space-y-1.5">
                   <NavLink to="/classrooms" end className={({ isActive }) => subTreeClass(onYourClassrooms && isActive)}>
                     <span className="material-symbols-outlined text-xs">list</span>
-                    <span>Your Classrooms</span>
+                    <span>All Classrooms</span>
                   </NavLink>
+
+                  <div className="px-1">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[#75777f]">
+                      Open classroom
+                    </label>
+                    <select
+                      className="w-full rounded-md border border-[#c5c6cf] bg-white px-2 py-1.5 text-xs font-medium text-[#031635] outline-none focus:border-[#031635] focus:ring-1 focus:ring-[#031635]"
+                      value={activeClassroomId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) {
+                          navigate("/classrooms");
+                          return;
+                        }
+                        navigate(`/classrooms/${id}/dashboard`);
+                      }}
+                      disabled={teacherClassrooms.isLoading}
+                    >
+                      <option value="">
+                        {teacherClassrooms.isLoading
+                          ? "Loading…"
+                          : teacherClassrooms.data?.length
+                            ? "Select a classroom…"
+                            : "No classrooms yet"}
+                      </option>
+                      {(teacherClassrooms.data || []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <NavLink to="/classrooms/new" className={({ isActive }) => subTreeClass(onCreateClassroom && isActive)}>
                     <span className="material-symbols-outlined text-xs">add_circle</span>
                     <span>Create Classroom</span>
@@ -357,6 +398,33 @@ export function AppShell() {
             {link.label}
           </NavLink>
         ))}
+        {isTeacher ? (
+          <>
+            <NavLink
+              to="/classrooms"
+              end
+              className={({ isActive }) =>
+                `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                  isActive || onYourClassrooms
+                    ? "bg-[#031635] text-white font-semibold"
+                    : "bg-white text-[#44474e] border border-[#e1e3e4]"
+                }`
+              }
+            >
+              Classrooms
+            </NavLink>
+            <NavLink
+              to="/classrooms/new"
+              className={({ isActive }) =>
+                `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                  isActive ? "bg-[#031635] text-white font-semibold" : "bg-white text-[#44474e] border border-[#e1e3e4]"
+                }`
+              }
+            >
+              New classroom
+            </NavLink>
+          </>
+        ) : null}
       </div>
 
       {/* Main Content Workspace (Center Column) */}
@@ -376,17 +444,26 @@ export function AppShell() {
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <span className="material-symbols-outlined absolute left-3 top-2 text-[#75777f] text-sm">search</span>
-              <input
-                type="text"
-                placeholder="Search knowledge base & classrooms..."
-                className="bg-[#f8f9fa] border border-[#e1e3e4] rounded-md pl-9 pr-4 py-1.5 text-xs text-[#191c1d] focus:bg-white focus:border-[#031635] focus:outline-none w-64 transition-all"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              title="Notifications (coming soon)"
+              className="flex size-9 items-center justify-center rounded-full border border-[#e1e3e4] bg-[#f8f9fa] text-[#44474e] transition hover:bg-white hover:text-[#031635]"
+            >
+              <span className="material-symbols-outlined text-xl">notifications</span>
+            </button>
+            <button
+              type="button"
+              title={user ? `${user.full_name} (profile coming soon)` : "Profile (coming soon)"}
+              className="flex size-9 items-center justify-center rounded-full bg-[#031635] text-sm font-bold text-white transition hover:bg-[#1a2b4b]"
+            >
+              {user?.full_name?.charAt(0)?.toUpperCase() || (
+                <span className="material-symbols-outlined text-lg">person</span>
+              )}
+            </button>
             {showAgentDock && (
               <button
+                type="button"
                 onClick={() => setAgentDockOpen(!agentDockOpen)}
                 className="text-[#44474e] hover:text-[#031635] p-1.5 rounded-md hover:bg-[#f3f4f5] transition-colors"
                 title="Toggle Lumina AI Agent Dock"
@@ -398,7 +475,7 @@ export function AppShell() {
         </header>
 
         {/* Main Content Outlet */}
-        <main className="flex-1 p-4 md:p-8 animate-rise max-w-6xl w-full">
+        <main className="flex-1 p-4 md:p-8 animate-rise w-full min-w-0">
           <Outlet />
         </main>
       </div>

@@ -11,6 +11,7 @@ import type {
   CourseBuildJob,
   Department,
   Institution,
+  StudentAssignmentFeedItem,
   Subject,
   SubjectMaterial,
   User,
@@ -185,6 +186,7 @@ export const contentsApi = {
 };
 
 export const assignmentsApi = {
+  myFeed: () => api<StudentAssignmentFeedItem[]>("/me/assignments"),
   listByClassroom: (classroomId: number) =>
     api<Assignment[]>(`/classrooms/${classroomId}/assignments`),
   get: (id: number) => api<Assignment>(`/assignments/${id}`),

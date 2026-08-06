@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # -------------------------
-    # Gemini AI (RAG / chat)
+    # Gemini AI (RAG chat / embeddings)
     # -------------------------
     gemini_api_key: str = ""
     gemini_chat_model: str = "gemini-3.6-flash"
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     qdrant_collection: str = "astra_documents"
 
     # -------------------------
-    # Course builder (Groq / Gemini notes)
+    # Course builder (Groq structure + Gemini notes + YouTube)
     # -------------------------
     groq_api_key_structure: str = ""
     groq_api_key_notes: str = ""
