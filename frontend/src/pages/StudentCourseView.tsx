@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { courseBuilderApi } from "../api";
 import type { ClassroomCourse, CourseChapter, CourseFlashcard, CourseLesson } from "../api/types";
+import { CourseMarkdown } from "../components/CourseMarkdown";
 import { EmptyState, ErrorText, GhostButton, PrimaryButton } from "../components/ui";
 
 type ProgressState = {
@@ -174,11 +175,7 @@ function StudentLessonReader({
               <h4 className="font-display text-lg text-paper">
                 {sIdx + 1}. {section.title}
               </h4>
-              {section.content_markdown ? (
-                <pre className="academic-text whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-paper/90">
-                  {section.content_markdown}
-                </pre>
-              ) : null}
+              {section.content_markdown ? <CourseMarkdown content={section.content_markdown} /> : null}
               {section.key_points?.length ? (
                 <ul className="list-disc space-y-1 pl-5 text-sm text-mist">
                   {section.key_points.map((kp) => (
@@ -212,9 +209,10 @@ function StudentLessonReader({
       ) : lesson.notes_markdown ? (
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-mist">Study notes</p>
-          <pre className="academic-text whitespace-pre-wrap rounded-xl border border-line bg-panel-low p-4 font-serif text-[15px] leading-relaxed text-paper">
-            {lesson.notes_markdown}
-          </pre>
+          <CourseMarkdown
+            content={lesson.notes_markdown}
+            className="rounded-xl border border-line bg-panel-low p-4"
+          />
         </div>
       ) : null}
 
@@ -226,7 +224,7 @@ function StudentLessonReader({
               <p className="font-medium text-paper">{ex.title || "Example"}</p>
               {ex.context ? <p className="mt-1 text-sm text-mist">{ex.context}</p> : null}
               {ex.content_markdown ? (
-                <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-mist">{ex.content_markdown}</pre>
+                <CourseMarkdown content={ex.content_markdown} className="mt-2 text-sm" />
               ) : null}
               {ex.takeaway ? <p className="mt-2 text-sm text-accent">Takeaway: {ex.takeaway}</p> : null}
             </div>

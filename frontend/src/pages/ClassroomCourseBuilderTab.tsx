@@ -11,6 +11,7 @@ import type {
   ClassroomCourse,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { CourseMarkdown } from "../components/CourseMarkdown";
 import {
   EmptyState,
   ErrorText,
@@ -644,9 +645,10 @@ function LessonBody({
                 {open ? (
                   <div className="space-y-2 border-t border-line px-3 py-3">
                     {section.content_markdown ? (
-                      <pre className="max-h-[22rem] overflow-y-auto whitespace-pre-wrap font-sans text-sm leading-relaxed text-mist">
-                        {section.content_markdown}
-                      </pre>
+                      <CourseMarkdown
+                        content={section.content_markdown}
+                        className="max-h-[22rem] overflow-y-auto text-sm text-mist"
+                      />
                     ) : null}
                     {section.key_points?.length ? (
                       <ul className="list-disc space-y-1 pl-5 text-sm text-mist">
@@ -687,9 +689,10 @@ function LessonBody({
       ) : lesson.notes_markdown ? (
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-mist">Study notes</p>
-          <pre className="max-h-[28rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-line bg-panel-low p-3 font-sans text-sm leading-relaxed text-paper">
-            {lesson.notes_markdown}
-          </pre>
+          <CourseMarkdown
+            content={lesson.notes_markdown}
+            className="max-h-[28rem] overflow-y-auto rounded-xl border border-line bg-panel-low p-3 text-sm"
+          />
         </div>
       ) : null}
 
@@ -701,7 +704,7 @@ function LessonBody({
               <p className="font-medium text-paper">{ex.title || "Example"}</p>
               {ex.context ? <p className="mt-1 text-sm text-mist">{ex.context}</p> : null}
               {ex.content_markdown ? (
-                <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-mist">{ex.content_markdown}</pre>
+                <CourseMarkdown content={ex.content_markdown} className="mt-2 text-sm text-mist" />
               ) : null}
               {ex.takeaway ? <p className="mt-2 text-sm text-accent">Takeaway: {ex.takeaway}</p> : null}
             </div>
