@@ -32,6 +32,7 @@ from app.schemas import (
     ProctorEventRequest,
     SessionOut,
     StudentResultOut,
+    StudentResultSummaryOut,
     SubmitResponse,
 )
 from app.services.evaluator import evaluate_submission, event_weight
@@ -563,6 +564,93 @@ def teacher_attempts(
                 violation_score=session.violation_score if session else None,
                 evals=evals,
                 average_score=avg,
+                test_id=test.id,
+                test_title=test.title,
+            )
+        )
+    return out
+
+
+@results_router.get("/students", response_model=list[StudentResultSummaryOut])
+def teacher_result_students(
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    """Students assigned to any of this teacher's tests (includes not started)."""
+    rows = (
+        db.query(TestAssignment, User, CodingTest)
+        .join(CodingTest, CodingTest.id == TestAssignment.coding_test_id)
+        .join(User, User.id == TestAssignment.student_id)
+        .filter(CodingTest.created_by_id == teacher.id)
+        .all()
+    )
+    by_student: dict[int, dict] = {}
+    for assignment, student, _test in rows:
+        entry = by_student.setdefault(
+            student.id,
+            {
+                "student_id": student.id,
+                "student_name": student.full_name,
+                "student_email": student.email,
+                "assignment_count": 0,
+                "started_count": 0,
+                "submitted_count": 0,
+            },
+        )
+        entry["assignment_count"] += 1
+        session = _get_active_session(db, assignment.id)
+        if session:
+            entry["started_count"] += 1
+            if session.status == SessionStatus.SUBMITTED:
+                entry["submitted_count"] += 1
+    return [
+        StudentResultSummaryOut(**entry)
+        for entry in sorted(by_student.values(), key=lambda e: e["student_name"].lower())
+    ]
+
+
+@results_router.get("/students/{student_id}/attempts", response_model=list[AttemptResultOut])
+def teacher_student_attempts(
+    student_id: int,
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    """All tests this teacher assigned to the student (includes not started)."""
+    rows = (
+        db.query(TestAssignment, CodingTest)
+        .join(CodingTest, CodingTest.id == TestAssignment.coding_test_id)
+        .filter(
+            CodingTest.created_by_id == teacher.id,
+            TestAssignment.student_id == student_id,
+        )
+        .order_by(CodingTest.id.asc())
+        .all()
+    )
+    if not rows:
+        student = db.query(User).filter(User.id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        return []
+
+    student = db.query(User).filter(User.id == student_id).first()
+    out: list[AttemptResultOut] = []
+    for assignment, test in rows:
+        session = _get_active_session(db, assignment.id)
+        evals = _session_evals(db, session) if session else []
+        avg = round(sum(e.total_score for e in evals) / len(evals), 2) if evals else None
+        out.append(
+            AttemptResultOut(
+                assignment_id=assignment.id,
+                student_id=student_id,
+                student_name=student.full_name if student else "?",
+                student_email=student.email if student else "?",
+                session_id=session.id if session else None,
+                session_status=session.status if session else None,
+                violation_score=session.violation_score if session else None,
+                evals=evals,
+                average_score=avg,
+                test_id=test.id,
+                test_title=test.title,
             )
         )
     return out

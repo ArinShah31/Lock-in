@@ -320,7 +320,14 @@ function TeacherDashboardView() {
           </SecondaryButton>
         </div>
 
-        {!classrooms.data?.length ? (
+        {classrooms.isLoading ? (
+          <p className="text-sm text-[#75777f]">Loading classrooms…</p>
+        ) : classrooms.isError ? (
+          <EmptyState
+            title="Could not load classrooms"
+            body={classrooms.error instanceof Error ? classrooms.error.message : "Check that the ASTRA API is running on the Vite proxy port."}
+          />
+        ) : !classrooms.data?.length ? (
           <EmptyState
             title="No classrooms created yet"
             body="Create your first classroom to generate a student join code and start managing syllabus content."

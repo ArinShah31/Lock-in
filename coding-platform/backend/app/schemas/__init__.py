@@ -191,6 +191,17 @@ class AttemptResultOut(BaseModel):
     violation_score: float | None
     evals: list[EvalOut] = []
     average_score: float | None = None
+    test_id: int | None = None
+    test_title: str | None = None
+
+
+class StudentResultSummaryOut(BaseModel):
+    student_id: int
+    student_name: str
+    student_email: str
+    assignment_count: int
+    started_count: int
+    submitted_count: int
 
 
 class StudentResultOut(BaseModel):

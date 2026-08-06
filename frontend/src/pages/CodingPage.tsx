@@ -13,6 +13,7 @@ import {
   type Difficulty,
   type Language,
   type QuestionType,
+  type StudentResultSummary,
 } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -27,6 +28,23 @@ import {
 
 const LANGUAGES: Language[] = ["python", "java", "cpp", "html", "css", "javascript"];
 const DIFFS: Difficulty[] = ["EASY", "MEDIUM", "HARD"];
+const RESULTS_MODE_KEY = "astra_coding_results_view";
+
+type ResultsViewMode = "tests" | "students";
+
+function readResultsMode(): ResultsViewMode {
+  try {
+    const v = localStorage.getItem(RESULTS_MODE_KEY);
+    return v === "students" ? "students" : "tests";
+  } catch {
+    return "tests";
+  }
+}
+
+function statusLabel(status: string | null | undefined) {
+  if (!status) return "not started";
+  return status.toLowerCase().replace(/_/g, " ");
+}
 
 async function ensureCodingSession() {
   if (getCodingToken()) return;
@@ -144,6 +162,9 @@ function TeacherCodingWorkspace() {
   const [selectedTestId, setSelectedTestId] = useState<number | null>(null);
   const [classroomByTest, setClassroomByTest] = useState<Record<number, number>>({});
   const [assignMsg, setAssignMsg] = useState<string | null>(null);
+  const [resultsMode, setResultsMode] = useState<ResultsViewMode>(() => readResultsMode());
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+  const [selectedStudentAttemptId, setSelectedStudentAttemptId] = useState<number | null>(null);
 
   const [qForm, setQForm] = useState({
     title: "",
@@ -195,8 +216,38 @@ function TeacherCodingWorkspace() {
   const attempts = useQuery({
     queryKey: ["coding-attempts", selectedTestId],
     queryFn: () => codingApi<AttemptRow[]>(`/results/tests/${selectedTestId}/attempts`),
-    enabled: ready && selectedTestId != null && tab === "results",
+    enabled: ready && selectedTestId != null && tab === "results" && resultsMode === "tests",
   });
+  const resultStudents = useQuery({
+    queryKey: ["coding-result-students"],
+    queryFn: () => codingApi<StudentResultSummary[]>("/results/students"),
+    enabled: ready && tab === "results" && resultsMode === "students",
+  });
+  const studentAttempts = useQuery({
+    queryKey: ["coding-student-attempts", selectedStudentId],
+    queryFn: () => codingApi<AttemptRow[]>(`/results/students/${selectedStudentId}/attempts`),
+    enabled:
+      ready &&
+      tab === "results" &&
+      resultsMode === "students" &&
+      selectedStudentId != null,
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RESULTS_MODE_KEY, resultsMode);
+    } catch {
+      /* ignore */
+    }
+  }, [resultsMode]);
+
+  function switchResultsMode(mode: ResultsViewMode) {
+    setResultsMode(mode);
+    setSelectedStudentId(null);
+    setSelectedStudentAttemptId(null);
+    setOpenCodeKey(null);
+    setEditingEvalId(null);
+  }
 
   const importQuestions = useMutation({
     mutationFn: () =>
@@ -268,6 +319,8 @@ function TeacherCodingWorkspace() {
     onSuccess: async () => {
       setEditingEvalId(null);
       await qc.invalidateQueries({ queryKey: ["coding-attempts"] });
+      await qc.invalidateQueries({ queryKey: ["coding-student-attempts"] });
+      await qc.invalidateQueries({ queryKey: ["coding-result-students"] });
     },
     onError: (e: Error) => setError(e.message),
   });
@@ -299,6 +352,8 @@ function TeacherCodingWorkspace() {
           ? `Assigned ${res.ok}/${res.total} students; ${res.fail} failed.`
           : `Assigned test to ${res.ok} student(s) in the classroom.`,
       );
+      void qc.invalidateQueries({ queryKey: ["coding-result-students"] });
+      void qc.invalidateQueries({ queryKey: ["coding-attempts"] });
     },
     onError: (e: Error) => setError(e.message),
   });
@@ -311,6 +366,133 @@ function TeacherCodingWorkspace() {
       feedback: ev.feedback,
       verdict: ev.verdict,
     });
+  }
+
+  function renderAttemptDetails(a: AttemptRow, opts?: { showStudent?: boolean; showTest?: boolean }) {
+    const showStudent = opts?.showStudent !== false;
+    const showTest = !!opts?.showTest;
+    return (
+      <div key={a.assignment_id} className="mb-3 rounded-xl border border-[#e1e3e4] p-3 text-sm">
+        {showStudent ? (
+          <div className="font-medium text-[#031635]">
+            {a.student_name} · {a.student_email}
+          </div>
+        ) : null}
+        {showTest && a.test_title ? (
+          <div className="font-medium text-[#031635]">{a.test_title}</div>
+        ) : null}
+        <div className="text-[#44474e]">
+          {statusLabel(a.session_status)} · violations {a.violation_score ?? 0} · avg{" "}
+          {a.average_score ?? "—"}
+        </div>
+        <div className="mt-3 space-y-3">
+          {a.evals.map((ev) => {
+            const codeKey = `${a.assignment_id}-${ev.question_id}`;
+            const codeOpen = openCodeKey === codeKey;
+            const isEditing = editingEvalId != null && editingEvalId === ev.eval_run_id;
+            return (
+              <div key={codeKey} className="rounded-lg border border-[#e1e3e4]/80 bg-[#f8f9fa] p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-[#031635]">
+                      {ev.question_title}{" "}
+                      <span className="text-xs font-normal text-[#44474e]">
+                        ({ev.difficulty}
+                        {ev.language ? ` · ${ev.language}` : ""})
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[#44474e]">
+                      Score {ev.total_score} · {ev.verdict}
+                      {ev.scores?.teacher_override ? (
+                        <span className="ml-2 text-xs text-amber-700">teacher edited</span>
+                      ) : null}
+                    </div>
+                    {!isEditing ? <p className="mt-1 text-[#44474e]">{ev.feedback}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-[#e1e3e4] px-3 py-1 text-xs text-[#44474e]"
+                      onClick={() => setOpenCodeKey(codeOpen ? null : codeKey)}
+                    >
+                      {codeOpen ? "Hide code" : "View code"}
+                    </button>
+                    {ev.eval_run_id ? (
+                      <button
+                        type="button"
+                        className="rounded-lg bg-[#031635]/10 px-3 py-1 text-xs text-[#031635]"
+                        onClick={() => (isEditing ? setEditingEvalId(null) : startEdit(ev))}
+                      >
+                        {isEditing ? "Cancel" : "Edit result"}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {codeOpen ? (
+                  <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-[#e1e3e4] bg-[#191c1d] p-3 text-xs text-white whitespace-pre-wrap">
+                    {ev.code?.trim() ? ev.code : "(no code submitted)"}
+                  </pre>
+                ) : null}
+                {isEditing ? (
+                  <form
+                    className="mt-3 grid gap-2 rounded-lg border border-[#e1e3e4] p-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!ev.eval_run_id) return;
+                      updateEval.mutate({
+                        evalRunId: ev.eval_run_id,
+                        total_score: Number(editForm.total_score),
+                        feedback: editForm.feedback,
+                        verdict: editForm.verdict,
+                      });
+                    }}
+                  >
+                    <Field label="Score (0–100)">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        className={inputClass}
+                        value={editForm.total_score}
+                        onChange={(e) =>
+                          setEditForm((f) => ({ ...f, total_score: Number(e.target.value) }))
+                        }
+                        required
+                      />
+                    </Field>
+                    <Field label="Verdict">
+                      <select
+                        className={inputClass}
+                        value={editForm.verdict}
+                        onChange={(e) => setEditForm((f) => ({ ...f, verdict: e.target.value }))}
+                      >
+                        <option value="PASS">PASS</option>
+                        <option value="BORDERLINE">BORDERLINE</option>
+                        <option value="FAIL">FAIL</option>
+                        <option value="ERROR">ERROR</option>
+                      </select>
+                    </Field>
+                    <Field label="Explanation / feedback">
+                      <textarea
+                        className={`${inputClass} min-h-24`}
+                        value={editForm.feedback}
+                        onChange={(e) => setEditForm((f) => ({ ...f, feedback: e.target.value }))}
+                        required
+                      />
+                    </Field>
+                    <PrimaryButton type="submit" disabled={updateEval.isPending}>
+                      {updateEval.isPending ? "Saving…" : "Save changes"}
+                    </PrimaryButton>
+                  </form>
+                ) : null}
+              </div>
+            );
+          })}
+          {!a.evals.length ? <p className="text-[#44474e]">No graded submissions yet.</p> : null}
+        </div>
+      </div>
+    );
   }
 
   if (bootError) {
@@ -596,6 +778,7 @@ function TeacherCodingWorkspace() {
                             className="rounded-xl border border-[#e1e3e4] px-3 py-2 text-[#44474e]"
                             onClick={() => {
                               setSelectedTestId(t.id);
+                              switchResultsMode("tests");
                               setTab("results");
                             }}
                           >
@@ -623,138 +806,157 @@ function TeacherCodingWorkspace() {
 
       {tab === "results" ? (
         <Panel>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-display text-xl text-[#031635]">Attempts</h2>
-            <select
-              className={inputClass}
-              value={selectedTestId ?? ""}
-              onChange={(e) => setSelectedTestId(Number(e.target.value) || null)}
-            >
-              <option value="">Select test…</option>
-              {(tests.data || []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
+            <div className="inline-flex rounded-lg border border-[#e1e3e4] bg-[#f8f9fa] p-0.5">
+              <button
+                type="button"
+                onClick={() => switchResultsMode("tests")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  resultsMode === "tests"
+                    ? "bg-[#031635] text-white shadow-xs"
+                    : "text-[#44474e] hover:text-[#031635]"
+                }`}
+              >
+                By tests
+              </button>
+              <button
+                type="button"
+                onClick={() => switchResultsMode("students")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  resultsMode === "students"
+                    ? "bg-[#031635] text-white shadow-xs"
+                    : "text-[#44474e] hover:text-[#031635]"
+                }`}
+              >
+                By students
+              </button>
+            </div>
           </div>
-          {(attempts.data || []).map((a) => (
-            <div key={a.assignment_id} className="mb-3 rounded-xl border border-[#e1e3e4] p-3 text-sm">
-              <div className="font-medium text-[#031635]">
-                {a.student_name} · {a.student_email}
-              </div>
-              <div className="text-[#44474e]">
-                {a.session_status || "not started"} · violations {a.violation_score ?? 0} · avg{" "}
-                {a.average_score ?? "—"}
-              </div>
-              <div className="mt-3 space-y-3">
-                {a.evals.map((ev) => {
-                  const codeKey = `${a.assignment_id}-${ev.question_id}`;
-                  const codeOpen = openCodeKey === codeKey;
-                  const isEditing = editingEvalId != null && editingEvalId === ev.eval_run_id;
-                  return (
-                    <div key={codeKey} className="rounded-lg border border-[#e1e3e4]/80 bg-[#f8f9fa] p-3">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <div className="font-medium text-[#031635]">
-                            {ev.question_title}{" "}
-                            <span className="text-xs font-normal text-[#44474e]">
-                              ({ev.difficulty}
-                              {ev.language ? ` · ${ev.language}` : ""})
-                            </span>
-                          </div>
-                          <div className="mt-1 text-[#44474e]">
-                            Score {ev.total_score} · {ev.verdict}
-                            {ev.scores?.teacher_override ? (
-                              <span className="ml-2 text-xs text-amber-300">teacher edited</span>
-                            ) : null}
-                          </div>
-                          {!isEditing ? <p className="mt-1 text-[#44474e]">{ev.feedback}</p> : null}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
+
+          {resultsMode === "tests" ? (
+            <>
+              <select
+                className={`${inputClass} mb-4`}
+                value={selectedTestId ?? ""}
+                onChange={(e) => setSelectedTestId(Number(e.target.value) || null)}
+              >
+                <option value="">Select test…</option>
+                {(tests.data || []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+              {!selectedTestId ? (
+                <EmptyState title="Select a test" body="Choose a test to review every assigned student, including not started." />
+              ) : attempts.isLoading ? (
+                <p className="text-sm text-[#75777f]">Loading attempts…</p>
+              ) : !(attempts.data?.length) ? (
+                <EmptyState title="No students assigned" body="Assign this test to a classroom first." />
+              ) : (
+                attempts.data.map((a) => renderAttemptDetails(a, { showStudent: true }))
+              )}
+            </>
+          ) : (
+            <>
+              {selectedStudentId == null ? (
+                <>
+                  {resultStudents.isLoading ? (
+                    <p className="text-sm text-[#75777f]">Loading students…</p>
+                  ) : !(resultStudents.data?.length) ? (
+                    <EmptyState
+                      title="No assigned students"
+                      body="Students appear here after you assign at least one test."
+                    />
+                  ) : (
+                    <ul className="space-y-2">
+                      {resultStudents.data.map((s) => (
+                        <li key={s.student_id}>
                           <button
                             type="button"
-                            className="rounded-lg border border-[#e1e3e4] px-3 py-1 text-xs text-[#44474e]"
-                            onClick={() => setOpenCodeKey(codeOpen ? null : codeKey)}
+                            className="w-full rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3 text-left transition hover:border-[#031635] hover:bg-white"
+                            onClick={() => {
+                              setSelectedStudentId(s.student_id);
+                              setSelectedStudentAttemptId(null);
+                              setOpenCodeKey(null);
+                              setEditingEvalId(null);
+                            }}
                           >
-                            {codeOpen ? "Hide code" : "View code"}
+                            <div className="font-medium text-[#031635]">
+                              {s.student_name}{" "}
+                              <span className="text-xs font-normal text-[#44474e]">· {s.student_email}</span>
+                            </div>
+                            <div className="mt-1 text-xs text-[#44474e]">
+                              {s.assignment_count} test{s.assignment_count === 1 ? "" : "s"} · {s.started_count}{" "}
+                              started · {s.submitted_count} submitted
+                            </div>
                           </button>
-                          {ev.eval_run_id ? (
-                            <button
-                              type="button"
-                              className="rounded-lg bg-[#031635]/10 px-3 py-1 text-xs text-[#031635]"
-                              onClick={() => (isEditing ? setEditingEvalId(null) : startEdit(ev))}
-                            >
-                              {isEditing ? "Cancel" : "Edit result"}
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      {codeOpen ? (
-                        <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-[#e1e3e4] bg-[#191c1d] p-3 text-xs text-white whitespace-pre-wrap">
-                          {ev.code?.trim() ? ev.code : "(no code submitted)"}
-                        </pre>
-                      ) : null}
-                      {isEditing ? (
-                        <form
-                          className="mt-3 grid gap-2 rounded-lg border border-[#e1e3e4] p-3"
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            if (!ev.eval_run_id) return;
-                            updateEval.mutate({
-                              evalRunId: ev.eval_run_id,
-                              total_score: Number(editForm.total_score),
-                              feedback: editForm.feedback,
-                              verdict: editForm.verdict,
-                            });
-                          }}
-                        >
-                          <Field label="Score (0–100)">
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step={0.1}
-                              className={inputClass}
-                              value={editForm.total_score}
-                              onChange={(e) =>
-                                setEditForm((f) => ({ ...f, total_score: Number(e.target.value) }))
-                              }
-                              required
-                            />
-                          </Field>
-                          <Field label="Verdict">
-                            <select
-                              className={inputClass}
-                              value={editForm.verdict}
-                              onChange={(e) => setEditForm((f) => ({ ...f, verdict: e.target.value }))}
-                            >
-                              <option value="PASS">PASS</option>
-                              <option value="BORDERLINE">BORDERLINE</option>
-                              <option value="FAIL">FAIL</option>
-                              <option value="ERROR">ERROR</option>
-                            </select>
-                          </Field>
-                          <Field label="Explanation / feedback">
-                            <textarea
-                              className={`${inputClass} min-h-24`}
-                              value={editForm.feedback}
-                              onChange={(e) => setEditForm((f) => ({ ...f, feedback: e.target.value }))}
-                              required
-                            />
-                          </Field>
-                          <PrimaryButton type="submit" disabled={updateEval.isPending}>
-                            {updateEval.isPending ? "Saving…" : "Save changes"}
-                          </PrimaryButton>
-                        </form>
-                      ) : null}
-                    </div>
-                  );
-                })}
-                {!a.evals.length ? <p className="text-[#44474e]">No graded submissions yet.</p> : null}
-              </div>
-            </div>
-          ))}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : selectedStudentAttemptId == null ? (
+                <>
+                  <button
+                    type="button"
+                    className="mb-3 text-xs font-semibold text-[#3f5d9b] hover:underline"
+                    onClick={() => {
+                      setSelectedStudentId(null);
+                      setSelectedStudentAttemptId(null);
+                    }}
+                  >
+                    ← All students
+                  </button>
+                  {studentAttempts.isLoading ? (
+                    <p className="text-sm text-[#75777f]">Loading tests…</p>
+                  ) : !(studentAttempts.data?.length) ? (
+                    <EmptyState title="No tests for this student" body="This student has no assignments yet." />
+                  ) : (
+                    <ul className="space-y-2">
+                      {studentAttempts.data.map((a) => (
+                        <li key={a.assignment_id}>
+                          <button
+                            type="button"
+                            className="w-full rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3 text-left transition hover:border-[#031635] hover:bg-white"
+                            onClick={() => {
+                              setSelectedStudentAttemptId(a.assignment_id);
+                              setOpenCodeKey(null);
+                              setEditingEvalId(null);
+                            }}
+                          >
+                            <div className="font-medium text-[#031635]">{a.test_title || `Test #${a.test_id}`}</div>
+                            <div className="mt-1 text-xs text-[#44474e]">
+                              {statusLabel(a.session_status)} · violations {a.violation_score ?? 0} · avg{" "}
+                              {a.average_score ?? "—"}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="mb-3 text-xs font-semibold text-[#3f5d9b] hover:underline"
+                    onClick={() => {
+                      setSelectedStudentAttemptId(null);
+                      setOpenCodeKey(null);
+                      setEditingEvalId(null);
+                    }}
+                  >
+                    ← Back to student’s tests
+                  </button>
+                  {studentAttempts.data
+                    ?.filter((a) => a.assignment_id === selectedStudentAttemptId)
+                    .map((a) => renderAttemptDetails(a, { showStudent: true, showTest: true }))}
+                </>
+              )}
+            </>
+          )}
         </Panel>
       ) : null}
     </div>

@@ -95,10 +95,22 @@ export type AttemptEval = {
 
 export type AttemptRow = {
   assignment_id: number;
+  student_id: number;
   student_name: string;
   student_email: string;
   session_status: string | null;
   violation_score: number | null;
   average_score: number | null;
   evals: AttemptEval[];
+  test_id?: number | null;
+  test_title?: string | null;
+};
+
+export type StudentResultSummary = {
+  student_id: number;
+  student_name: string;
+  student_email: string;
+  assignment_count: number;
+  started_count: number;
+  submitted_count: number;
 };
