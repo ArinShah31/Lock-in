@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { classroomsApi, codingPlatformApi, institutionsApi, subjectsApi } from "../api";
+import { codingApi, ensureCodingSession } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
 import { TeacherCodingAnalyticsPanel } from "../components/TeacherCodingAnalyticsPanel";
 import {
@@ -10,83 +11,359 @@ import {
   SecondaryButton,
 } from "../components/ui";
 
+type StudentCodingAssignment = {
+  id: number;
+  status: "ASSIGNED" | "IN_PROGRESS" | "SUBMITTED" | "BLOCKED";
+  test_title?: string | null;
+  duration_minutes?: number | null;
+  is_published_results?: boolean;
+};
+
+type StudentPublishedResult = {
+  average_score?: number | null;
+  published: boolean;
+};
+
+function clampPct(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function StudentStatCard({
+  label,
+  value,
+  caption,
+  icon,
+  tone = "navy",
+  delay = 0,
+}: {
+  label: string;
+  value: number | string;
+  caption: string;
+  icon: string;
+  tone?: "navy" | "blue" | "green" | "amber";
+  delay?: number;
+}) {
+  const toneClass = {
+    navy: "bg-[#e8edf5] text-[#031635]",
+    blue: "bg-[#edf3ff] text-[#3f5d9b]",
+    green: "bg-[#e7f3ec] text-[#2f6b4f]",
+    amber: "bg-[#f5efe4] text-[#9a6b2f]",
+  }[tone];
+
+  return (
+    <div
+      className="student-stat-card animate-rise rounded-2xl border border-[#e1e3e4] bg-white p-4 shadow-xs"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#75777f]">{label}</p>
+          <p className="mt-1 font-display text-3xl font-extrabold text-[#031635]">{value}</p>
+        </div>
+        <span className={`material-symbols-outlined rounded-xl p-2 text-[20px] ${toneClass}`}>
+          {icon}
+        </span>
+      </div>
+      <p className="mt-3 text-xs text-[#44474e]">{caption}</p>
+    </div>
+  );
+}
+
+function CompletionCurve({ percent, scorePercent }: { percent: number; scorePercent: number | null }) {
+  const safe = clampPct(percent);
+  const safeScore = scorePercent == null ? null : clampPct(scorePercent);
+  const endY = 92 - safe * 0.62;
+  const scoreEndY = safeScore == null ? 78 : 92 - safeScore * 0.62;
+  const path = `M 12 92 C 62 88, 78 ${96 - safe * 0.34}, 118 ${86 - safe * 0.42} S 190 ${endY}, 246 ${endY}`;
+  const scorePath =
+    safeScore == null
+      ? "M 12 78 C 70 78, 105 78, 145 78 S 205 78, 246 78"
+      : `M 12 92 C 58 ${92 - safeScore * 0.22}, 82 ${95 - safeScore * 0.5}, 124 ${90 - safeScore * 0.57} S 198 ${scoreEndY}, 246 ${scoreEndY}`;
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-[#e1e3e4] bg-[#031635] p-5 text-white shadow-xs">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(158,187,255,0.35),transparent_30%),radial-gradient(circle_at_85%_15%,rgba(255,255,255,0.16),transparent_26%)]" />
+      <div className="relative z-10 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9ebbff]">
+            Coding momentum
+          </p>
+          <p className="mt-1 font-display text-4xl font-extrabold">{safe}%</p>
+          <p className="mt-1 text-xs text-[#d7e2ff]">Submitted tests out of assigned coding work.</p>
+        </div>
+        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
+          Live
+        </span>
+      </div>
+      <svg className="relative z-10 mt-5 h-28 w-full" viewBox="0 0 260 110" role="img" aria-label="Coding completion curve">
+        <defs>
+          <linearGradient id="studentCurveFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#9ebbff" stopOpacity="0.42" />
+            <stop offset="100%" stopColor="#9ebbff" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={`${path} L 246 108 L 12 108 Z`} fill="url(#studentCurveFill)" />
+        <path className="student-curve-line" d={path} fill="none" stroke="#9ebbff" strokeLinecap="round" strokeWidth="4" />
+        <path
+          className="student-score-line"
+          d={scorePath}
+          fill="none"
+          stroke={safeScore == null ? "#d7e2ff" : "#6ee7b7"}
+          strokeDasharray={safeScore == null ? "4 8" : undefined}
+          strokeLinecap="round"
+          strokeWidth="3"
+        />
+        <circle className="student-curve-dot" cx="246" cy={endY} r="5" fill="#ffffff" />
+        {safeScore == null ? null : <circle cx="246" cy={scoreEndY} r="4" fill="#6ee7b7" />}
+      </svg>
+      <div className="relative z-10 mt-2 flex flex-wrap items-center gap-3 text-[11px] font-semibold text-[#d7e2ff]">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-5 rounded-full bg-[#9ebbff]" />
+          Completion
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-5 rounded-full bg-[#6ee7b7]" />
+          Score {safeScore == null ? "publishes later" : `${safeScore}% avg`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TimelineItem({
+  title,
+  body,
+  badge,
+  tone = "neutral",
+}: {
+  title: string;
+  body: string;
+  badge: string;
+  tone?: "neutral" | "blue" | "red" | "green";
+}) {
+  const badgeClass = {
+    neutral: "bg-[#f8f9fa] border border-[#e1e3e4] text-[#44474e]",
+    blue: "bg-[#e8edf5] text-[#3f5d9b]",
+    red: "bg-[#ffdad6] text-[#ba1a1a]",
+    green: "bg-[#e7f3ec] text-[#2f6b4f]",
+  }[tone];
+
+  return (
+    <div className="timeline-node pl-8">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-bold text-[#031635]">{title}</p>
+        <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold ${badgeClass}`}>
+          {badge}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-[#44474e]">{body}</p>
+    </div>
+  );
+}
+
 // --- Student Dashboard View (Matching Starred Lumina Student Dashboard) ---
 function StudentDashboardView() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const classrooms = useQuery({ queryKey: ["classrooms"], queryFn: classroomsApi.list });
   const pendingRequests = useQuery({
     queryKey: ["my-join-requests"],
     queryFn: classroomsApi.myJoinRequests,
   });
+  const codingAccess = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+    staleTime: 30_000,
+  });
+  const codingAssignments = useQuery({
+    queryKey: ["student-coding-assignments", user?.email],
+    queryFn: async () => {
+      await ensureCodingSession(false, user?.email);
+      return codingApi<StudentCodingAssignment[]>("/student/assignments");
+    },
+    enabled: codingAccess.data?.enabled === true && !!user?.email,
+    staleTime: 30_000,
+    retry: false,
+  });
 
   const enrolledCount = classrooms.data?.length ?? 0;
   const pendingCount = pendingRequests.data?.length ?? 0;
+  const codingItems = codingAssignments.data ?? [];
+  const publishedCodingIds = codingItems.filter((a) => a.is_published_results).map((a) => a.id);
+  const codingResults = useQuery({
+    queryKey: ["student-published-coding-results", publishedCodingIds.join(",")],
+    queryFn: async () => {
+      await ensureCodingSession(false, user?.email);
+      const rows = await Promise.all(
+        publishedCodingIds.map((id) =>
+          codingApi<StudentPublishedResult>(`/student/assignments/${id}/results`),
+        ),
+      );
+      return rows;
+    },
+    enabled: codingAccess.data?.enabled === true && publishedCodingIds.length > 0 && !!user?.email,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const codingAssigned = codingItems.length;
+  const codingSubmitted = codingItems.filter((a) => a.status === "SUBMITTED").length;
+  const codingOpen = codingItems.filter((a) => a.status === "ASSIGNED" || a.status === "IN_PROGRESS").length;
+  const publishedResults = codingItems.filter((a) => a.is_published_results).length;
+  const publishedScores = (codingResults.data ?? [])
+    .map((r) => r.average_score)
+    .filter((score): score is number => typeof score === "number");
+  const averagePublishedScore = publishedScores.length
+    ? Math.round(publishedScores.reduce((sum, score) => sum + score, 0) / publishedScores.length)
+    : null;
+  const completionPct = codingAssigned ? Math.round((codingSubmitted / codingAssigned) * 100) : 0;
+  const nextCoding = codingItems.find((a) => a.status === "IN_PROGRESS") ?? codingItems.find((a) => a.status === "ASSIGNED");
+  const codingLoading = codingAccess.data?.enabled === true && codingAssignments.isLoading;
+  const codingError = codingAccess.data?.enabled === true && codingAssignments.isError;
 
   return (
     <div className="space-y-6">
-      {/* Top row: welcome banner + Time Engine */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:items-start">
-        <div className="rounded-xl border border-[#e1e3e4] bg-white p-6 shadow-xs relative overflow-hidden">
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#eef2ff] text-[#4f46e5] text-xs font-semibold mb-2">
-                <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                <span>Lumina Student Intelligence Workspace</span>
+      <div className="grid gap-6 xl:grid-cols-[1fr_360px] xl:items-start">
+        <div className="space-y-4">
+          <div className="relative overflow-hidden rounded-2xl border border-[#e1e3e4] bg-white p-6 shadow-xs">
+            <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#e8edf5] blur-2xl" />
+            <div className="pointer-events-none absolute bottom-0 left-1/2 h-px w-1/2 bg-gradient-to-r from-transparent via-[#9ebbff] to-transparent" />
+            <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#e8edf5] px-3 py-1 text-xs font-semibold text-[#031635]">
+                  <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                  <span>ASTRA Student Intelligence</span>
+                </div>
+                <h1 className="font-display text-2xl font-extrabold text-[#031635] md:text-3xl">
+                  Welcome back, {user?.full_name.split(" ")[0]}!
+                </h1>
+                <p className="mt-1 max-w-2xl text-sm text-[#44474e]">
+                  Track classrooms, coding work, and upcoming academic checkpoints from one animated workspace.
+                </p>
               </div>
-              <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635]">
-                Welcome back, {user?.full_name.split(" ")[0]}!
-              </h1>
-              <p className="academic-text text-[#44474e] text-sm mt-1">
-                "Continuous academic rigor and organized study intervals yield peak retention."
-              </p>
+              <PrimaryButton onClick={() => navigate(nextCoding ? "/coding" : "/classrooms")}>
+                {nextCoding ? "Continue coding" : "Explore classrooms"}
+              </PrimaryButton>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="text-center px-4 py-2 bg-[#f8f9fa] border border-[#e1e3e4] rounded-lg">
-                <p className="text-xs text-[#75777f] uppercase font-bold tracking-wider">Classrooms</p>
-                <p className="font-display text-xl font-bold text-[#031635]">{enrolledCount}</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StudentStatCard
+              label="Classrooms"
+              value={enrolledCount}
+              caption="Approved learning spaces"
+              icon="school"
+              delay={0}
+            />
+            <StudentStatCard
+              label="Pending"
+              value={pendingCount}
+              caption="Join requests awaiting approval"
+              icon="hourglass_top"
+              tone="amber"
+              delay={80}
+            />
+            <StudentStatCard
+              label="Coding assigned"
+              value={codingLoading ? "..." : codingAssigned}
+              caption={
+                codingError
+                  ? "Could not load coding tests"
+                  : codingAccess.data?.enabled
+                    ? "Tests available to you"
+                    : "Coding not enabled yet"
+              }
+              icon="code_blocks"
+              tone="blue"
+              delay={160}
+            />
+            <StudentStatCard
+              label="Submitted"
+              value={codingLoading ? "..." : codingSubmitted}
+              caption={
+                codingError ? "Refresh to retry coding sync" : `${codingOpen} open task${codingOpen === 1 ? "" : "s"}`
+              }
+              icon="task_alt"
+              tone="green"
+              delay={240}
+            />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+            <CompletionCurve percent={completionPct} scorePercent={averagePublishedScore} />
+            <div className="rounded-2xl border border-[#e1e3e4] bg-white p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#75777f]">
+                    Published results
+                  </p>
+                  <p className="mt-1 font-display text-3xl font-extrabold text-[#031635]">
+                    {publishedResults}
+                  </p>
+                </div>
+                <span className="material-symbols-outlined rounded-xl bg-[#e8edf5] p-2 text-[#3f5d9b]">
+                  monitoring
+                </span>
               </div>
-              <div className="text-center px-4 py-2 bg-[#f8f9fa] border border-[#e1e3e4] rounded-lg">
-                <p className="text-xs text-[#75777f] uppercase font-bold tracking-wider">Pending</p>
-                <p className="font-display text-xl font-bold text-[#3f5d9b]">{pendingCount}</p>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e8edf5]">
+                <div
+                  className="h-full rounded-full bg-[#3f5d9b] transition-[width] duration-700"
+                  style={{ width: `${codingAssigned ? (publishedResults / codingAssigned) * 100 : 0}%` }}
+                />
               </div>
+              <p className="mt-3 text-xs text-[#44474e]">
+                Published teacher feedback appears inside the coding workspace.
+              </p>
             </div>
           </div>
         </div>
 
-        <Panel className="h-fit">
-          <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#e1e3e4]">
-            <h3 className="font-display font-bold text-[#031635] text-base flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#4f46e5]">schedule</span>
-              Time Engine
+        <Panel className="h-fit animate-rise-delay">
+          <div className="mb-4 flex items-center justify-between border-b border-[#e1e3e4] pb-2">
+            <h3 className="font-display flex items-center gap-2 text-base font-bold text-[#031635]">
+              <span className="material-symbols-outlined text-[#3f5d9b]">timeline</span>
+              Student timeline
             </h3>
-            <span className="text-xs text-[#44474e] font-medium">Fall '26</span>
+            <span className="text-xs font-medium text-[#44474e]">Live view</span>
           </div>
 
           <div className="space-y-4">
-            <div className="timeline-node pl-8">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold text-[#031635]">09:00 AM — Academic Orientation</p>
-                <span className="shrink-0 text-[10px] bg-[#eef2ff] text-[#4f46e5] px-2 py-0.5 rounded font-bold">Today</span>
-              </div>
-              <p className="text-xs text-[#44474e] mt-0.5">Review registered subjects & syllabus outline.</p>
-            </div>
+            {nextCoding ? (
+              <TimelineItem
+                title={`${nextCoding.status === "IN_PROGRESS" ? "Resume" : "Start"} coding test`}
+                body={nextCoding.test_title || "A coding assessment is waiting in your workspace."}
+                badge={nextCoding.status === "IN_PROGRESS" ? "Resume" : "Due"}
+                tone={nextCoding.status === "IN_PROGRESS" ? "blue" : "red"}
+              />
+            ) : (
+              <TimelineItem
+                title="Coding clear"
+                body={
+                  codingAccess.data?.enabled
+                    ? "No open coding tests right now."
+                    : "Coding unlock depends on enabled teachers in your classroom."
+                }
+                badge="Clear"
+                tone="green"
+              />
+            )}
+            <TimelineItem
+              title="Classroom sync"
+              body={`${enrolledCount} active classroom${enrolledCount === 1 ? "" : "s"} connected to your dashboard.`}
+              badge="Today"
+              tone="blue"
+            />
+            <TimelineItem
+              title="Assignment check"
+              body="Review classroom assignments and published materials before the next session."
+              badge="Upcoming"
+            />
+          </div>
 
-            <div className="timeline-node pl-8">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold text-[#031635]">11:30 AM — Course Builder Sync</p>
-                <span className="shrink-0 text-[10px] bg-[#f8f9fa] border border-[#e1e3e4] text-[#44474e] px-2 py-0.5 rounded font-bold">Upcoming</span>
-              </div>
-              <p className="text-xs text-[#44474e] mt-0.5">Access new material uploaded by class faculty.</p>
-            </div>
-
-            <div className="timeline-node pl-8">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-bold text-[#031635]">05:00 PM — Assignment Submission</p>
-                <span className="shrink-0 text-[10px] bg-[#ffdad6] text-[#ba1a1a] px-2 py-0.5 rounded font-bold">Due Soon</span>
-              </div>
-              <p className="text-xs text-[#44474e] mt-0.5">Check classroom assignments tab for deadlines.</p>
-            </div>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <SecondaryButton onClick={() => navigate("/classrooms")}>Classrooms</SecondaryButton>
+            <PrimaryButton onClick={() => navigate("/coding")}>Coding</PrimaryButton>
           </div>
         </Panel>
       </div>

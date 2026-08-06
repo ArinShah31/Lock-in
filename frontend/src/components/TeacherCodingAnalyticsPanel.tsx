@@ -8,6 +8,7 @@ import {
   type StudentResultSummary,
   type TeacherCodingAnalytics,
 } from "../api/codingClient";
+import { useAuth } from "../auth/AuthContext";
 import { EmptyState, Panel, PrimaryButton, SecondaryButton, inputClass } from "./ui";
 
 const RESULTS_MODE_KEY = "astra_coding_results_view";
@@ -174,6 +175,7 @@ function VerdictMix({
 
 export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [studentFilter, setStudentFilter] = useState<number | "all">("all");
@@ -181,9 +183,11 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    setReady(false);
+    setBootError(null);
     void (async () => {
       try {
-        await ensureCodingSession();
+        await ensureCodingSession(false, user?.email);
         if (!cancelled) setReady(true);
       } catch (e) {
         clearCodingToken();
@@ -193,24 +197,24 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, user?.email]);
 
   const students = useQuery({
-    queryKey: ["coding-result-students"],
+    queryKey: ["coding-result-students", user?.email],
     queryFn: () => codingApi<StudentResultSummary[]>("/results/students"),
-    enabled: enabled && ready,
+    enabled: enabled && ready && !!user?.email,
     staleTime: 30_000,
   });
 
   const analytics = useQuery({
-    queryKey: ["coding-teacher-analytics", studentFilter],
+    queryKey: ["coding-teacher-analytics", user?.email, studentFilter],
     queryFn: () =>
       codingApi<TeacherCodingAnalytics>(
         studentFilter === "all"
           ? "/results/analytics"
           : `/results/analytics?student_id=${studentFilter}`,
       ),
-    enabled: enabled && ready,
+    enabled: enabled && ready && !!user?.email,
     staleTime: 30_000,
   });
 

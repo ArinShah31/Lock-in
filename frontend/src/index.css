@@ -100,3 +100,55 @@ h3,
 .animate-rise-delay {
   animation: rise-in 0.5s ease-out 0.1s both;
 }
+
+@keyframes draw-student-curve {
+  from {
+    stroke-dashoffset: 420;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pulse-student-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.18);
+  }
+}
+
+.student-stat-card {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.student-stat-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(3, 22, 53, 0.28);
+  box-shadow: 0 14px 34px rgba(3, 22, 53, 0.08);
+}
+
+.student-curve-line {
+  stroke-dasharray: 420;
+  stroke-dashoffset: 420;
+  animation: draw-student-curve 1.15s ease-out 0.2s forwards;
+}
+
+.student-score-line {
+  stroke-dasharray: 420;
+  stroke-dashoffset: 420;
+  animation: draw-student-curve 1.15s ease-out 0.45s forwards;
+}
+
+.student-curve-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse-student-dot 1.8s ease-in-out infinite;
+}
