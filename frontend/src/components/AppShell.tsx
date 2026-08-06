@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { aiApi, classroomsApi, codingPlatformApi } from "../api";
+import { classroomsApi, codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 
 const roleLabel: Record<string, string> = {
@@ -36,12 +36,7 @@ export function AppShell() {
   const onCreateClassroom = location.pathname === "/classrooms/new";
   const activeClassroomId = location.pathname.match(/^\/classrooms\/(\d+)/)?.[1] ?? "";
 
-  // AI Agent Dock condition: Only visible for STUDENT in Course Builder
-  const isCourseBuilderRoute = location.pathname.includes("/course-builder");
-  const showAgentDock = isStudent && isCourseBuilderRoute;
-
   const [classroomsOpen, setClassroomsOpen] = useState(classroomsSection);
-  const [agentDockOpen, setAgentDockOpen] = useState(true);
 
   const codingAccess = useQuery({
     queryKey: ["coding-access"],
@@ -62,61 +57,11 @@ export function AppShell() {
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [sidebarHovered, setSidebarHovered] = useState(false);
 
-  // Local RAG Chat State for Student Course Builder AI Dock
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatMessages, setChatMessages] = useState<Array<{ role: "assistant" | "user"; text: string }>>([
-    {
-      role: "assistant",
-      text: "Hello! I am Lumina AI. I am attached to this Course Builder RAG pipeline. Ask me anything about your uploaded classroom documents, study modules, or lecture notes!",
-    },
-  ]);
-
   const isExpanded = sidebarPinned || sidebarHovered;
 
   useEffect(() => {
     if (classroomsSection) setClassroomsOpen(true);
   }, [classroomsSection]);
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || chatLoading) return;
-
-    const userText = chatInput.trim();
-    setChatMessages((prev) => [...prev, { role: "user", text: userText }]);
-    setChatInput("");
-    setChatLoading(true);
-
-    const match = location.pathname.match(/\/classrooms\/(\d+)/);
-    const classroomId = match ? Number(match[1]) : 1;
-
-    try {
-      const res = await aiApi.chat({
-        classroom_id: classroomId,
-        question: userText,
-      });
-
-      let answerText = res.document_answer || "";
-      if (res.additional_explanation) {
-        answerText += `\n\n📌 Note: ${res.additional_explanation}`;
-      }
-      if (!answerText) {
-        answerText = "No relevant context found in the uploaded classroom documents.";
-      }
-
-      setChatMessages((prev) => [...prev, { role: "assistant", text: answerText }]);
-    } catch (err: any) {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: err?.message || "Could not fetch RAG response. Please verify backend AI service.",
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  };
 
   const flatLinks: FlatLink[] = [
     {
@@ -437,7 +382,7 @@ export function AppShell() {
       <div
         className={`flex-1 flex flex-col transition-all duration-300 ease-in-out min-h-screen ${
           sidebarPinned ? "md:pl-[260px]" : "md:pl-16"
-        } ${showAgentDock && agentDockOpen ? "lg:pr-[320px]" : "lg:pr-0"}`}
+        }`}
       >
         {/* Desktop Top Bar */}
         <header className="hidden md:flex justify-between items-center px-8 h-16 bg-white border-b border-[#e1e3e4] sticky top-0 z-10 shrink-0">
@@ -467,16 +412,6 @@ export function AppShell() {
                 <span className="material-symbols-outlined text-lg">person</span>
               )}
             </button>
-            {showAgentDock && (
-              <button
-                type="button"
-                onClick={() => setAgentDockOpen(!agentDockOpen)}
-                className="text-[#44474e] hover:text-[#031635] p-1.5 rounded-md hover:bg-[#f3f4f5] transition-colors"
-                title="Toggle Lumina AI Agent Dock"
-              >
-                <span className="material-symbols-outlined text-lg">smart_toy</span>
-              </button>
-            )}
           </div>
         </header>
 
@@ -485,85 +420,6 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-
-      {/* Right Column: AI Agent & Context Dock (Lumina Glass Panel - ONLY visible for STUDENT in Course Builder) */}
-      {showAgentDock && (
-        <aside
-          className={`fixed right-0 top-0 bottom-0 w-[320px] bg-white/95 backdrop-blur-md border-l border-[#e1e3e4] p-5 hidden lg:flex flex-col z-30 shadow-2xl transition-all duration-300 ease-in-out ${
-            agentDockOpen ? "translate-x-0 opacity-100" : "translate-x-full opacity-0 pointer-events-none"
-          }`}
-        >
-          {/* Dock Header with Collapse Button */}
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#e1e3e4]">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#4f46e5] text-xl font-bold">smart_toy</span>
-              <span className="font-display font-bold text-sm text-[#031635]">Lumina Agent Dock</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded bg-[#eef2ff] text-[#4f46e5]">
-                RAG AI ACTIVE
-              </span>
-              <button
-                onClick={() => setAgentDockOpen(false)}
-                className="text-[#75777f] hover:text-[#031635] p-1 rounded-md hover:bg-[#e1e3e4]/60 transition-colors"
-                title="Collapse AI Agent Panel"
-              >
-                <span className="material-symbols-outlined text-lg">chevron_right</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col min-h-0 space-y-3">
-            {/* Chat Conversation Window */}
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 p-2 bg-[#f8f9fa] rounded-xl border border-[#e1e3e4] text-xs">
-              {chatMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-lg p-2.5 shadow-2xs ${
-                      msg.role === "user"
-                        ? "bg-[#031635] text-white"
-                        : "bg-white text-[#191c1d] border border-[#e1e3e4]"
-                    }`}
-                  >
-                    <p className="leading-relaxed">{msg.text}</p>
-                  </div>
-                  <span className="text-[9px] text-[#75777f] mt-0.5 px-1">
-                    {msg.role === "user" ? "You" : "Lumina RAG AI"}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Chat Input Form */}
-            <form onSubmit={handleSendMessage} className="flex items-center gap-1.5 shrink-0 pt-1">
-              <input
-                type="text"
-                placeholder="Ask Lumina AI (RAG Pipeline)..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                className="flex-1 bg-white border border-[#e1e3e4] rounded-lg px-3 py-2 text-xs text-[#191c1d] focus:border-[#4f46e5] focus:outline-none transition-all"
-              />
-              <button
-                type="submit"
-                disabled={chatLoading}
-                className="bg-[#4f46e5] text-white p-2 rounded-lg hover:bg-[#4338ca] transition-all shadow-xs flex items-center justify-center disabled:opacity-50"
-                title="Send Message"
-              >
-                <span className={`material-symbols-outlined text-sm ${chatLoading ? "animate-spin" : ""}`}>
-                  {chatLoading ? "sync" : "send"}
-                </span>
-              </button>
-            </form>
-          </div>
-
-          <div className="pt-3 border-t border-[#e1e3e4] text-center shrink-0 mt-3">
-            <p className="text-[10px] text-[#75777f]">ASTRA RAG Pipeline · Lumina Engine v2.4</p>
-          </div>
-        </aside>
-      )}
     </div>
   );
 }
