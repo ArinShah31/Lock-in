@@ -11,12 +11,9 @@ import type {
   CourseBuildJob,
   Department,
   Institution,
-<<<<<<< HEAD
   StudentAssignmentFeedItem,
-=======
   PracticeAttempt,
   PracticeOverview,
->>>>>>> 431b04b (feat(practice): add student practice workspace)
   Subject,
   SubjectMaterial,
   User,
