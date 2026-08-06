@@ -379,6 +379,9 @@ export function ClassroomsPage() {
         }
       />
       <ErrorText message={error} />
+      {classrooms.isError ? (
+        <ErrorText message={classrooms.error instanceof Error ? classrooms.error.message : "Failed to load classrooms"} />
+      ) : null}
       {success ? (
         <p className="mb-4 rounded-md border border-[#4f46e5]/30 bg-[#eef2ff] px-3.5 py-2.5 text-sm font-medium text-[#4f46e5]">{success}</p>
       ) : null}
@@ -397,7 +400,9 @@ export function ClassroomsPage() {
           ) : null}
         </div>
 
-        {!classrooms.data?.length ? (
+        {classrooms.isLoading ? (
+          <p className="text-sm text-[#75777f]">Loading classrooms…</p>
+        ) : !classrooms.data?.length ? (
           <div className="space-y-4">
             <EmptyState
               title="No classrooms"

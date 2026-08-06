@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { classroomsApi, institutionsApi, subjectsApi } from "../api";
+import { classroomsApi, codingPlatformApi, institutionsApi, subjectsApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import { TeacherCodingAnalyticsPanel } from "../components/TeacherCodingAnalyticsPanel";
 import {
   EmptyState,
   Panel,
@@ -99,9 +100,15 @@ function TeacherDashboardView() {
   const navigate = useNavigate();
   const classrooms = useQuery({ queryKey: ["classrooms"], queryFn: classroomsApi.list });
   const subjects = useQuery({ queryKey: ["subjects"], queryFn: subjectsApi.list });
+  const codingAccess = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+    staleTime: 30_000,
+  });
 
   const activeClassrooms = classrooms.data?.length ?? 0;
   const activeSubjects = subjects.data?.length ?? 0;
+  const codingEnabled = codingAccess.data?.enabled === true;
 
   return (
     <div className="space-y-6">
@@ -157,6 +164,8 @@ function TeacherDashboardView() {
         </Panel>
       </div>
 
+      <TeacherCodingAnalyticsPanel enabled={codingEnabled} />
+
       {/* Classrooms List */}
       <Panel>
         <div className="flex items-center justify-between mb-4">
@@ -166,7 +175,14 @@ function TeacherDashboardView() {
           </SecondaryButton>
         </div>
 
-        {!classrooms.data?.length ? (
+        {classrooms.isLoading ? (
+          <p className="text-sm text-[#75777f]">Loading classrooms…</p>
+        ) : classrooms.isError ? (
+          <EmptyState
+            title="Could not load classrooms"
+            body={classrooms.error instanceof Error ? classrooms.error.message : "Check that the ASTRA API is running on the Vite proxy port."}
+          />
+        ) : !classrooms.data?.length ? (
           <EmptyState
             title="No classrooms created yet"
             body="Create your first classroom to generate a student join code and start managing syllabus content."
