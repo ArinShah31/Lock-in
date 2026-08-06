@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { AuthProvider } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ClassroomAssignmentsTab } from "./pages/ClassroomAssignmentsTab";
@@ -10,6 +10,7 @@ import { ClassroomDetailsTab } from "./pages/ClassroomDetailsTab";
 import { ClassroomDocumentsTab } from "./pages/ClassroomDocumentsTab";
 import { ClassroomLayout } from "./pages/ClassroomLayout";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
+import { CodingPage } from "./pages/CodingPage";
 import { CreateClassroomPage } from "./pages/CreateClassroomPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InstitutionsPage } from "./pages/InstitutionsPage";
@@ -27,12 +28,6 @@ const queryClient = new QueryClient({
   },
 });
 
-function HomeRedirect() {
-  const { user } = useAuth();
-  if (user?.role === "STUDENT") return <Navigate to="/classrooms" replace />;
-  return <DashboardPage />;
-}
-
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -44,7 +39,7 @@ export default function App() {
 
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
-                <Route path="/" element={<HomeRedirect />} />
+                <Route path="/" element={<DashboardPage />} />
                 <Route path="/institutions" element={<InstitutionsPage />} />
                 <Route path="/classrooms/new" element={<CreateClassroomPage />} />
                 <Route path="/classrooms/:classroomId" element={<ClassroomLayout />}>
@@ -58,6 +53,7 @@ export default function App() {
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
                 <Route path="/team" element={<TeamPage />} />
+                <Route path="/coding" element={<CodingPage />} />
               </Route>
             </Route>
 

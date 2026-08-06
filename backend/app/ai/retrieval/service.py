@@ -10,20 +10,24 @@ def search_classroom(
     question: str,
     limit: int = 5,
 ):
-    question_vector = embed_text(question)
+    try:
+        question_vector = embed_text(question)
 
-    results = client.query_points(
-        collection_name=COLLECTION_NAME,
-        query=question_vector,
-        limit=limit,
-        query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="classroom_id",
-                    match=MatchValue(value=classroom_id),
-                )
-            ]
-        ),
-    )
+        results = client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=question_vector,
+            limit=limit,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="classroom_id",
+                        match=MatchValue(value=classroom_id),
+                    )
+                ]
+            ),
+        )
 
-    return results.points
+        return results.points
+    except Exception as e:
+        print("Vector search notice (Qdrant offline or empty):", e)
+        return []

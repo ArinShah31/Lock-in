@@ -3,8 +3,20 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { contentsApi } from "../api";
-import { API_BASE } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import type { Content } from "../api/types";
+
+function getFileUrl(filePath: string) {
+  if (!filePath) return "#";
+  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+    return filePath;
+  }
+  const cleanPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
+  const backendBase = (
+    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/api\/v1\/?$/, "");
+  return `${backendBase}${cleanPath}`;
+}
 
 export function ClassroomDocumentsTab() {
   const { classroomId } = useParams();
@@ -134,7 +146,9 @@ export function ClassroomDocumentsTab() {
     <>
       <DragOverlay onDropFile={uploadFile} />
 
-      <div className="space-y-4">
+      <div
+        className={`space-y-4 transition-colors ${isDragging ? "ring-2 ring-cyan-400" : ""}`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Documents</h2>
 
@@ -256,7 +270,14 @@ export function ClassroomDocumentsTab() {
           .map((doc) => (
             <div key={doc.id} className="rounded-lg border border-line p-4">
               <div className="flex items-start justify-between">
-                <h3 className="font-semibold">{doc.title}</h3>
+                <a
+                  href={getFileUrl(doc.file_path)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-paper hover:text-accent hover:underline transition-colors"
+                >
+                  {doc.title}
+                </a>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -292,15 +313,15 @@ export function ClassroomDocumentsTab() {
               <p className="text-sm opacity-70">{doc.description}</p>
 
               <a
-                href={`http://127.0.0.1:8000/${doc.file_path}`}
+                href={getFileUrl(doc.file_path)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-medium text-accent hover:underline"
+                className="text-sm font-medium text-accent hover:underline flex items-center gap-1 mt-1"
               >
                 📄 {doc.file_name}
               </a>
 
-              <p className="text-xs opacity-60">
+              <p className="text-xs opacity-60 mt-1">
                 {new Date(doc.created_at).toLocaleString()}
               </p>
             </div>
