@@ -12,6 +12,8 @@ export type User = {
   email: string;
   role: UserRole;
   is_active: boolean;
+  coding_platform_enabled?: boolean;
+  avatar_url?: string | null;
   institution_id: number | null;
   department_id: number | null;
 };
@@ -59,6 +61,47 @@ export type Classroom = {
 };
 
 export type MembershipStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export type AnalyticsShareCode = {
+  classroom_id: number;
+  analytics_share_code: string;
+};
+
+export type AnalyticsGrant = {
+  id: number;
+  viewer_classroom_id: number;
+  source_classroom_id: number;
+  granted_by_user_id: number;
+  is_active: boolean;
+  created_at: string;
+  viewer_classroom_name?: string | null;
+  viewer_classroom_code?: string | null;
+  source_classroom_name?: string | null;
+  source_classroom_code?: string | null;
+  source_teacher_name?: string | null;
+};
+
+export type LinkedStudentAnalytics = {
+  student_id: number;
+  full_name: string;
+  email: string;
+  assignments_submitted: number;
+  assignments_total: number;
+  average_score_pct: number | null;
+  last_submission_at: string | null;
+};
+
+export type SourceAnalyticsSummary = {
+  source_classroom_id: number;
+  source_classroom_name: string;
+  source_classroom_code: string;
+  source_teacher_name: string | null;
+  student_count: number;
+  assignment_count: number;
+  course_published: boolean;
+  average_completion_pct: number | null;
+  students: LinkedStudentAnalytics[];
+};
 
 export type ClassroomStudent = {
   id: number;
@@ -288,4 +331,144 @@ export type CourseBuildJob = {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type PracticeQuestion = {
+  question: string;
+  options: string[];
+};
+
+export type MockExamQuestion = {
+  id: string;
+  question_type: string;
+  question: string;
+  marks: number;
+  options: string[];
+  correct_answer?: string | null;
+  expected_answer?: string | null;
+  section_title: string;
+};
+
+export type MockExamSection = {
+  id: string;
+  title: string;
+  instructions: string;
+  question_type: string;
+  marks_per_question: number;
+  question_count: number;
+  required_count?: number | null;
+  questions: MockExamQuestion[];
+};
+
+export type MockExamPattern = {
+  title: string;
+  total_marks: number;
+  duration_minutes: number;
+  instructions: string;
+  sections: MockExamSection[];
+  pyq_file_name?: string | null;
+  pyq_file_path?: string | null;
+};
+
+export type MockExam = {
+  id: number;
+  classroom_id: number;
+  title: string;
+  total_marks: number;
+  duration_minutes: number;
+  status: string;
+  pyq_file_name?: string | null;
+  pattern: MockExamPattern | Record<string, unknown>;
+  paper: { instructions?: string; sections?: MockExamSection[] };
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MockExamAttempt = {
+  id: number;
+  mock_exam_id: number;
+  classroom_id: number;
+  student_id: number;
+  answers: Record<string, string>;
+  mcq_score: number | null;
+  theory_score: number | null;
+  total_score: number | null;
+  theory_status: string;
+  feedback: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+};
+
+export type PracticeQuiz = {
+  chapter_number: number;
+  title: string;
+  summary: string;
+  topic_label: string;
+  question_count: number;
+  latest_score: number | null;
+  latest_attempted_at: string | null;
+  questions: PracticeQuestion[];
+};
+
+export type PracticeFlashcard = {
+  id: string;
+  question: string;
+  answer: string;
+  cue: string;
+};
+
+export type PracticeFlashcardDeck = {
+  id: string;
+  title: string;
+  subject: string;
+  summary: string;
+  focus: string;
+  estimated_time: string;
+  mastery_hint: string;
+  cards: PracticeFlashcard[];
+};
+
+export type PracticeAssessment = {
+  assessment_kind: string;
+  target_key: string;
+  title: string;
+  meta: string;
+  detail: string;
+  question_count: number;
+  duration_minutes: number;
+  is_locked: boolean;
+  latest_score: number | null;
+  latest_attempted_at: string | null;
+  questions: PracticeQuestion[];
+};
+
+export type PracticeSummary = {
+  source_document_count: number;
+  ready_quizzes: number;
+  flashcard_decks: number;
+  locked_assessments: number;
+  completed_quizzes: number;
+  completed_assessments: number;
+};
+
+export type PracticeOverview = {
+  classroom_id: number;
+  classroom_name: string;
+  course_title: string | null;
+  source_document_count: number;
+  summary: PracticeSummary;
+  quizzes: PracticeQuiz[];
+  flashcard_decks: PracticeFlashcardDeck[];
+  topic_assessments: PracticeAssessment[];
+  subject_assessments: PracticeAssessment[];
+};
+
+export type PracticeAttempt = {
+  id: number;
+  classroom_id: number;
+  score: number | null;
+  attempt_type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
 };

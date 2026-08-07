@@ -8,12 +8,14 @@ import {
   type ReactNode,
 } from "react";
 import { authApi, logoutLocal, persistSession } from "../api";
+import { clearCodingToken } from "../api/codingClient";
 import type { AuthResponse, User, UserRole } from "../api/types";
 
 type AuthContextValue = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   register: (payload: {
     full_name: string;
     email: string;
@@ -43,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const applySession = useCallback((data: AuthResponse) => {
+    clearCodingToken();
     persistSession(data);
     setUser(data.user);
   }, []);
@@ -50,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshMe = useCallback(async () => {
     const token = localStorage.getItem("astra_access_token");
     if (!token) {
+      clearCodingToken();
       setUser(null);
       setLoading(false);
       return;
@@ -60,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me);
     } catch {
       logoutLocal();
+      clearCodingToken();
       setUser(null);
     } finally {
       setLoading(false);
@@ -70,6 +75,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refreshMe();
   }, [refreshMe]);
 
+  useEffect(() => {
+    const onSessionExpired = () => {
+      logoutLocal();
+      clearCodingToken();
+      setUser(null);
+    };
+    window.addEventListener("astra:session-expired", onSessionExpired);
+    return () => window.removeEventListener("astra:session-expired", onSessionExpired);
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -78,12 +93,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await authApi.login({ email, password });
         applySession(data);
       },
+      loginWithGoogle: async (idToken) => {
+        const data = await authApi.google({ id_token: idToken });
+        applySession(data);
+      },
       register: async (payload) => {
         const data = await authApi.register(payload);
         applySession(data);
       },
       logout: () => {
         logoutLocal();
+        clearCodingToken();
         setUser(null);
       },
       refreshMe,

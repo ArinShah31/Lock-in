@@ -11,6 +11,7 @@ import type {
   ClassroomCourse,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { CourseMarkdown } from "../components/CourseMarkdown";
 import {
   EmptyState,
   ErrorText,
@@ -19,6 +20,8 @@ import {
   inputClass,
   PrimaryButton,
 } from "../components/ui";
+import { ClassroomMockExamsPanel } from "./ClassroomMockExamsPanel";
+import { StudentCourseView } from "./StudentCourseView";
 
 type OutletCtx = { classroom: Classroom };
 
@@ -190,7 +193,7 @@ function GenerationProgressPanel({
           ? "border-accent/40 bg-accent/10"
           : display.status === "FAILED"
             ? "border-red-500/40 bg-red-500/10"
-            : "border-line bg-ink-soft/30"
+            : "border-line bg-panel-low"
       }`}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -204,7 +207,7 @@ function GenerationProgressPanel({
       </div>
 
       {pct != null ? (
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink-soft">
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-line">
           <div
             className={`h-full rounded-full transition-all duration-500 ${
               display.status === "FAILED" ? "bg-red-400" : "bg-accent"
@@ -215,7 +218,7 @@ function GenerationProgressPanel({
       ) : null}
 
       <p className="mt-2 text-sm text-paper">{display.progress_message || (active ? "Starting…" : "—")}</p>
-      {display.error_message ? <p className="mt-1 text-sm text-red-300">{display.error_message}</p> : null}
+      {display.error_message ? <p className="mt-1 text-sm text-red-600">{display.error_message}</p> : null}
 
       {steps.length > 1 ? (
         <ol className="mt-3 flex flex-wrap gap-2">
@@ -226,7 +229,7 @@ function GenerationProgressPanel({
                 s.state === "done"
                   ? "border-accent/40 text-accent"
                   : s.state === "active"
-                    ? "border-paper/40 bg-paper/10 text-paper"
+                    ? "border-secondary/40 bg-secondary/10 text-primary"
                     : "border-line text-mist"
               }`}
             >
@@ -246,6 +249,13 @@ function GenerationProgressPanel({
   );
 }
 
+function formatFileSize(bytes: number): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function SetupPanel({
   open,
   onToggle,
@@ -254,6 +264,8 @@ function SetupPanel({
   documents,
   uploadPending,
   savePending,
+  unsavedDocs,
+  saveFailed,
   onUpload,
   onSelectAll,
   onClear,
@@ -267,83 +279,228 @@ function SetupPanel({
   documents: Content[] | undefined;
   uploadPending: boolean;
   savePending: boolean;
+  unsavedDocs: boolean;
+  saveFailed: boolean;
   onUpload: (file: File) => void;
   onSelectAll: () => void;
   onClear: () => void;
   onToggleDoc: (docId: number, checked: boolean) => void;
   onSave: () => void;
 }) {
+  const [docQuery, setDocQuery] = useState("");
+  const allDocs = documents ?? [];
+  const query = docQuery.trim().toLowerCase();
+  const visibleDocs = query
+    ? allDocs.filter((doc) => `${doc.title} ${doc.file_name}`.toLowerCase().includes(query))
+    : allDocs;
+
   const summaryParts: string[] = [];
-  if (syllabusName) summaryParts.push(syllabusName);
-  if (selectedDocs.length) summaryParts.push(`${selectedDocs.length} document${selectedDocs.length === 1 ? "" : "s"}`);
-  const summary = summaryParts.length ? summaryParts.join(" · ") : "No sources yet";
+  if (syllabusName) summaryParts.push(`Syllabus: ${syllabusName}`);
+  if (selectedDocs.length)
+    summaryParts.push(`${selectedDocs.length} of ${allDocs.length} document${allDocs.length === 1 ? "" : "s"}`);
+  const summary = summaryParts.length
+    ? summaryParts.join(" · ")
+    : "Nothing added yet — upload a syllabus or pick documents";
+  const ready = !!syllabusName || selectedDocs.length > 0;
 
   return (
-    <div className="rounded-2xl border border-line">
+    <div className="rounded-2xl border border-line bg-white shadow-xs">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        className="flex w-full items-start justify-between gap-3 rounded-2xl px-4 py-4 text-left transition hover:bg-panel-low"
         onClick={onToggle}
+        aria-expanded={open}
       >
-        <div>
-          <h3 className="font-semibold text-paper">1. Sources</h3>
-          <p className="text-xs text-mist">{summary}</p>
-        </div>
-        <span className="text-sm text-mist">{open ? "Hide" : "Edit"}</span>
-      </button>
-      {open ? (
-        <div className="space-y-4 border-t border-line px-4 py-4">
-          <Field label="Syllabus upload">
-            <input
-              className={inputClass}
-              type="file"
-              disabled={uploadPending}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onUpload(file);
-              }}
-            />
-          </Field>
-          {syllabusName ? <p className="text-xs text-mist">Current syllabus: {syllabusName}</p> : null}
-
+        <div className="flex items-start gap-3">
+          <span
+            className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+              ready ? "bg-accent/10 text-accent" : "bg-line text-mist"
+            }`}
+          >
+            {ready ? <span className="material-symbols-outlined text-base">check</span> : "1"}
+          </span>
           <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mist">Classroom documents</p>
-              <GhostButton onClick={onSelectAll}>Select all</GhostButton>
-              <GhostButton onClick={onClear}>Clear</GhostButton>
-            </div>
-            {!documents?.length ? (
-              <p className="text-sm text-mist">No documents yet — upload some in the Documents tab.</p>
-            ) : (
-              <ul className="max-h-40 space-y-2 overflow-y-auto">
-                {documents.map((doc) => (
-                  <li key={doc.id}>
-                    <label className="flex items-center gap-2 text-sm text-paper">
-                      <input
-                        type="checkbox"
-                        checked={selectedDocs.includes(doc.id)}
-                        onChange={(e) => onToggleDoc(doc.id, e.target.checked)}
-                      />
-                      {doc.title}
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="mt-3">
-              <PrimaryButton onClick={onSave} disabled={savePending}>
-                {savePending ? "Saving…" : "Save document selection"}
-              </PrimaryButton>
-            </div>
+            <h3 className="font-semibold text-paper">Sources</h3>
+            <p className="text-xs text-mist">The material Astra reads to build this course.</p>
+            <p className="mt-1 text-sm font-medium text-paper">{summary}</p>
           </div>
+        </div>
+        <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-secondary">
+          {open ? "Done" : "Edit"}
+          <span className="material-symbols-outlined text-base">{open ? "expand_less" : "expand_more"}</span>
+        </span>
+      </button>
+
+      {open ? (
+        <div className="space-y-5 border-t border-line px-4 py-4">
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <h4 className="text-sm font-semibold text-paper">Syllabus</h4>
+              <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
+                Recommended
+              </span>
+            </div>
+            <p className="text-xs text-mist">
+              Sets the chapter list and their order. PDF, Word, PowerPoint, or text file.
+            </p>
+            {syllabusName ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel-low px-3 py-2">
+                <span className="material-symbols-outlined text-lg text-accent">description</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-paper">{syllabusName}</span>
+                <UploadFileButton
+                  label="Replace"
+                  pending={uploadPending}
+                  onUpload={onUpload}
+                  variant="ghost"
+                />
+              </div>
+            ) : (
+              <UploadFileButton label="Choose syllabus file" pending={uploadPending} onUpload={onUpload} />
+            )}
+          </section>
+
+          <section className="space-y-2 border-t border-line pt-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <h4 className="text-sm font-semibold text-paper">Classroom documents</h4>
+                <span className="rounded-full bg-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-mist">
+                  Optional
+                </span>
+              </div>
+              <span className="text-xs text-mist">
+                {selectedDocs.length} of {allDocs.length} selected
+              </span>
+            </div>
+            <p className="text-xs text-mist">
+              Tick the files you want used as reference material for lesson notes.
+            </p>
+
+            {!allDocs.length ? (
+              <p className="rounded-xl border border-dashed border-line bg-panel-low px-3 py-4 text-sm text-mist">
+                No documents in this classroom yet. Upload them in the Documents tab, then come back here.
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  {allDocs.length > 5 ? (
+                    <input
+                      className={`${inputClass} max-w-56 flex-1`}
+                      placeholder="Search documents…"
+                      value={docQuery}
+                      onChange={(e) => setDocQuery(e.target.value)}
+                    />
+                  ) : null}
+                  <GhostButton
+                    onClick={onSelectAll}
+                    disabled={selectedDocs.length === allDocs.length}
+                  >
+                    Select all
+                  </GhostButton>
+                  <GhostButton onClick={onClear} disabled={!selectedDocs.length}>
+                    Clear
+                  </GhostButton>
+                </div>
+
+                <ul className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+                  {visibleDocs.map((doc) => {
+                    const checked = selectedDocs.includes(doc.id);
+                    const meta = [doc.content_type, formatFileSize(doc.file_size)].filter(Boolean).join(" · ");
+                    return (
+                      <li key={doc.id}>
+                        <label
+                          className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition ${
+                            checked
+                              ? "border-accent/40 bg-accent/5"
+                              : "border-line bg-white hover:bg-panel-low"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-accent"
+                            checked={checked}
+                            onChange={(e) => onToggleDoc(doc.id, e.target.checked)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-paper">{doc.title}</span>
+                            {meta ? <span className="block truncate text-xs text-mist">{meta}</span> : null}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                  {!visibleDocs.length ? (
+                    <li className="px-3 py-2 text-sm text-mist">No documents match “{docQuery}”.</li>
+                  ) : null}
+                </ul>
+              </>
+            )}
+          </section>
+
+          {allDocs.length ? (
+            <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+              <PrimaryButton onClick={onSave} disabled={savePending || (!unsavedDocs && !saveFailed)}>
+                {savePending ? "Saving…" : unsavedDocs || saveFailed ? "Save selection" : "Selection saved"}
+              </PrimaryButton>
+              {saveFailed ? (
+                <span className="text-xs font-medium text-red-600">Couldn’t save — try again.</span>
+              ) : unsavedDocs ? (
+                <span className="flex items-center gap-1 text-xs font-medium text-warn">
+                  <span className="material-symbols-outlined text-sm">error</span>
+                  Unsaved changes — save before generating.
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-mist">
+                  <span className="material-symbols-outlined text-sm text-accent">check_circle</span>
+                  All changes saved.
+                </span>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
 
+function UploadFileButton({
+  label,
+  pending,
+  onUpload,
+  variant = "primary",
+}: {
+  label: string;
+  pending: boolean;
+  onUpload: (file: File) => void;
+  variant?: "primary" | "ghost";
+}) {
+  const base =
+    "inline-flex cursor-pointer items-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition";
+  const skin =
+    variant === "primary"
+      ? "border border-secondary/40 bg-white text-secondary hover:bg-secondary/10"
+      : "border border-line bg-white text-mist hover:bg-panel-low hover:text-paper";
+  return (
+    <label className={`${base} ${skin} ${pending ? "cursor-not-allowed opacity-60" : ""}`}>
+      <span className="material-symbols-outlined text-base">upload_file</span>
+      {pending ? "Uploading…" : label}
+      <input
+        type="file"
+        className="hidden"
+        accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md"
+        disabled={pending}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onUpload(file);
+          e.target.value = "";
+        }}
+      />
+    </label>
+  );
+}
+
 function BuildPanel({
   hasSources,
+  unsavedSources,
   isGenerating,
   isPublished,
   activeJob,
@@ -353,6 +510,7 @@ function BuildPanel({
   onTogglePublish,
 }: {
   hasSources: boolean;
+  unsavedSources: boolean;
   isGenerating: boolean;
   isPublished: boolean;
   activeJob: CourseBuildJob | null;
@@ -361,18 +519,27 @@ function BuildPanel({
   onRegenerateStructure: () => void;
   onTogglePublish: () => void;
 }) {
-  const generateDisabled = isGenerating || !hasSources;
+  const generateDisabled = isGenerating || !hasSources || unsavedSources;
   return (
-    <div className="sticky top-3 z-10 space-y-3 rounded-2xl border border-line bg-ink/95 p-4 backdrop-blur">
-      <div>
-        <h3 className="font-semibold text-paper">2. Build</h3>
-        <p className="text-xs text-mist">Generate structure, study notes, and videos from your sources.</p>
+    <div className="sticky top-3 z-10 space-y-3 rounded-2xl border border-line bg-white/95 p-4 shadow-xs backdrop-blur">
+      <div className="flex items-start gap-3">
+        <span
+          className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+            hasSources && !unsavedSources ? "bg-accent/10 text-accent" : "bg-line text-mist"
+          }`}
+        >
+          2
+        </span>
+        <div>
+          <h3 className="font-semibold text-paper">Build</h3>
+          <p className="text-xs text-mist">Generate structure, study notes, and videos from your sources.</p>
+        </div>
       </div>
       <div className="flex flex-wrap gap-2">
         <PrimaryButton disabled={generateDisabled} onClick={onGenerateAll}>
           {isGenerating ? "Generating…" : "Generate all"}
         </PrimaryButton>
-        <GhostButton disabled={isGenerating || !hasSources} onClick={onRegenerateStructure}>
+        <GhostButton disabled={generateDisabled} onClick={onRegenerateStructure}>
           Regenerate structure
         </GhostButton>
         <GhostButton onClick={onTogglePublish}>
@@ -381,6 +548,8 @@ function BuildPanel({
       </div>
       {!hasSources ? (
         <p className="text-xs text-mist">Add a syllabus or select documents before generating.</p>
+      ) : unsavedSources ? (
+        <p className="text-xs font-medium text-warn">Save your source selection above before generating.</p>
       ) : null}
       <GenerationProgressPanel id="course-builder-progress" job={activeJob} recent={recentJobs} />
     </div>
@@ -477,9 +646,10 @@ function LessonBody({
                 {open ? (
                   <div className="space-y-2 border-t border-line px-3 py-3">
                     {section.content_markdown ? (
-                      <pre className="max-h-[22rem] overflow-y-auto whitespace-pre-wrap font-sans text-sm leading-relaxed text-mist">
-                        {section.content_markdown}
-                      </pre>
+                      <CourseMarkdown
+                        content={section.content_markdown}
+                        className="max-h-[22rem] overflow-y-auto text-sm text-mist"
+                      />
                     ) : null}
                     {section.key_points?.length ? (
                       <ul className="list-disc space-y-1 pl-5 text-sm text-mist">
@@ -520,9 +690,10 @@ function LessonBody({
       ) : lesson.notes_markdown ? (
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-mist">Study notes</p>
-          <pre className="max-h-[28rem] overflow-y-auto whitespace-pre-wrap rounded-xl border border-line bg-ink-soft/40 p-3 font-sans text-sm leading-relaxed text-paper">
-            {lesson.notes_markdown}
-          </pre>
+          <CourseMarkdown
+            content={lesson.notes_markdown}
+            className="max-h-[28rem] overflow-y-auto rounded-xl border border-line bg-panel-low p-3 text-sm"
+          />
         </div>
       ) : null}
 
@@ -534,7 +705,7 @@ function LessonBody({
               <p className="font-medium text-paper">{ex.title || "Example"}</p>
               {ex.context ? <p className="mt-1 text-sm text-mist">{ex.context}</p> : null}
               {ex.content_markdown ? (
-                <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-mist">{ex.content_markdown}</pre>
+                <CourseMarkdown content={ex.content_markdown} className="mt-2 text-sm text-mist" />
               ) : null}
               {ex.takeaway ? <p className="mt-2 text-sm text-accent">Takeaway: {ex.takeaway}</p> : null}
             </div>
@@ -727,9 +898,13 @@ export function ClassroomCourseBuilderTab() {
     }
   }, [activeJob, id, qc]);
 
+  // Keyed on the ids themselves so background refetches don't wipe unsaved edits.
+  const savedDocKey = [...(course.data?.source_content_ids ?? [])].sort((a, b) => a - b).join(",");
   useEffect(() => {
-    if (course.data?.source_content_ids) setSelectedDocs(course.data.source_content_ids);
-  }, [course.data?.source_content_ids]);
+    setSelectedDocs(savedDocKey ? savedDocKey.split(",").map(Number) : []);
+  }, [savedDocKey]);
+
+  const unsavedDocs = [...selectedDocs].sort((a, b) => a - b).join(",") !== savedDocKey;
 
   const hasSources = !!(
     course.data?.syllabus_file_name ||
@@ -840,10 +1015,22 @@ export function ClassroomCourseBuilderTab() {
     setExpandedSections(new Set());
   }
 
-  if (course.isLoading) return <p className="text-sm text-mist">Loading course builder…</p>;
-  if (course.isError) return <ErrorText message="Failed to load course builder." />;
+  if (course.isLoading) {
+    return <p className="text-sm text-mist">{isTeacher ? "Loading course builder…" : "Loading course…"}</p>;
+  }
+  if (course.isError) {
+    return <ErrorText message={isTeacher ? "Failed to load course builder." : "Failed to load course."} />;
+  }
 
   const data = course.data as ClassroomCourse;
+
+  // Student study UI lives in StudentCourseView — teacher builder below stays unchanged.
+  // Revert: restore this early-return block + delete StudentCourseView.tsx, or
+  // `git checkout backup/before-student-course-ui -- frontend/src/pages/`
+  if (!isTeacher) {
+    if (!user) return <ErrorText message="Sign in to view this course." />;
+    return <StudentCourseView course={data} classroomId={id} userId={user.id} />;
+  }
   const status = teacherStatusLabel({
     hasSources,
     hasChapters: !!data.chapters.length,
@@ -891,6 +1078,8 @@ export function ClassroomCourseBuilderTab() {
             documents={documents.data}
             uploadPending={uploadSyllabus.isPending}
             savePending={saveSources.isPending}
+            unsavedDocs={unsavedDocs}
+            saveFailed={saveSources.isError}
             onUpload={(file) => uploadSyllabus.mutate(file)}
             onSelectAll={() => setSelectedDocs((documents.data ?? []).map((d) => d.id))}
             onClear={() => setSelectedDocs([])}
@@ -904,6 +1093,7 @@ export function ClassroomCourseBuilderTab() {
 
           <BuildPanel
             hasSources={hasSources}
+            unsavedSources={unsavedDocs}
             isGenerating={isGenerating}
             isPublished={data.is_published}
             activeJob={activeJob}
@@ -922,6 +1112,8 @@ export function ClassroomCourseBuilderTab() {
               })()
             }
           />
+
+          <ClassroomMockExamsPanel classroomId={id} />
         </>
       ) : null}
 
@@ -936,7 +1128,14 @@ export function ClassroomCourseBuilderTab() {
         />
       ) : (
         <div className="space-y-3">
-          {isTeacher ? <h3 className="font-semibold text-paper">3. Review</h3> : null}
+          {isTeacher ? (
+            <div className="flex items-center gap-3">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/10 text-xs font-bold text-accent">
+                3
+              </span>
+              <h3 className="font-semibold text-paper">Review &amp; publish</h3>
+            </div>
+          ) : null}
           <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
             <div className="space-y-2">
               <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-mist">Chapters</h4>

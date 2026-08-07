@@ -1,0 +1,961 @@
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "react-router-dom";
+import { codingPlatformApi, classroomsApi } from "../api";
+import {
+  clearCodingToken,
+  codingApi,
+  ensureCodingSession,
+  type AttemptEval,
+  type AttemptRow,
+  type CodingQuestion,
+  type CodingTest,
+  type Difficulty,
+  type Language,
+  type QuestionType,
+  type StudentResultSummary,
+} from "../api/codingClient";
+import { useAuth } from "../auth/AuthContext";
+import {
+  EmptyState,
+  ErrorText,
+  Field,
+  inputClass,
+  PageHeader,
+  Panel,
+  PrimaryButton,
+} from "../components/ui";
+
+const LANGUAGES: Language[] = ["python", "java", "cpp", "html", "css", "javascript"];
+const DIFFS: Difficulty[] = ["EASY", "MEDIUM", "HARD"];
+const RESULTS_MODE_KEY = "astra_coding_results_view";
+
+type ResultsViewMode = "tests" | "students";
+
+function readResultsMode(): ResultsViewMode {
+  try {
+    const v = localStorage.getItem(RESULTS_MODE_KEY);
+    return v === "students" ? "students" : "tests";
+  } catch {
+    return "tests";
+  }
+}
+
+function statusLabel(status: string | null | undefined) {
+  if (!status) return "not started";
+  return status.toLowerCase().replace(/_/g, " ");
+}
+
+export function CodingPage() {
+  const { user } = useAuth();
+  const isTeacher = user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
+  const isStudent = user?.role === "STUDENT";
+
+  const access = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+  });
+
+  const [ssoError, setSsoError] = useState<string | null>(() => {
+    const cached = sessionStorage.getItem("coding_launch_error");
+    if (cached) sessionStorage.removeItem("coding_launch_error");
+    return cached;
+  });
+  const [redirecting, setRedirecting] = useState(false);
+
+  useEffect(() => {
+    if (!isStudent || !access.data?.enabled) return;
+    let cancelled = false;
+    setRedirecting(true);
+    void (async () => {
+      try {
+        const { token, frontend_url } = await codingPlatformApi.ssoToken();
+        if (cancelled) return;
+        window.location.assign(`${frontend_url}/sso?token=${encodeURIComponent(token)}`);
+      } catch (e) {
+        if (!cancelled) {
+          setSsoError(e instanceof Error ? e.message : "Could not open coding platform");
+          setRedirecting(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isStudent, access.data?.enabled]);
+
+  if (access.isLoading) {
+    return (
+      <div>
+        <PageHeader title="Coding" subtitle="Loading access…" />
+      </div>
+    );
+  }
+
+  if (!isTeacher && !isStudent) {
+    return (
+      <div>
+        <PageHeader title="Coding" />
+        <Panel>
+          <EmptyState title="Not available" body="Coding platform is for teachers and students." />
+        </Panel>
+      </div>
+    );
+  }
+
+  if (!access.data?.enabled) {
+    return (
+      <div>
+        <PageHeader title="Coding" subtitle="Coding assessments for your department." />
+        <Panel>
+          <EmptyState
+            title="Coding platform is disabled"
+            body={access.data?.reason || "Ask your HOD to enable the coding platform."}
+          />
+        </Panel>
+      </div>
+    );
+  }
+
+  if (isStudent) {
+    return (
+      <div>
+        <PageHeader title="Coding" subtitle="Opening your coding workspace…" />
+        <Panel>
+          <ErrorText message={ssoError} />
+          <p className="text-sm text-[#44474e]">
+            {redirecting ? "Redirecting to the coding platform…" : "Waiting…"}
+          </p>
+        </Panel>
+      </div>
+    );
+  }
+
+  return <TeacherCodingWorkspace expectedEmail={user?.email} />;
+}
+
+function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
+  const qc = useQueryClient();
+  const location = useLocation();
+  const navState = (location.state as {
+    tab?: "bank" | "tests" | "results";
+    resultsMode?: ResultsViewMode;
+    selectedTestId?: number | null;
+    selectedStudentId?: number | null;
+  } | null) ?? null;
+
+  const [ready, setReady] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"bank" | "tests" | "results">(navState?.tab ?? "bank");
+  const [error, setError] = useState<string | null>(null);
+  const [openCodeKey, setOpenCodeKey] = useState<string | null>(null);
+  const [editingEvalId, setEditingEvalId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ total_score: 0, feedback: "", verdict: "PASS" });
+  const [selectedTestId, setSelectedTestId] = useState<number | null>(navState?.selectedTestId ?? null);
+  const [classroomByTest, setClassroomByTest] = useState<Record<number, number>>({});
+  const [assignMsg, setAssignMsg] = useState<string | null>(null);
+  const [resultsMode, setResultsMode] = useState<ResultsViewMode>(
+    () => navState?.resultsMode ?? readResultsMode(),
+  );
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(
+    navState?.selectedStudentId ?? null,
+  );
+  const [selectedStudentAttemptId, setSelectedStudentAttemptId] = useState<number | null>(null);
+
+  const [qForm, setQForm] = useState({
+    title: "",
+    prompt_markdown: "",
+    starter_code: "",
+    language: "python" as Language,
+    difficulty: "EASY" as Difficulty,
+    question_type: "SYLLABUS" as QuestionType,
+  });
+  const [testForm, setTestForm] = useState({
+    title: "New Progressive Test",
+    duration_minutes: 45,
+    easy_question_id: 0,
+    medium_question_id: 0,
+    hard_question_id: 0,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    void (async () => {
+      try {
+        await ensureCodingSession(false, expectedEmail);
+        if (!cancelled) setReady(true);
+      } catch (e) {
+        clearCodingToken();
+        if (!cancelled) setBootError(e instanceof Error ? e.message : "Could not connect");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [expectedEmail]);
+
+  const questions = useQuery({
+    queryKey: ["coding-questions", expectedEmail],
+    queryFn: () => codingApi<CodingQuestion[]>("/teacher/questions"),
+    enabled: ready,
+  });
+  const tests = useQuery({
+    queryKey: ["coding-tests", expectedEmail],
+    queryFn: () => codingApi<CodingTest[]>("/teacher/tests"),
+    enabled: ready,
+  });
+  const myClassrooms = useQuery({
+    queryKey: ["coding-my-classrooms"],
+    queryFn: classroomsApi.list,
+    enabled: ready,
+  });
+  const attempts = useQuery({
+    queryKey: ["coding-attempts", expectedEmail, selectedTestId],
+    queryFn: () => codingApi<AttemptRow[]>(`/results/tests/${selectedTestId}/attempts`),
+    enabled: ready && selectedTestId != null && tab === "results" && resultsMode === "tests",
+  });
+  const resultStudents = useQuery({
+    queryKey: ["coding-result-students", expectedEmail],
+    queryFn: () => codingApi<StudentResultSummary[]>("/results/students"),
+    enabled: ready && tab === "results" && resultsMode === "students",
+  });
+  const studentAttempts = useQuery({
+    queryKey: ["coding-student-attempts", expectedEmail, selectedStudentId],
+    queryFn: () => codingApi<AttemptRow[]>(`/results/students/${selectedStudentId}/attempts`),
+    enabled:
+      ready &&
+      tab === "results" &&
+      resultsMode === "students" &&
+      selectedStudentId != null,
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RESULTS_MODE_KEY, resultsMode);
+    } catch {
+      /* ignore */
+    }
+  }, [resultsMode]);
+
+  function switchResultsMode(mode: ResultsViewMode) {
+    setResultsMode(mode);
+    setSelectedStudentId(null);
+    setSelectedStudentAttemptId(null);
+    setOpenCodeKey(null);
+    setEditingEvalId(null);
+  }
+
+  const importQuestions = useMutation({
+    mutationFn: () =>
+      codingApi<CodingQuestion[]>("/teacher/questions/import-all", { method: "POST" }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["coding-questions"] });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  useEffect(() => {
+    if (!ready || questions.isLoading || questions.isError || importQuestions.isPending) return;
+    if ((questions.data?.length ?? 0) > 0) return;
+    importQuestions.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot when bank empty
+  }, [ready, questions.isLoading, questions.data]);
+
+  const byDiff = useMemo(() => {
+    const map: Record<Difficulty, CodingQuestion[]> = { EASY: [], MEDIUM: [], HARD: [] };
+    for (const q of questions.data || []) map[q.difficulty].push(q);
+    return map;
+  }, [questions.data]);
+
+  const createQuestion = useMutation({
+    mutationFn: () =>
+      codingApi<CodingQuestion>("/teacher/questions", { method: "POST", body: JSON.stringify(qForm) }),
+    onSuccess: async () => {
+      setQForm((f) => ({ ...f, title: "", prompt_markdown: "", starter_code: "" }));
+      await qc.invalidateQueries({ queryKey: ["coding-questions"] });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const createTest = useMutation({
+    mutationFn: () =>
+      codingApi<CodingTest>("/teacher/tests", { method: "POST", body: JSON.stringify(testForm) }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["coding-tests"] });
+      setTab("tests");
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const publish = useMutation({
+    mutationFn: (testId: number) =>
+      codingApi(`/results/tests/${testId}/publish`, { method: "POST" }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["coding-tests"] });
+      await qc.invalidateQueries({ queryKey: ["coding-attempts"] });
+    },
+  });
+
+  const updateEval = useMutation({
+    mutationFn: ({
+      evalRunId,
+      total_score,
+      feedback,
+      verdict,
+    }: {
+      evalRunId: number;
+      total_score: number;
+      feedback: string;
+      verdict: string;
+    }) =>
+      codingApi<AttemptEval>(`/results/evals/${evalRunId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ total_score, feedback, verdict }),
+      }),
+    onSuccess: async () => {
+      setEditingEvalId(null);
+      await qc.invalidateQueries({ queryKey: ["coding-attempts"] });
+      await qc.invalidateQueries({ queryKey: ["coding-student-attempts"] });
+      await qc.invalidateQueries({ queryKey: ["coding-result-students"] });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const assignClassroom = useMutation({
+    mutationFn: async ({ testId, classroomId }: { testId: number; classroomId: number }) => {
+      // Sync classroom students onto coding platform, then assign each.
+      await codingPlatformApi.students();
+      const members = await classroomsApi.listStudents(classroomId);
+      const emails = members
+        .map((m) => m.student_email)
+        .filter((email): email is string => !!email);
+      if (!emails.length) throw new Error("No approved students in that classroom");
+      const results = await Promise.allSettled(
+        emails.map((email) =>
+          codingApi(`/teacher/tests/${testId}/assign`, {
+            method: "POST",
+            body: JSON.stringify({ student_email: email }),
+          }),
+        ),
+      );
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      return { ok, fail, total: emails.length };
+    },
+    onSuccess: (res) => {
+      setAssignMsg(
+        res.fail
+          ? `Assigned ${res.ok}/${res.total} students; ${res.fail} failed.`
+          : `Assigned test to ${res.ok} student(s) in the classroom.`,
+      );
+      void qc.invalidateQueries({ queryKey: ["coding-result-students"] });
+      void qc.invalidateQueries({ queryKey: ["coding-attempts"] });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  function startEdit(ev: AttemptEval) {
+    if (!ev.eval_run_id) return;
+    setEditingEvalId(ev.eval_run_id);
+    setEditForm({
+      total_score: ev.total_score,
+      feedback: ev.feedback,
+      verdict: ev.verdict,
+    });
+  }
+
+  function renderAttemptDetails(a: AttemptRow, opts?: { showStudent?: boolean; showTest?: boolean }) {
+    const showStudent = opts?.showStudent !== false;
+    const showTest = !!opts?.showTest;
+    return (
+      <div key={a.assignment_id} className="mb-3 rounded-xl border border-[#e1e3e4] p-3 text-sm">
+        {showStudent ? (
+          <div className="font-medium text-[#031635]">
+            {a.student_name} · {a.student_email}
+          </div>
+        ) : null}
+        {showTest && a.test_title ? (
+          <div className="font-medium text-[#031635]">{a.test_title}</div>
+        ) : null}
+        <div className="text-[#44474e]">
+          {statusLabel(a.session_status)} · violations {a.violation_score ?? 0} · avg{" "}
+          {a.average_score ?? "—"}
+        </div>
+        <div className="mt-3 space-y-3">
+          {a.evals.map((ev) => {
+            const codeKey = `${a.assignment_id}-${ev.question_id}`;
+            const codeOpen = openCodeKey === codeKey;
+            const isEditing = editingEvalId != null && editingEvalId === ev.eval_run_id;
+            return (
+              <div key={codeKey} className="rounded-lg border border-[#e1e3e4]/80 bg-[#f8f9fa] p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-[#031635]">
+                      {ev.question_title}{" "}
+                      <span className="text-xs font-normal text-[#44474e]">
+                        ({ev.difficulty}
+                        {ev.language ? ` · ${ev.language}` : ""})
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[#44474e]">
+                      Score {ev.total_score} · {ev.verdict}
+                      {ev.scores?.teacher_override ? (
+                        <span className="ml-2 text-xs text-amber-700">teacher edited</span>
+                      ) : null}
+                    </div>
+                    {!isEditing ? <p className="mt-1 text-[#44474e]">{ev.feedback}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-[#e1e3e4] px-3 py-1 text-xs text-[#44474e]"
+                      onClick={() => setOpenCodeKey(codeOpen ? null : codeKey)}
+                    >
+                      {codeOpen ? "Hide code" : "View code"}
+                    </button>
+                    {ev.eval_run_id ? (
+                      <button
+                        type="button"
+                        className="rounded-lg bg-[#031635]/10 px-3 py-1 text-xs text-[#031635]"
+                        onClick={() => (isEditing ? setEditingEvalId(null) : startEdit(ev))}
+                      >
+                        {isEditing ? "Cancel" : "Edit result"}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {codeOpen ? (
+                  <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-[#e1e3e4] bg-[#191c1d] p-3 text-xs text-white whitespace-pre-wrap">
+                    {ev.code?.trim() ? ev.code : "(no code submitted)"}
+                  </pre>
+                ) : null}
+                {isEditing ? (
+                  <form
+                    className="mt-3 grid gap-2 rounded-lg border border-[#e1e3e4] p-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!ev.eval_run_id) return;
+                      updateEval.mutate({
+                        evalRunId: ev.eval_run_id,
+                        total_score: Number(editForm.total_score),
+                        feedback: editForm.feedback,
+                        verdict: editForm.verdict,
+                      });
+                    }}
+                  >
+                    <Field label="Score (0–100)">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        className={inputClass}
+                        value={editForm.total_score}
+                        onChange={(e) =>
+                          setEditForm((f) => ({ ...f, total_score: Number(e.target.value) }))
+                        }
+                        required
+                      />
+                    </Field>
+                    <Field label="Verdict">
+                      <select
+                        className={inputClass}
+                        value={editForm.verdict}
+                        onChange={(e) => setEditForm((f) => ({ ...f, verdict: e.target.value }))}
+                      >
+                        <option value="PASS">PASS</option>
+                        <option value="BORDERLINE">BORDERLINE</option>
+                        <option value="FAIL">FAIL</option>
+                        <option value="ERROR">ERROR</option>
+                      </select>
+                    </Field>
+                    <Field label="Explanation / feedback">
+                      <textarea
+                        className={`${inputClass} min-h-24`}
+                        value={editForm.feedback}
+                        onChange={(e) => setEditForm((f) => ({ ...f, feedback: e.target.value }))}
+                        required
+                      />
+                    </Field>
+                    <PrimaryButton type="submit" disabled={updateEval.isPending}>
+                      {updateEval.isPending ? "Saving…" : "Save changes"}
+                    </PrimaryButton>
+                  </form>
+                ) : null}
+              </div>
+            );
+          })}
+          {!a.evals.length ? <p className="text-[#44474e]">No graded submissions yet.</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (bootError) {
+    return (
+      <div>
+        <PageHeader title="Coding" />
+        <Panel>
+          <EmptyState title="Could not open coding workspace" body={bootError} />
+        </Panel>
+      </div>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <div>
+        <PageHeader title="Coding" subtitle="Connecting to coding platform…" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Coding"
+        subtitle="Question bank, progressive tests, and result review."
+        action={
+          <PrimaryButton
+            disabled={!ready || importQuestions.isPending}
+            onClick={() => importQuestions.mutate()}
+          >
+            {importQuestions.isPending ? "Importing…" : "Import questions"}
+          </PrimaryButton>
+        }
+      />
+      <ErrorText message={error} />
+
+      <div className="mb-4 flex gap-2">
+        {(["bank", "tests", "results"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={`rounded-xl px-3 py-1.5 text-sm capitalize ${
+              tab === t ? "bg-[#031635] text-white" : "border border-[#e1e3e4] text-[#44474e]"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "bank" ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Panel>
+            <h2 className="mb-4 font-display text-xl text-[#031635]">New question</h2>
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                setError(null);
+                createQuestion.mutate();
+              }}
+            >
+              <Field label="Title">
+                <input
+                  className={inputClass}
+                  value={qForm.title}
+                  onChange={(e) => setQForm({ ...qForm, title: e.target.value })}
+                  required
+                />
+              </Field>
+              <Field label="Prompt">
+                <textarea
+                  className={`${inputClass} min-h-32`}
+                  value={qForm.prompt_markdown}
+                  onChange={(e) => setQForm({ ...qForm, prompt_markdown: e.target.value })}
+                  required
+                />
+              </Field>
+              <Field label="Starter code">
+                <textarea
+                  className={`${inputClass} min-h-28 font-mono text-xs`}
+                  value={qForm.starter_code}
+                  onChange={(e) => setQForm({ ...qForm, starter_code: e.target.value })}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Language">
+                  <select
+                    className={inputClass}
+                    value={qForm.language}
+                    onChange={(e) => setQForm({ ...qForm, language: e.target.value as Language })}
+                  >
+                    {LANGUAGES.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Difficulty">
+                  <select
+                    className={inputClass}
+                    value={qForm.difficulty}
+                    onChange={(e) => setQForm({ ...qForm, difficulty: e.target.value as Difficulty })}
+                  >
+                    {DIFFS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Type">
+                  <select
+                    className={inputClass}
+                    value={qForm.question_type}
+                    onChange={(e) =>
+                      setQForm({ ...qForm, question_type: e.target.value as QuestionType })
+                    }
+                  >
+                    <option value="SYLLABUS">SYLLABUS</option>
+                    <option value="HIRING">HIRING</option>
+                  </select>
+                </Field>
+              </div>
+              <div>
+                <PrimaryButton type="submit" disabled={createQuestion.isPending}>
+                  Save question
+                </PrimaryButton>
+              </div>
+            </form>
+          </Panel>
+          <Panel>
+            <h2 className="mb-4 font-display text-xl text-[#031635]">Question bank</h2>
+            {!questions.data?.length ? (
+              <EmptyState title="No questions yet" body="Create your first coding question." />
+            ) : (
+              <ul className="space-y-2">
+                {questions.data.map((q) => (
+                  <li key={q.id} className="rounded-xl border border-[#e1e3e4] px-3 py-2 text-sm">
+                    <div className="font-medium text-[#031635]">{q.title}</div>
+                    <div className="text-[#44474e]">
+                      #{q.id} · {q.language} · {q.difficulty} · {q.question_type}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+      ) : null}
+
+      {tab === "tests" ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Panel>
+            <h2 className="mb-4 font-display text-xl text-[#031635]">Create test (E→M→H)</h2>
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                setError(null);
+                createTest.mutate();
+              }}
+            >
+              <Field label="Title">
+                <input
+                  className={inputClass}
+                  value={testForm.title}
+                  onChange={(e) => setTestForm({ ...testForm, title: e.target.value })}
+                  required
+                />
+              </Field>
+              <Field label="Duration (minutes)">
+                <input
+                  type="number"
+                  className={inputClass}
+                  min={10}
+                  max={300}
+                  value={testForm.duration_minutes}
+                  onChange={(e) =>
+                    setTestForm({ ...testForm, duration_minutes: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              {(["EASY", "MEDIUM", "HARD"] as Difficulty[]).map((diff) => (
+                <Field key={diff} label={`${diff} question`}>
+                  <select
+                    className={inputClass}
+                    value={
+                      diff === "EASY"
+                        ? testForm.easy_question_id
+                        : diff === "MEDIUM"
+                          ? testForm.medium_question_id
+                          : testForm.hard_question_id
+                    }
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      if (diff === "EASY") setTestForm({ ...testForm, easy_question_id: id });
+                      else if (diff === "MEDIUM") setTestForm({ ...testForm, medium_question_id: id });
+                      else setTestForm({ ...testForm, hard_question_id: id });
+                    }}
+                    required
+                  >
+                    <option value={0}>Select…</option>
+                    {byDiff[diff].map((q) => (
+                      <option key={q.id} value={q.id}>
+                        #{q.id} {q.title} ({q.language})
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ))}
+              <div>
+                <PrimaryButton type="submit" disabled={createTest.isPending}>
+                  Create test
+                </PrimaryButton>
+              </div>
+            </form>
+          </Panel>
+          <Panel>
+            <h2 className="mb-3 font-display text-xl text-[#031635]">Your tests</h2>
+            {assignMsg ? <p className="mb-3 text-sm text-[#031635]">{assignMsg}</p> : null}
+            {!tests.data?.length ? (
+              <EmptyState title="No tests yet" body="Build a progressive 3-question test." />
+            ) : (
+              <ul className="space-y-3">
+                {tests.data.map((t) => {
+                  const selectedClassroomId = classroomByTest[t.id] || 0;
+                  return (
+                    <li key={t.id} className="rounded-xl border border-[#e1e3e4] p-3 text-sm">
+                      <div className="font-medium text-[#031635]">{t.title}</div>
+                      <div className="text-[#44474e]">
+                        Invite <span className="text-[#031635]">{t.invite_code}</span> · {t.duration_minutes}{" "}
+                        min · {t.is_published_results ? "results published" : "results private"}
+                      </div>
+                      <div className="mt-3 flex flex-col gap-2">
+                        <label className="block space-y-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#44474e]">
+                            Classroom
+                          </span>
+                          <select
+                            className={inputClass}
+                            value={selectedClassroomId || ""}
+                            onChange={(e) =>
+                              setClassroomByTest((prev) => ({
+                                ...prev,
+                                [t.id]: Number(e.target.value) || 0,
+                              }))
+                            }
+                          >
+                            <option value="">
+                              {(myClassrooms.data?.length ?? 0) === 0
+                                ? "No classrooms yet"
+                                : "Select classroom…"}
+                            </option>
+                            {(myClassrooms.data || []).map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({c.code})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="rounded-xl border border-[#e1e3e4] px-3 py-2 text-[#44474e] disabled:opacity-50"
+                            disabled={!selectedClassroomId || assignClassroom.isPending}
+                            onClick={() => {
+                              setError(null);
+                              setAssignMsg(null);
+                              assignClassroom.mutate({
+                                testId: t.id,
+                                classroomId: selectedClassroomId,
+                              });
+                            }}
+                          >
+                            {assignClassroom.isPending ? "Assigning…" : "Assign classroom"}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-xl border border-[#e1e3e4] px-3 py-2 text-[#44474e]"
+                            onClick={() => {
+                              setSelectedTestId(t.id);
+                              switchResultsMode("tests");
+                              setTab("results");
+                            }}
+                          >
+                            Results
+                          </button>
+                          {!t.is_published_results ? (
+                            <button
+                              type="button"
+                              className="rounded-xl bg-[#031635] px-3 py-2 font-semibold text-white"
+                              onClick={() => publish.mutate(t.id)}
+                            >
+                              Publish
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
+        </div>
+      ) : null}
+
+      {tab === "results" ? (
+        <Panel>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-display text-xl text-[#031635]">Attempts</h2>
+            <div className="inline-flex rounded-lg border border-[#e1e3e4] bg-[#f8f9fa] p-0.5">
+              <button
+                type="button"
+                onClick={() => switchResultsMode("tests")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  resultsMode === "tests"
+                    ? "bg-[#031635] text-white shadow-xs"
+                    : "text-[#44474e] hover:text-[#031635]"
+                }`}
+              >
+                By tests
+              </button>
+              <button
+                type="button"
+                onClick={() => switchResultsMode("students")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  resultsMode === "students"
+                    ? "bg-[#031635] text-white shadow-xs"
+                    : "text-[#44474e] hover:text-[#031635]"
+                }`}
+              >
+                By students
+              </button>
+            </div>
+          </div>
+
+          {resultsMode === "tests" ? (
+            <>
+              <select
+                className={`${inputClass} mb-4`}
+                value={selectedTestId ?? ""}
+                onChange={(e) => setSelectedTestId(Number(e.target.value) || null)}
+              >
+                <option value="">Select test…</option>
+                {(tests.data || []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+              {!selectedTestId ? (
+                <EmptyState title="Select a test" body="Choose a test to review every assigned student, including not started." />
+              ) : attempts.isLoading ? (
+                <p className="text-sm text-[#75777f]">Loading attempts…</p>
+              ) : !(attempts.data?.length) ? (
+                <EmptyState title="No students assigned" body="Assign this test to a classroom first." />
+              ) : (
+                attempts.data.map((a) => renderAttemptDetails(a, { showStudent: true }))
+              )}
+            </>
+          ) : (
+            <>
+              {selectedStudentId == null ? (
+                <>
+                  {resultStudents.isLoading ? (
+                    <p className="text-sm text-[#75777f]">Loading students…</p>
+                  ) : !(resultStudents.data?.length) ? (
+                    <EmptyState
+                      title="No assigned students"
+                      body="Students appear here after you assign at least one test."
+                    />
+                  ) : (
+                    <ul className="space-y-2">
+                      {resultStudents.data.map((s) => (
+                        <li key={s.student_id}>
+                          <button
+                            type="button"
+                            className="w-full rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3 text-left transition hover:border-[#031635] hover:bg-white"
+                            onClick={() => {
+                              setSelectedStudentId(s.student_id);
+                              setSelectedStudentAttemptId(null);
+                              setOpenCodeKey(null);
+                              setEditingEvalId(null);
+                            }}
+                          >
+                            <div className="font-medium text-[#031635]">
+                              {s.student_name}{" "}
+                              <span className="text-xs font-normal text-[#44474e]">· {s.student_email}</span>
+                            </div>
+                            <div className="mt-1 text-xs text-[#44474e]">
+                              {s.assignment_count} test{s.assignment_count === 1 ? "" : "s"} · {s.started_count}{" "}
+                              started · {s.submitted_count} submitted
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : selectedStudentAttemptId == null ? (
+                <>
+                  <button
+                    type="button"
+                    className="mb-3 text-xs font-semibold text-[#3f5d9b] hover:underline"
+                    onClick={() => {
+                      setSelectedStudentId(null);
+                      setSelectedStudentAttemptId(null);
+                    }}
+                  >
+                    ← All students
+                  </button>
+                  {studentAttempts.isLoading ? (
+                    <p className="text-sm text-[#75777f]">Loading tests…</p>
+                  ) : !(studentAttempts.data?.length) ? (
+                    <EmptyState title="No tests for this student" body="This student has no assignments yet." />
+                  ) : (
+                    <ul className="space-y-2">
+                      {studentAttempts.data.map((a) => (
+                        <li key={a.assignment_id}>
+                          <button
+                            type="button"
+                            className="w-full rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3 text-left transition hover:border-[#031635] hover:bg-white"
+                            onClick={() => {
+                              setSelectedStudentAttemptId(a.assignment_id);
+                              setOpenCodeKey(null);
+                              setEditingEvalId(null);
+                            }}
+                          >
+                            <div className="font-medium text-[#031635]">{a.test_title || `Test #${a.test_id}`}</div>
+                            <div className="mt-1 text-xs text-[#44474e]">
+                              {statusLabel(a.session_status)} · violations {a.violation_score ?? 0} · avg{" "}
+                              {a.average_score ?? "—"}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="mb-3 text-xs font-semibold text-[#3f5d9b] hover:underline"
+                    onClick={() => {
+                      setSelectedStudentAttemptId(null);
+                      setOpenCodeKey(null);
+                      setEditingEvalId(null);
+                    }}
+                  >
+                    ← Back to student’s tests
+                  </button>
+                  {studentAttempts.data
+                    ?.filter((a) => a.assignment_id === selectedStudentAttemptId)
+                    .map((a) => renderAttemptDetails(a, { showStudent: true, showTest: true }))}
+                </>
+              )}
+            </>
+          )}
+        </Panel>
+      ) : null}
+    </div>
+  );
+}

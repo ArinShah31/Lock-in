@@ -1,6 +1,7 @@
 from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.classroom import (
     Classroom,
+    ClassroomAnalyticsGrant,
     ClassroomAnnouncement,
     ClassroomStudent,
     ClassroomTeacher,
@@ -11,6 +12,9 @@ from app.models.classroom_course import (
     CourseBuildJob,
     CourseChapterAttempt,
     CourseChapterLock,
+    MockExam,
+    MockExamAttempt,
+    PracticeAssessmentLock,
 )
 from app.models.content import ClassroomContent, ContentType
 from app.models.institution import Department, Institution
@@ -22,6 +26,7 @@ __all__ = [
     "Institution",
     "Department",
     "Classroom",
+    "ClassroomAnalyticsGrant",
     "ClassroomStudent",
     "ClassroomTeacher",
     "ClassroomAnnouncement",
@@ -36,4 +41,7 @@ __all__ = [
     "CourseBuildJob",
     "CourseChapterLock",
     "CourseChapterAttempt",
+    "PracticeAssessmentLock",
+    "MockExam",
+    "MockExamAttempt",
 ]

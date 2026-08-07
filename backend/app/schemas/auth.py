@@ -17,6 +17,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str = Field(min_length=20)
+
+
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
@@ -33,10 +37,16 @@ class UserOut(BaseModel):
     email: EmailStr
     role: UserRole
     is_active: bool
+    coding_platform_enabled: bool = False
+    avatar_url: str | None = None
     institution_id: int | None = None
     department_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CodingPlatformToggleRequest(BaseModel):
+    enabled: bool
 
 
 class AuthResponse(BaseModel):

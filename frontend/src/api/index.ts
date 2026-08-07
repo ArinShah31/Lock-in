@@ -1,5 +1,7 @@
 import { api, apiForm, clearTokens, setTokens, API_BASE } from "./client";
 import type {
+  AnalyticsGrant,
+  AnalyticsShareCode,
   Assignment,
   AssignmentSubmission,
   AuthResponse,
@@ -11,7 +13,13 @@ import type {
   CourseBuildJob,
   Department,
   Institution,
+  MockExam,
+  MockExamAttempt,
+  MockExamPattern,
+  SourceAnalyticsSummary,
   StudentAssignmentFeedItem,
+  PracticeAttempt,
+  PracticeOverview,
   Subject,
   SubjectMaterial,
   User,
@@ -30,6 +38,9 @@ export const authApi = {
 
   login: (body: { email: string; password: string }) =>
     api<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(body) }, false),
+
+  google: (body: { id_token: string }) =>
+    api<AuthResponse>("/auth/google", { method: "POST", body: JSON.stringify(body) }, false),
 
   me: () => api<User>("/auth/me"),
 };
@@ -90,6 +101,32 @@ export const classroomsApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+};
+
+export const classroomAnalyticsApi = {
+  getShareCode: (classroomId: number) =>
+    api<AnalyticsShareCode>(`/classrooms/${classroomId}/analytics-share-code`),
+  rotateShareCode: (classroomId: number) =>
+    api<AnalyticsShareCode>(`/classrooms/${classroomId}/analytics-share-code/rotate`, {
+      method: "POST",
+    }),
+  grantAccess: (sourceClassroomId: number, viewerCode: string) =>
+    api<AnalyticsGrant>(`/classrooms/${sourceClassroomId}/analytics-grants`, {
+      method: "POST",
+      body: JSON.stringify({ viewer_code: viewerCode }),
+    }),
+  listInbound: (viewerClassroomId: number) =>
+    api<AnalyticsGrant[]>(`/classrooms/${viewerClassroomId}/analytics-grants`),
+  listOutbound: (sourceClassroomId: number) =>
+    api<AnalyticsGrant[]>(`/classrooms/${sourceClassroomId}/analytics-grants/outbound`),
+  revoke: (classroomId: number, grantId: number) =>
+    api<AnalyticsGrant>(`/classrooms/${classroomId}/analytics-grants/${grantId}`, {
+      method: "DELETE",
+    }),
+  sourceSummary: (viewerClassroomId: number, sourceClassroomId: number) =>
+    api<SourceAnalyticsSummary>(
+      `/classrooms/${viewerClassroomId}/analytics/sources/${sourceClassroomId}`,
+    ),
 };
 
 export const contentsApi = {
@@ -235,6 +272,76 @@ export const courseBuilderApi = {
     ),
 };
 
+export const practiceApi = {
+  get: (classroomId: number) => api<PracticeOverview>(`/classrooms/${classroomId}/practice`),
+  extractMockPattern: (classroomId: number, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiForm<MockExamPattern>(
+      `/classrooms/${classroomId}/practice/mock-exams/pattern`,
+      formData,
+    );
+  },
+  createMockExam: (
+    classroomId: number,
+    body: {
+      title: string;
+      total_marks: number;
+      duration_minutes: number;
+      pattern: Record<string, unknown>;
+      pyq_file_name?: string | null;
+      pyq_file_path?: string | null;
+    },
+  ) =>
+    api<MockExam>(`/classrooms/${classroomId}/practice/mock-exams`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listMockExams: (classroomId: number) =>
+    api<MockExam[]>(`/classrooms/${classroomId}/practice/mock-exams`),
+  publishMockExam: (classroomId: number, examId: number, is_published: boolean) =>
+    api<MockExam>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/publish`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_published }),
+    }),
+  regenerateMockExam: (classroomId: number, examId: number) =>
+    api<MockExam>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/regenerate`, {
+      method: "POST",
+    }),
+  submitMockExam: (classroomId: number, examId: number, answers: Record<string, string>) =>
+    api<MockExamAttempt>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
+  listMockExamAttempts: (classroomId: number, examId: number) =>
+    api<MockExamAttempt[]>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/attempts`),
+  reviewMockExamAttempt: (
+    classroomId: number,
+    examId: number,
+    attemptId: number,
+    body: { theory_score: number; feedback?: string | null },
+  ) =>
+    api<MockExamAttempt>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/attempts/${attemptId}/review`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  submitQuiz: (classroomId: number, chapterNumber: number, selected_answers: string[]) =>
+    api<PracticeAttempt>(`/classrooms/${classroomId}/practice/quizzes/${chapterNumber}/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ selected_answers }),
+    }),
+  submitAssessment: (
+    classroomId: number,
+    assessmentKind: string,
+    targetKey: string,
+    selected_answers: string[],
+  ) =>
+    api<PracticeAttempt>(`/classrooms/${classroomId}/practice/assessments/${assessmentKind}/${targetKey}/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ selected_answers }),
+    }),
+};
+
 export const usersApi = {
   list: () => api<User[]>("/users"),
   create: (body: {
@@ -245,6 +352,23 @@ export const usersApi = {
     institution_id?: number | null;
     department_id?: number | null;
   }) => api<User>("/users", { method: "POST", body: JSON.stringify(body) }),
+  setCodingPlatform: (userId: number, enabled: boolean) =>
+    api<User>(`/users/${userId}/coding-platform`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+};
+
+export const codingPlatformApi = {
+  access: () =>
+    api<{ enabled: boolean; reason: string | null; frontend_url: string }>("/coding-platform/access"),
+  students: () =>
+    api<{ id: number; full_name: string; email: string }[]>("/coding-platform/students"),
+  ssoToken: () =>
+    api<{ token: string; frontend_url: string; expires_in_seconds: number }>(
+      "/coding-platform/sso-token",
+      { method: "POST" },
+    ),
 };
 
 export const subjectsApi = {
@@ -266,4 +390,19 @@ export const subjectsApi = {
     id: number,
     body: { title: string; material_type?: string; file_url?: string; content_text?: string },
   ) => api<SubjectMaterial>(`/subjects/${id}/materials`, { method: "POST", body: JSON.stringify(body) }),
+};
+
+export type ChatResponse = {
+  document_answer: string;
+  additional_explanation?: string;
+  used_document: boolean;
+  used_general_knowledge: boolean;
+};
+
+export const aiApi = {
+  chat: (body: { classroom_id: number; question: string }) =>
+    api<ChatResponse>("/ai/chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

@@ -66,6 +66,15 @@ export function TeamPage() {
     onError: (err: Error) => setError(err.message),
   });
 
+  const toggleCoding = useMutation({
+    mutationFn: ({ userId, enabled }: { userId: number; enabled: boolean }) =>
+      usersApi.setCodingPlatform(userId, enabled),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -125,8 +134,8 @@ export function TeamPage() {
       <ErrorText message={error} />
 
       <Panel className="mb-6">
-        <h2 className="mb-1 font-display text-xl text-paper">{createTitle}</h2>
-        <p className="mb-4 text-sm text-mist">{createHint}</p>
+        <h2 className="mb-1 font-display text-xl text-[#031635]">{createTitle}</h2>
+        <p className="mb-4 text-sm text-[#44474e]">{createHint}</p>
         <FormGrid onSubmit={onSubmit}>
           <Field label="Full name">
             <input
@@ -181,8 +190,7 @@ export function TeamPage() {
                 value={form.member_role}
                 onChange={(e) => setForm((f) => ({ ...f, member_role: e.target.value as HodCreateRole }))}
               >
-                <option value="CLASS_TEACHER">Class Teacher</option>
-                <option value="SUBJECT_TEACHER">Subject Teacher</option>
+                <option value="CLASS_TEACHER">Teacher</option>
               </select>
             </Field>
           ) : null}
@@ -196,21 +204,42 @@ export function TeamPage() {
       </Panel>
 
       <Panel>
-        <h2 className="mb-4 font-display text-xl text-paper">Team members</h2>
+        <h2 className="mb-4 font-display text-xl text-[#031635]">Team members</h2>
         {!members.data?.length ? (
           <EmptyState title="No members yet" body="Created accounts will appear here." />
         ) : (
           <ul className="space-y-2">
-            {members.data.map((m) => (
-              <li key={m.id} className="rounded-xl border border-line px-3 py-2 text-sm">
-                <span className="font-medium text-paper">{m.full_name}</span>
-                <span className="text-mist">
-                  {" "}
-                  · {m.email} · {roleLabel[m.role] ?? m.role}
-                  {m.department_id ? ` · Dept ${m.department_id}` : ""}
-                </span>
-              </li>
-            ))}
+            {members.data.map((m) => {
+              const isTeacher = m.role === "CLASS_TEACHER" || m.role === "SUBJECT_TEACHER";
+              return (
+                <li
+                  key={m.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e1e3e4] px-3 py-2 text-sm"
+                >
+                  <div>
+                    <span className="font-medium text-[#031635]">{m.full_name}</span>
+                    <span className="text-[#44474e]">
+                      {" "}
+                      · {m.email} · {roleLabel[m.role] ?? m.role}
+                      {m.department_id ? ` · Dept ${m.department_id}` : ""}
+                    </span>
+                  </div>
+                  {user?.role === "HOD" && isTeacher ? (
+                    <label className="flex items-center gap-2 text-xs text-[#44474e]">
+                      <span>Coding platform</span>
+                      <input
+                        type="checkbox"
+                        checked={!!m.coding_platform_enabled}
+                        disabled={toggleCoding.isPending}
+                        onChange={(e) =>
+                          toggleCoding.mutate({ userId: m.id, enabled: e.target.checked })
+                        }
+                      />
+                    </label>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Panel>

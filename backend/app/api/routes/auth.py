@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
+import secrets
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import (
     TokenType,
@@ -12,7 +16,16 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User, UserRole
-from app.schemas.auth import AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, TokenPair, UserOut
+from app.schemas.auth import (
+    AuthResponse,
+    GoogleAuthRequest,
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenPair,
+    UserOut,
+)
+from app.services.coding_platform_sync import sync_user_to_coding_platform
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -24,6 +37,14 @@ PROVISIONED_ROLES = {
     UserRole.CLASS_TEACHER,
     UserRole.SUBJECT_TEACHER,
 }
+
+
+def _issue_auth_response(user: User) -> AuthResponse:
+    tokens = TokenPair(
+        access_token=create_access_token(subject=str(user.id), role=user.role.value),
+        refresh_token=create_refresh_token(subject=str(user.id), role=user.role.value),
+    )
+    return AuthResponse(user=UserOut.model_validate(user), tokens=tokens)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -60,12 +81,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    sync_user_to_coding_platform(user)
 
-    tokens = TokenPair(
-        access_token=create_access_token(subject=str(user.id), role=user.role.value),
-        refresh_token=create_refresh_token(subject=str(user.id), role=user.role.value),
-    )
-    return AuthResponse(user=UserOut.model_validate(user), tokens=tokens)
+    return _issue_auth_response(user)
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -77,11 +95,73 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
 
-    tokens = TokenPair(
-        access_token=create_access_token(subject=str(user.id), role=user.role.value),
-        refresh_token=create_refresh_token(subject=str(user.id), role=user.role.value),
-    )
-    return AuthResponse(user=UserOut.model_validate(user), tokens=tokens)
+    sync_user_to_coding_platform(user)
+
+    return _issue_auth_response(user)
+
+
+@router.post("/google", response_model=AuthResponse)
+def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
+    if not settings.google_client_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google Sign-In is not configured",
+        )
+
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            payload.id_token,
+            google_requests.Request(),
+            settings.google_client_id.strip(),
+        )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google token")
+
+    if claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google token issuer")
+
+    email = (claims.get("email") or "").strip().lower()
+    google_sub = claims.get("sub")
+    if not email or not google_sub:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google account missing email")
+    if not claims.get("email_verified", False):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google email is not verified")
+
+    full_name = (claims.get("name") or email.split("@")[0]).strip()[:120]
+    avatar_url = (claims.get("picture") or None)
+    if avatar_url:
+        avatar_url = str(avatar_url)[:512]
+
+    user = db.query(User).filter(User.google_sub == google_sub).first()
+    if not user:
+        user = db.query(User).filter(User.email == email).first()
+
+    if user:
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+        user.google_sub = google_sub
+        if full_name:
+            user.full_name = full_name
+        if avatar_url:
+            user.avatar_url = avatar_url
+    else:
+        user = User(
+            full_name=full_name or "Student User",
+            email=email,
+            hashed_password=get_password_hash(secrets.token_urlsafe(48)),
+            role=UserRole.STUDENT,
+            avatar_url=avatar_url,
+            google_sub=google_sub,
+            institution_id=None,
+            department_id=None,
+        )
+        db.add(user)
+
+    db.commit()
+    db.refresh(user)
+    sync_user_to_coding_platform(user)
+
+    return _issue_auth_response(user)
 
 
 @router.post("/refresh", response_model=TokenPair)
@@ -105,5 +185,7 @@ def refresh_tokens(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
+def me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Keep coding-platform identity in sync whenever the session is restored.
+    sync_user_to_coding_platform(current_user)
     return UserOut.model_validate(current_user)

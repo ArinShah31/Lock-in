@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { classroomsApi, codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import { BrandLogo } from "./BrandLogo";
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -14,6 +17,7 @@ const roleLabel: Record<string, string> = {
 type FlatLink = {
   to: string;
   label: string;
+  icon: string;
   end?: boolean;
   show: boolean;
 };
@@ -23,13 +27,38 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const isTeacher = user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER";
+  const isStudent = user?.role === "STUDENT";
+  const showCodingTab = isTeacher || isStudent;
+
   const classroomsSection =
     location.pathname === "/classrooms" || location.pathname.startsWith("/classrooms/");
   const onYourClassrooms =
     location.pathname === "/classrooms" || /^\/classrooms\/\d+(\/.*)?$/.test(location.pathname);
   const onCreateClassroom = location.pathname === "/classrooms/new";
+  const activeClassroomId = location.pathname.match(/^\/classrooms\/(\d+)/)?.[1] ?? "";
 
   const [classroomsOpen, setClassroomsOpen] = useState(classroomsSection);
+
+  const codingAccess = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+    enabled: showCodingTab,
+    staleTime: 30_000,
+  });
+  const codingEnabled = codingAccess.data?.enabled === true;
+
+  const teacherClassrooms = useQuery({
+    queryKey: ["classrooms"],
+    queryFn: classroomsApi.list,
+    enabled: isTeacher,
+    staleTime: 30_000,
+  });
+
+  // Auto-hide Left Sidebar States (Windows Taskbar style)
+  const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [sidebarHovered, setSidebarHovered] = useState(false);
+
+  const isExpanded = sidebarPinned || sidebarHovered;
 
   useEffect(() => {
     if (classroomsSection) setClassroomsOpen(true);
@@ -38,177 +67,390 @@ export function AppShell() {
   const flatLinks: FlatLink[] = [
     {
       to: "/",
-      label: user?.role === "SUPER_ADMIN" ? "Dashboard" : "Overview",
+      label: "Dashboard",
+      icon: "dashboard",
       end: true,
-      show: user?.role !== "STUDENT",
+      show: true,
     },
     {
       to: "/institutions",
       label: "Institutions",
+      icon: "account_balance",
       show: user?.role === "SUPER_ADMIN" || (user?.role !== "STUDENT" && !!user?.institution_id),
     },
     {
       to: "/team",
       label: "Team",
+      icon: "groups",
       show: user?.role === "INSTITUTION_ADMIN" || user?.role === "HOD",
     },
     {
       to: "/classrooms",
       label: "Classrooms",
+      icon: "auto_stories",
       end: true,
       show: user?.role !== "SUPER_ADMIN" && !isTeacher,
     },
     {
       to: "/subjects",
       label: "Subjects",
+      icon: "menu_book",
       show: user?.role !== "SUPER_ADMIN" && user?.role !== "STUDENT",
+    },
+    {
+      to: "/coding",
+      label: codingEnabled ? "Coding" : "Coding (off)",
+      icon: "code",
+      show: showCodingTab,
+    },
+    {
+      to: "/practice",
+      label: "Practise",
+      icon: "local_library",
+      show: isStudent,
     },
   ].filter((l) => l.show);
 
-  function topLinkClass(isActive: boolean) {
-    return `flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-      isActive ? "bg-accent/15 text-accent" : "text-mist hover:bg-white/5 hover:text-paper"
+  function navItemClass(isActive: boolean) {
+    return `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
+      isActive
+        ? "bg-[#031635] text-white font-semibold shadow-xs"
+        : "text-[#44474e] hover:bg-[#e1e3e4]/60 hover:text-[#191c1d]"
     }`;
   }
 
-  function treeItemClass(isActive: boolean) {
-    return `relative flex items-center gap-2 rounded-lg py-1.5 pl-1 pr-2 text-sm transition ${
-      isActive ? "text-accent" : "text-mist hover:text-paper"
+  function subTreeClass(isActive: boolean) {
+    return `flex items-center gap-2 py-1.5 pl-3 pr-2 rounded-md text-sm transition-all whitespace-nowrap ${
+      isActive ? "text-[#031635] font-semibold bg-[#e1e3e4]/50" : "text-[#44474e] hover:text-[#191c1d]"
     }`;
-  }
-
-  const mobileLinks: { to: string; label: string; end?: boolean }[] = [
-    ...flatLinks.map((l) => ({ to: l.to, label: l.label, end: l.end })),
-  ];
-  if (isTeacher) {
-    mobileLinks.push({ to: "/classrooms", label: "Your classrooms", end: true });
-    mobileLinks.push({ to: "/classrooms/new", label: "Create classroom" });
   }
 
   return (
-    <div className="relative min-h-screen">
-      <div className="mx-auto flex min-h-screen max-w-7xl gap-6 px-4 py-6 md:px-8">
-        <aside className="animate-rise hidden w-64 shrink-0 flex-col rounded-3xl border border-line/70 bg-panel/70 p-5 backdrop-blur md:flex">
-          <div className="mb-8">
-            <p className="font-display text-3xl font-extrabold tracking-tight text-paper">ASTRA</p>
-            <p className="mt-1 text-sm text-mist">Academic Intelligence</p>
+    <div className="min-h-screen bg-[#f8f9fa] text-[#191c1d] flex flex-col md:flex-row overflow-x-hidden relative">
+      {/* Invisible Hover Trigger Edge for Desktop (Windows Auto-Hide Taskbar style) */}
+      {!sidebarPinned && (
+        <div
+          onMouseEnter={() => setSidebarHovered(true)}
+          className="hidden md:block fixed left-0 top-0 h-full w-4 z-40 cursor-pointer"
+          title="Hover to surface navigation sidebar"
+        />
+      )}
+
+      {/* SideNavBar (Desktop Auto-Hide / Collapsible) */}
+      <aside
+        onMouseEnter={() => setSidebarHovered(true)}
+        onMouseLeave={() => setSidebarHovered(false)}
+        className={`hidden md:flex flex-col fixed left-0 top-0 h-full bg-[#f3f4f5] border-r border-[#e1e3e4] py-5 z-30 shrink-0 transition-all duration-300 ease-in-out ${
+          isExpanded ? "w-[260px] px-4 shadow-2xl" : "w-16 px-2.5 shadow-none"
+        }`}
+      >
+        {/* Header (Logo & Pin Toggle Button) */}
+        <div className="mb-6 flex items-center justify-between px-1">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <BrandLogo
+              variant={isExpanded ? "base" : "black"}
+              className="h-8 w-auto flex-shrink-0"
+            />
+            {isExpanded && (
+              <div className="min-w-0 transition-opacity duration-200">
+                <span className="font-display text-xl font-black text-[#031635] tracking-tight block">
+                  ASTRA
+                </span>
+                <p className="text-[10px] text-[#44474e] font-semibold tracking-wider uppercase -mt-1 whitespace-nowrap">
+                  Academic Intelligence
+                </p>
+              </div>
+            )}
           </div>
 
-          <nav className="flex flex-1 flex-col gap-1">
-            {flatLinks.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                end={link.end}
-                className={({ isActive }) => topLinkClass(isActive)}
+          {/* Pin/Unpin Toggle Button */}
+          {isExpanded && (
+            <button
+              onClick={() => setSidebarPinned(!sidebarPinned)}
+              title={sidebarPinned ? "Unpin sidebar (Auto-hide on mouse leave)" : "Pin sidebar open"}
+              className={`p-1.5 rounded-md transition-colors ${
+                sidebarPinned
+                  ? "bg-[#031635] text-white"
+                  : "text-[#75777f] hover:text-[#031635] hover:bg-[#e1e3e4]"
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {sidebarPinned ? "push_pin" : "keep_off"}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <button
+          onClick={() => navigate(isTeacher ? "/classrooms/new" : "/classrooms")}
+          className={`w-full bg-[#031635] text-white rounded-lg font-semibold text-sm mb-6 hover:bg-[#1a2b4b] transition-all shadow-xs flex items-center justify-center gap-2 ${
+            isExpanded ? "py-2.5 px-4" : "py-2.5 px-0"
+          }`}
+          title={!isExpanded ? (isTeacher ? "New Classroom" : "Explore Workspace") : undefined}
+        >
+          <span className="material-symbols-outlined text-lg flex-shrink-0">add</span>
+          {isExpanded && <span>{isTeacher ? "New Classroom" : "Explore Workspace"}</span>}
+        </button>
+
+        {/* Navigation Links */}
+        <nav className="flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+          {flatLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.end}
+              title={!isExpanded ? link.label : undefined}
+              className={({ isActive }) => navItemClass(isActive)}
+            >
+              <span className="material-symbols-outlined text-xl flex-shrink-0">{link.icon}</span>
+              {isExpanded && <span>{link.label}</span>}
+            </NavLink>
+          ))}
+
+          {isTeacher ? (
+            <div className="pt-1">
+              <div
+                className={`flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
+                  classroomsSection ? "bg-[#e1e3e4]/60 text-[#031635]" : "text-[#44474e] hover:bg-[#e1e3e4]/60"
+                }`}
+                title={!isExpanded ? "Classrooms" : undefined}
+                onClick={() => {
+                  setClassroomsOpen(true);
+                  navigate("/classrooms");
+                }}
               >
-                <span>{link.label}</span>
-              </NavLink>
-            ))}
-
-            {isTeacher ? (
-              <div>
-                <div className={topLinkClass(classroomsSection)}>
-                  <button
-                    type="button"
-                    className="flex-1 text-left"
-                    onClick={() => {
-                      setClassroomsOpen(true);
-                      navigate("/classrooms");
-                    }}
-                  >
-                    Classrooms
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={classroomsOpen ? "Collapse classrooms" : "Expand classrooms"}
-                    className="rounded-md p-0.5 hover:bg-white/5"
-                    onClick={() => setClassroomsOpen((open) => !open)}
-                  >
-                    <svg
-                      className={`h-4 w-4 shrink-0 transition-transform ${classroomsOpen ? "rotate-180" : ""}`}
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
+                <div className="flex items-center gap-3 font-medium text-sm">
+                  <span className="material-symbols-outlined text-xl flex-shrink-0">school</span>
+                  {isExpanded && <span>Classrooms</span>}
                 </div>
-
-                {classroomsOpen ? (
-                  <ul className="relative ml-4 mt-1 space-y-0.5 border-l border-line/70 pl-3">
-                    <li>
-                      <NavLink to="/classrooms" end className={treeItemClass(onYourClassrooms)}>
-                        <span
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            onYourClassrooms ? "bg-accent" : "border border-mist/60 bg-transparent"
-                          }`}
-                        />
-                        <span>Your classrooms</span>
-                      </NavLink>
-                    </li>
-                    <li>
-                      <NavLink to="/classrooms/new" className={treeItemClass(onCreateClassroom)}>
-                        <span
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            onCreateClassroom ? "bg-accent" : "border border-mist/60 bg-transparent"
-                          }`}
-                        />
-                        <span>Create classroom</span>
-                      </NavLink>
-                    </li>
-                  </ul>
-                ) : null}
+                {isExpanded && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setClassroomsOpen(!classroomsOpen);
+                    }}
+                    className="text-[#75777f] hover:text-[#191c1d] p-0.5"
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {classroomsOpen ? "expand_less" : "expand_more"}
+                    </span>
+                  </button>
+                )}
               </div>
-            ) : null}
-          </nav>
 
-          <div className="mt-6 border-t border-line/60 pt-4">
-            <p className="text-sm font-semibold text-paper">{user?.full_name}</p>
-            <p className="text-xs text-mist">{user ? roleLabel[user.role] : ""}</p>
+              {isTeacher && isExpanded && classroomsOpen ? (
+                <div className="ml-7 mt-1 border-l border-[#c5c6cf] pl-2 space-y-1.5">
+                  <NavLink to="/classrooms" end className={({ isActive }) => subTreeClass(onYourClassrooms && isActive)}>
+                    <span className="material-symbols-outlined text-xs">list</span>
+                    <span>All Classrooms</span>
+                  </NavLink>
+
+                  <div className="px-1">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[#75777f]">
+                      Open classroom
+                    </label>
+                    <select
+                      className="w-full rounded-md border border-[#c5c6cf] bg-white px-2 py-1.5 text-xs font-medium text-[#031635] outline-none focus:border-[#031635] focus:ring-1 focus:ring-[#031635]"
+                      value={activeClassroomId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) {
+                          navigate("/classrooms");
+                          return;
+                        }
+                        navigate(`/classrooms/${id}/dashboard`);
+                      }}
+                      disabled={teacherClassrooms.isLoading}
+                    >
+                      <option value="">
+                        {teacherClassrooms.isLoading
+                          ? "Loading…"
+                          : teacherClassrooms.data?.length
+                            ? "Select a classroom…"
+                            : "No classrooms yet"}
+                      </option>
+                      {(teacherClassrooms.data || []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <NavLink to="/classrooms/new" className={({ isActive }) => subTreeClass(onCreateClassroom && isActive)}>
+                    <span className="material-symbols-outlined text-xs">add_circle</span>
+                    <span>Create Classroom</span>
+                  </NavLink>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </nav>
+
+        {/* User Profile Footer */}
+        <div className="mt-auto pt-4 border-t border-[#e1e3e4]">
+          {isExpanded ? (
+            <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-[#e1e3e4] shadow-xs">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="size-9 rounded-full object-cover shrink-0 border border-[#e1e3e4]"
+                  />
+                ) : (
+                  <div className="size-9 rounded-full bg-[#031635] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                    {user?.full_name?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#031635] truncate">{user?.full_name}</p>
+                  <p className="text-xs text-[#44474e] truncate">{user ? roleLabel[user.role] : ""}</p>
+                </div>
+              </div>
+              <button
+                onClick={logout}
+                title="Sign Out"
+                className="text-[#75777f] hover:text-[#ba1a1a] transition-colors p-1 rounded-md hover:bg-[#ffdad6]/40"
+              >
+                <span className="material-symbols-outlined text-lg">logout</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <button
+                onClick={logout}
+                title={`Sign Out (${user?.full_name})`}
+                className="w-10 h-10 rounded-full bg-[#031635] text-white flex items-center justify-center font-bold text-xs hover:bg-[#ba1a1a] transition-colors shadow-xs overflow-hidden"
+              >
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="size-full object-cover"
+                  />
+                ) : (
+                  user?.full_name?.charAt(0).toUpperCase() || "U"
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Top Header for Mobile */}
+      <header className="md:hidden flex items-center justify-between px-4 h-16 bg-white border-b border-[#e1e3e4] sticky top-0 z-30">
+        <div className="flex items-center gap-2">
+          <BrandLogo variant="base" className="h-7 w-auto" />
+          <span className="font-display font-bold text-[#031635] text-lg">ASTRA</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold px-2 py-1 bg-[#e8edf5] text-[#031635] rounded-full">
+            {user ? roleLabel[user.role] : ""}
+          </span>
+          <button onClick={logout} className="text-[#44474e] hover:text-[#ba1a1a]">
+            <span className="material-symbols-outlined text-xl">logout</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Nav Horizontal Scroll */}
+      <div className="md:hidden flex gap-2 overflow-x-auto p-3 bg-[#f3f4f5] border-b border-[#e1e3e4]">
+        {flatLinks.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            end={link.end}
+            className={({ isActive }) =>
+              `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                isActive ? "bg-[#031635] text-white font-semibold" : "bg-white text-[#44474e] border border-[#e1e3e4]"
+              }`
+            }
+          >
+            {link.label}
+          </NavLink>
+        ))}
+        {isTeacher ? (
+          <>
+            <NavLink
+              to="/classrooms"
+              end
+              className={({ isActive }) =>
+                `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                  isActive || onYourClassrooms
+                    ? "bg-[#031635] text-white font-semibold"
+                    : "bg-white text-[#44474e] border border-[#e1e3e4]"
+                }`
+              }
+            >
+              Classrooms
+            </NavLink>
+            <NavLink
+              to="/classrooms/new"
+              className={({ isActive }) =>
+                `whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                  isActive ? "bg-[#031635] text-white font-semibold" : "bg-white text-[#44474e] border border-[#e1e3e4]"
+                }`
+              }
+            >
+              New classroom
+            </NavLink>
+          </>
+        ) : null}
+      </div>
+
+      {/* Main Content Workspace (Center Column) */}
+      <div
+        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out min-h-screen ${
+          sidebarPinned ? "md:pl-[260px]" : "md:pl-16"
+        }`}
+      >
+        {/* Desktop Top Bar */}
+        <header className="hidden md:flex justify-between items-center px-8 h-16 bg-white border-b border-[#e1e3e4] sticky top-0 z-10 shrink-0">
+          <div className="flex items-center gap-3">
+            <h2 className="font-display text-[#031635] font-bold text-base">
+              Lumina Academic Workspace
+            </h2>
+            <span className="text-xs bg-[#f3f4f5] text-[#44474e] border border-[#e1e3e4] px-2.5 py-0.5 rounded-full font-medium">
+              Fall Semester 2026
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={logout}
-              className="mt-3 w-full rounded-xl border border-line px-3 py-2 text-left text-sm text-mist transition hover:border-accent/40 hover:text-paper"
+              title="Notifications (coming soon)"
+              className="flex size-9 items-center justify-center rounded-full border border-[#e1e3e4] bg-[#f8f9fa] text-[#44474e] transition hover:bg-white hover:text-[#031635]"
             >
-              Sign out
+              <span className="material-symbols-outlined text-xl">notifications</span>
+            </button>
+            <button
+              type="button"
+              title={user ? `${user.full_name} (profile coming soon)` : "Profile (coming soon)"}
+              className="flex size-9 items-center justify-center rounded-full bg-[#031635] text-sm font-bold text-white transition hover:bg-[#1a2b4b] overflow-hidden"
+            >
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="size-full object-cover"
+                />
+              ) : user?.full_name?.charAt(0)?.toUpperCase() ? (
+                user.full_name.charAt(0).toUpperCase()
+              ) : (
+                <span className="material-symbols-outlined text-lg">person</span>
+              )}
             </button>
           </div>
-        </aside>
+        </header>
 
-        <main className="animate-rise-delay min-w-0 flex-1">
-          <header className="mb-6 flex items-center justify-between rounded-3xl border border-line/70 bg-panel/50 px-5 py-4 backdrop-blur md:hidden">
-            <div>
-              <p className="font-display text-2xl text-paper">ASTRA</p>
-              <p className="text-xs text-mist">{user?.full_name}</p>
-            </div>
-            <button type="button" onClick={logout} className="text-sm text-accent">
-              Sign out
-            </button>
-          </header>
-
-          <div className="mb-4 flex gap-2 overflow-x-auto md:hidden">
-            {mobileLinks.map((link) => (
-              <NavLink
-                key={`${link.to}-${link.label}`}
-                to={link.to}
-                end={link.end}
-                className={({ isActive }) =>
-                  `whitespace-nowrap rounded-full px-3 py-1.5 text-sm ${
-                    isActive ? "bg-accent text-ink" : "bg-panel text-mist"
-                  }`
-                }
-              >
-                {link.label}
-              </NavLink>
-            ))}
-          </div>
-
+        {/* Main Content Outlet */}
+        <main className="flex-1 p-4 md:p-8 animate-rise w-full min-w-0">
           <Outlet />
         </main>
       </div>

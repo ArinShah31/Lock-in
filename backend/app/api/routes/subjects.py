@@ -81,15 +81,26 @@ def _user_can_view_classroom(db: Session, user: User, classroom: Classroom) -> b
 def _user_can_manage_classroom(user: User, classroom: Classroom) -> bool:
     if user.role == UserRole.SUPER_ADMIN:
         return True
-    return user.role == UserRole.CLASS_TEACHER and classroom.class_teacher_id == user.id
+    # Any teacher subtype that owns the classroom can manage it (soft role unify).
+    return (
+        user.role in (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER)
+        and classroom.class_teacher_id == user.id
+    )
 
 
 def _user_can_edit_subject(user: User, subject: Subject, classroom: Classroom) -> bool:
     if user.role == UserRole.SUPER_ADMIN:
         return True
-    if user.role == UserRole.CLASS_TEACHER and classroom.class_teacher_id == user.id:
+    if (
+        user.role in (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER)
+        and classroom.class_teacher_id == user.id
+    ):
         return True
-    return user.role == UserRole.SUBJECT_TEACHER and subject.teacher_id == user.id
+    # Assigned subject teacher (either subtype) can edit their own subject.
+    return (
+        user.role in (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER)
+        and subject.teacher_id == user.id
+    )
 
 
 def _sync_classroom_teacher(db: Session, subject: Subject) -> None:
@@ -121,14 +132,21 @@ def _sync_classroom_teacher(db: Session, subject: Subject) -> None:
 def create_subject(
     payload: SubjectCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.CLASS_TEACHER])),
+    current_user: User = Depends(
+        require_roles([UserRole.SUPER_ADMIN, UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER])
+    ),
 ):
     classroom = _get_classroom_or_404(db, payload.classroom_id)
     if not _user_can_manage_classroom(current_user, classroom):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage this classroom")
 
     teacher = db.query(User).filter(User.id == payload.teacher_id).first()
-    if not teacher or teacher.role != UserRole.SUBJECT_TEACHER or not teacher.is_active:
+    # Soft role unify: any active teacher subtype can be assigned to a subject.
+    if (
+        not teacher
+        or teacher.role not in (UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER)
+        or not teacher.is_active
+    ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid subject teacher")
     if teacher.institution_id != classroom.institution_id:
         raise HTTPException(

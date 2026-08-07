@@ -2,13 +2,42 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # -------------------------
+    # App
+    # -------------------------
     app_name: str = "Astra LMS API"
+
+    # -------------------------
+    # Database
+    # -------------------------
     database_url: str = "sqlite:///./astra_lms.db"
+
+    # -------------------------
+    # Authentication
+    # -------------------------
     jwt_secret_key: str = "change_me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    google_client_id: str = ""
 
+    # -------------------------
+    # Gemini AI (RAG chat / embeddings)
+    # -------------------------
+    gemini_api_key: str = ""
+    gemini_chat_model: str = "gemini-3.6-flash"
+    gemini_embedding_model: str = "gemini-embedding-001"
+
+    # -------------------------
+    # Qdrant
+    # -------------------------
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+    qdrant_collection: str = "astra_documents"
+
+    # -------------------------
+    # Course builder (Groq structure + Gemini notes + YouTube)
+    # -------------------------
     groq_api_key_structure: str = ""
     groq_api_key_notes: str = ""
     groq_api_key_quiz: str = ""
@@ -16,10 +45,21 @@ class Settings(BaseSettings):
     gemini_api_key_notes_1: str = ""
     gemini_api_key_notes_2: str = ""
     gemini_api_key_notes_3: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
     youtube_api_key: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # -------------------------
+    # Coding platform integration
+    # -------------------------
+    coding_platform_api_url: str = "http://127.0.0.1:8011/api/v1"
+    coding_platform_frontend_url: str = "http://127.0.0.1:5180"
+    coding_sync_secret: str = "change_me_coding_sync_secret"
+    coding_sso_secret: str = "change_me_coding_sso_secret"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
     def _all_groq_keys(self) -> list[str]:
         keys: list[str] = []
