@@ -1,5 +1,7 @@
 import { api, apiForm, clearTokens, setTokens, API_BASE } from "./client";
 import type {
+  AnalyticsGrant,
+  AnalyticsShareCode,
   Assignment,
   AssignmentSubmission,
   AuthResponse,
@@ -11,6 +13,7 @@ import type {
   CourseBuildJob,
   Department,
   Institution,
+  SourceAnalyticsSummary,
   StudentAssignmentFeedItem,
   PracticeAttempt,
   PracticeOverview,
@@ -92,6 +95,32 @@ export const classroomsApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+};
+
+export const classroomAnalyticsApi = {
+  getShareCode: (classroomId: number) =>
+    api<AnalyticsShareCode>(`/classrooms/${classroomId}/analytics-share-code`),
+  rotateShareCode: (classroomId: number) =>
+    api<AnalyticsShareCode>(`/classrooms/${classroomId}/analytics-share-code/rotate`, {
+      method: "POST",
+    }),
+  grantAccess: (sourceClassroomId: number, viewerCode: string) =>
+    api<AnalyticsGrant>(`/classrooms/${sourceClassroomId}/analytics-grants`, {
+      method: "POST",
+      body: JSON.stringify({ viewer_code: viewerCode }),
+    }),
+  listInbound: (viewerClassroomId: number) =>
+    api<AnalyticsGrant[]>(`/classrooms/${viewerClassroomId}/analytics-grants`),
+  listOutbound: (sourceClassroomId: number) =>
+    api<AnalyticsGrant[]>(`/classrooms/${sourceClassroomId}/analytics-grants/outbound`),
+  revoke: (classroomId: number, grantId: number) =>
+    api<AnalyticsGrant>(`/classrooms/${classroomId}/analytics-grants/${grantId}`, {
+      method: "DELETE",
+    }),
+  sourceSummary: (viewerClassroomId: number, sourceClassroomId: number) =>
+    api<SourceAnalyticsSummary>(
+      `/classrooms/${viewerClassroomId}/analytics/sources/${sourceClassroomId}`,
+    ),
 };
 
 export const contentsApi = {
