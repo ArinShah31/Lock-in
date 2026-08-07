@@ -39,6 +39,9 @@ export const authApi = {
   login: (body: { email: string; password: string }) =>
     api<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(body) }, false),
 
+  google: (body: { id_token: string }) =>
+    api<AuthResponse>("/auth/google", { method: "POST", body: JSON.stringify(body) }, false),
+
   me: () => api<User>("/auth/me"),
 };
 

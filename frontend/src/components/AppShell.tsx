@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { classroomsApi, codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import { BrandLogo } from "./BrandLogo";
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -146,9 +147,10 @@ export function AppShell() {
         {/* Header (Logo & Pin Toggle Button) */}
         <div className="mb-6 flex items-center justify-between px-1">
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <span className="material-symbols-outlined text-[#031635] text-2xl font-bold flex-shrink-0">
-              auto_awesome
-            </span>
+            <BrandLogo
+              variant={isExpanded ? "base" : "black"}
+              className="h-8 w-auto flex-shrink-0"
+            />
             {isExpanded && (
               <div className="min-w-0 transition-opacity duration-200">
                 <span className="font-display text-xl font-black text-[#031635] tracking-tight block">
@@ -291,9 +293,23 @@ export function AppShell() {
         <div className="mt-auto pt-4 border-t border-[#e1e3e4]">
           {isExpanded ? (
             <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-[#e1e3e4] shadow-xs">
-              <div className="min-w-0 flex-1 pr-2">
-                <p className="text-sm font-semibold text-[#031635] truncate">{user?.full_name}</p>
-                <p className="text-xs text-[#44474e] truncate">{user ? roleLabel[user.role] : ""}</p>
+              <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="size-9 rounded-full object-cover shrink-0 border border-[#e1e3e4]"
+                  />
+                ) : (
+                  <div className="size-9 rounded-full bg-[#031635] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                    {user?.full_name?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#031635] truncate">{user?.full_name}</p>
+                  <p className="text-xs text-[#44474e] truncate">{user ? roleLabel[user.role] : ""}</p>
+                </div>
               </div>
               <button
                 onClick={logout}
@@ -308,9 +324,18 @@ export function AppShell() {
               <button
                 onClick={logout}
                 title={`Sign Out (${user?.full_name})`}
-                className="w-10 h-10 rounded-full bg-[#031635] text-white flex items-center justify-center font-bold text-xs hover:bg-[#ba1a1a] transition-colors shadow-xs"
+                className="w-10 h-10 rounded-full bg-[#031635] text-white flex items-center justify-center font-bold text-xs hover:bg-[#ba1a1a] transition-colors shadow-xs overflow-hidden"
               >
-                {user?.full_name?.charAt(0).toUpperCase() || "U"}
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="size-full object-cover"
+                  />
+                ) : (
+                  user?.full_name?.charAt(0).toUpperCase() || "U"
+                )}
               </button>
             </div>
           )}
@@ -320,7 +345,7 @@ export function AppShell() {
       {/* Top Header for Mobile */}
       <header className="md:hidden flex items-center justify-between px-4 h-16 bg-white border-b border-[#e1e3e4] sticky top-0 z-30">
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-[#031635] text-xl font-bold">auto_awesome</span>
+          <BrandLogo variant="base" className="h-7 w-auto" />
           <span className="font-display font-bold text-[#031635] text-lg">ASTRA</span>
         </div>
         <div className="flex items-center gap-3">
@@ -406,9 +431,18 @@ export function AppShell() {
             <button
               type="button"
               title={user ? `${user.full_name} (profile coming soon)` : "Profile (coming soon)"}
-              className="flex size-9 items-center justify-center rounded-full bg-[#031635] text-sm font-bold text-white transition hover:bg-[#1a2b4b]"
+              className="flex size-9 items-center justify-center rounded-full bg-[#031635] text-sm font-bold text-white transition hover:bg-[#1a2b4b] overflow-hidden"
             >
-              {user?.full_name?.charAt(0)?.toUpperCase() || (
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="size-full object-cover"
+                />
+              ) : user?.full_name?.charAt(0)?.toUpperCase() ? (
+                user.full_name.charAt(0).toUpperCase()
+              ) : (
                 <span className="material-symbols-outlined text-lg">person</span>
               )}
             </button>

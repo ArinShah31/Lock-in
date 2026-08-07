@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { aiApi } from "../api";
+import { BrandLogo } from "./BrandLogo";
 
 type ChatMessage = {
   id: string;
@@ -86,9 +87,12 @@ export function CourseRagChatWidget({ classroomId }: { classroomId: number }) {
       {open ? (
         <div className="pointer-events-auto flex h-[min(520px,70vh)] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[#d8dde3] bg-white shadow-[0_18px_50px_rgba(3,22,53,0.18)]">
           <header className="flex items-center justify-between bg-[#031635] px-4 py-3 text-white">
-            <div>
-              <p className="text-sm font-semibold">Chat with course docs</p>
-              <p className="text-[11px] text-white/70">Answers from this classroom’s PDFs</p>
+            <div className="flex items-center gap-2.5">
+              <BrandLogo variant="dark" className="h-6 w-auto" />
+              <div>
+                <p className="text-sm font-semibold">Chat with course docs</p>
+                <p className="text-[11px] text-white/70">Answers from this classroom’s PDFs</p>
+              </div>
             </div>
             <button
               type="button"
@@ -102,8 +106,8 @@ export function CourseRagChatWidget({ classroomId }: { classroomId: number }) {
 
           <div className="border-b border-[#eef1f4] px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef4ff] text-[#3f5d9b]">
-                <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef4ff]">
+                <BrandLogo variant="base" className="h-5 w-auto" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-[#191c1d]">ASTRA Course Bot</p>
@@ -169,7 +173,11 @@ export function CourseRagChatWidget({ classroomId }: { classroomId: number }) {
         aria-label={open ? "Close course chat" : "Open course chat"}
         className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#031635] text-white shadow-[0_12px_28px_rgba(3,22,53,0.28)] transition hover:bg-[#1a2b4b] active:scale-[0.98]"
       >
-        <span className="material-symbols-outlined text-[26px]">{open ? "close" : "chat"}</span>
+        {open ? (
+          <span className="material-symbols-outlined text-[26px]">close</span>
+        ) : (
+          <BrandLogo variant="white" className="h-7 w-auto" />
+        )}
       </button>
     </div>,
     document.body,

@@ -19,6 +19,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useInView, type Variants, type Transition } from "framer-motion";
+import { BrandLogo } from "../BrandLogo";
 // --- TEXT LOOP ANIMATION COMPONENT ---
 type TextLoopProps = {
   children: React.ReactNode[];
@@ -302,22 +303,7 @@ const modalSteps = [
 ];
 const TEXT_LOOP_INTERVAL = 1.2;
 
-const DefaultLogo = () => (
-  <div className="bg-[#031635] text-[#fbbf24] border border-[#d4af37]/40 rounded-xl p-2.5 flex items-center justify-center shadow-md">
-    <svg
-      className="h-5 w-5"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-    </svg>
-  </div>
-);
+const DefaultLogo = () => <BrandLogo variant="light" className="h-9 w-auto" />;
 
 export interface AuthComponentProps {
   logo?: React.ReactNode;
@@ -329,6 +315,7 @@ export interface AuthComponentProps {
     fullName?: string;
     role?: "STUDENT" | "CLASS_TEACHER" | "SUBJECT_TEACHER" | "HOD" | "INSTITUTION_ADMIN" | "SUPER_ADMIN";
   }) => Promise<void>;
+  onGoogleAction?: () => Promise<void>;
   onModeSwitch?: () => void;
   externalError?: string | null;
   isLoading?: boolean;
@@ -339,6 +326,7 @@ export const AuthComponent = ({
   brandName = "MyWebApp",
   mode = "login",
   onSubmitAction,
+  onGoogleAction,
   onModeSwitch,
   externalError,
   isLoading = false,
@@ -431,6 +419,23 @@ export const AuthComponent = ({
       setModalStatus("success");
     } catch (err: any) {
       setModalErrorMessage(err?.message || "Authentication failed");
+      setModalStatus("error");
+    }
+  };
+
+  const handleGoogleClick = async () => {
+    if (!onGoogleAction) {
+      setModalErrorMessage("Google Sign-In is not available");
+      setModalStatus("error");
+      return;
+    }
+    setModalStatus("loading");
+    try {
+      await onGoogleAction();
+      fireSideCanons();
+      setModalStatus("success");
+    } catch (err: any) {
+      setModalErrorMessage(err?.message || "Google Sign-In failed");
       setModalStatus("error");
     }
   };
@@ -616,11 +621,22 @@ export const AuthComponent = ({
                 {/* Social Login Buttons */}
                 <BlurFade delay={0.25 * 3} className="w-full">
                   <div className="flex items-center justify-center gap-3 w-full">
-                    <GlassButton contentClassName="flex items-center justify-center gap-2 text-base font-semibold" size="sm">
+                    <GlassButton
+                      type="button"
+                      onClick={() => void handleGoogleClick()}
+                      contentClassName="flex items-center justify-center gap-2 text-base font-semibold"
+                      size="sm"
+                    >
                       <GoogleIcon />
                       <span className="font-bold text-slate-800 text-sm">Google</span>
                     </GlassButton>
-                    <GlassButton contentClassName="flex items-center justify-center gap-2 text-base font-semibold" size="sm">
+                    <GlassButton
+                      type="button"
+                      disabled
+                      title="GitHub Sign-In coming soon"
+                      contentClassName="flex items-center justify-center gap-2 text-base font-semibold opacity-60"
+                      size="sm"
+                    >
                       <GitHubIcon />
                       <span className="font-bold text-slate-800 text-sm">GitHub</span>
                     </GlassButton>

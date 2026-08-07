@@ -25,6 +25,8 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(SqlEnum(UserRole), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     coding_platform_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
     institution_id: Mapped[int | None] = mapped_column(ForeignKey("institutions.id"), nullable=True, index=True)
     department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"), nullable=True, index=True)
 

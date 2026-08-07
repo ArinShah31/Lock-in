@@ -91,6 +91,17 @@ def _ensure_sqlite_columns():
                         "ALTER TABLE users ADD COLUMN coding_platform_enabled BOOLEAN NOT NULL DEFAULT 0"
                     )
                 )
+        if "avatar_url" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512)"))
+        if "google_sub" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN google_sub VARCHAR(255)"))
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub ON users (google_sub)"
+                    )
+                )
     if "classrooms" in tables:
         cols = {c["name"] for c in inspector.get_columns("classrooms")}
         if "analytics_share_code" not in cols:

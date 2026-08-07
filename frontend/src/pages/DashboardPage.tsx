@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { classroomsApi, codingPlatformApi, institutionsApi, subjectsApi } from "../api";
 import { codingApi, ensureCodingSession } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
+import { BrandLogo } from "../components/BrandLogo";
 import { TeacherCodingAnalyticsPanel } from "../components/TeacherCodingAnalyticsPanel";
 import {
   EmptyState,
@@ -232,7 +233,7 @@ function StudentDashboardView() {
             <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#e8edf5] px-3 py-1 text-xs font-semibold text-[#031635]">
-                  <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                  <BrandLogo variant="base" className="h-3.5 w-auto" />
                   <span>ASTRA Student Intelligence</span>
                 </div>
                 <h1 className="font-display text-2xl font-extrabold text-[#031635] md:text-3xl">

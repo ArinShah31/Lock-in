@@ -13,6 +13,7 @@ export type User = {
   role: UserRole;
   is_active: boolean;
   coding_platform_enabled?: boolean;
+  avatar_url?: string | null;
   institution_id: number | null;
   department_id: number | null;
 };
