@@ -21,6 +21,7 @@ function getFileUrl(filePath: string) {
 export function ClassroomDocumentsTab() {
   const { classroomId } = useParams();
   const { user } = useAuth();
+
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingDoc, setEditingDoc] = useState<Content | null>(null);
@@ -31,6 +32,8 @@ export function ClassroomDocumentsTab() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [isDragging, setIsDragging] = useState(false);
+  const isTeacher = user?.role === "CLASS_TEACHER";
+  const isStudent = user?.role === "STUDENT";
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["documents", classroomId],
@@ -152,12 +155,14 @@ export function ClassroomDocumentsTab() {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Documents</h2>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-          >
-            Upload Document
-          </button>
+          {isTeacher && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+            >
+              Upload Document
+            </button>
+          )}
         </div>
 
         <div className="mt-4 flex gap-4">
@@ -278,36 +283,37 @@ export function ClassroomDocumentsTab() {
                 >
                   {doc.title}
                 </a>
+                {isTeacher && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingDoc(doc);
+                        setEditTitle(doc.title);
+                        setEditDescription(doc.description ?? "");
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-sky-400 transition-all duration-200 hover:border-sky-500 hover:bg-sky-500/10 hover:scale-105"
+                      title="Edit document"
+                    >
+                      ✏️
+                    </button>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setEditingDoc(doc);
-                      setEditTitle(doc.title);
-                      setEditDescription(doc.description ?? "");
-                    }}
-                    className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-sky-400 transition-all duration-200 hover:border-sky-500 hover:bg-sky-500/10 hover:scale-105"
-                    title="Edit document"
-                  >
-                    ✏️
-                  </button>
+                    <button
+                      onClick={() => {
+                        const confirmed = window.confirm(
+                          "Are you sure you want to delete this document?",
+                        );
 
-                  <button
-                    onClick={() => {
-                      const confirmed = window.confirm(
-                        "Are you sure you want to delete this document?",
-                      );
+                        if (!confirmed) return;
 
-                      if (!confirmed) return;
-
-                      deleteMutation.mutate(doc.id);
-                    }}
-                    className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-red-500 transition-all duration-200 hover:border-red-500 hover:bg-red-500/10 hover:scale-105"
-                    title="Delete document"
-                  >
-                    🗑️
-                  </button>
-                </div>
+                        deleteMutation.mutate(doc.id);
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-red-500 transition-all duration-200 hover:border-red-500 hover:bg-red-500/10 hover:scale-105"
+                      title="Delete document"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                )}
               </div>
 
               <p className="text-sm opacity-70">{doc.description}</p>
