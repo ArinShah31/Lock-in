@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { courseBuilderApi } from "../api";
 import type { ClassroomCourse, CourseChapter, CourseFlashcard, CourseLesson } from "../api/types";
 import { CourseMarkdown } from "../components/CourseMarkdown";
+import { CourseRagChatWidget } from "../components/CourseRagChatWidget";
 import { EmptyState, ErrorText, GhostButton, PrimaryButton } from "../components/ui";
 
 type ProgressState = {
@@ -684,6 +685,7 @@ export function StudentCourseView({
           )}
         </div>
       </div>
+      <CourseRagChatWidget classroomId={classroomId} />
     </div>
   );
 }

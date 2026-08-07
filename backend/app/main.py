@@ -21,6 +21,7 @@ from app.models import (  # noqa: F401
     Assignment,
     AssignmentSubmission,
     Classroom,
+    ClassroomAnalyticsGrant,
     ClassroomAnnouncement,
     ClassroomContent,
     ClassroomCourse,
@@ -30,6 +31,8 @@ from app.models import (  # noqa: F401
     CourseBuildJob,
     CourseChapterAttempt,
     CourseChapterLock,
+    MockExam,
+    MockExamAttempt,
     PracticeAssessmentLock,
     Department,
     Institution,
@@ -78,16 +81,62 @@ def _ensure_sqlite_columns():
     if not settings.database_url.startswith("sqlite"):
         return
     inspector = inspect(engine)
-    if "users" not in inspector.get_table_names():
-        return
-    cols = {c["name"] for c in inspector.get_columns("users")}
-    if "coding_platform_enabled" not in cols:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "ALTER TABLE users ADD COLUMN coding_platform_enabled BOOLEAN NOT NULL DEFAULT 0"
+    tables = inspector.get_table_names()
+    if "users" in tables:
+        cols = {c["name"] for c in inspector.get_columns("users")}
+        if "coding_platform_enabled" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN coding_platform_enabled BOOLEAN NOT NULL DEFAULT 0"
+                    )
                 )
+    if "classrooms" in tables:
+        cols = {c["name"] for c in inspector.get_columns("classrooms")}
+        if "analytics_share_code" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE classrooms ADD COLUMN analytics_share_code VARCHAR(12)")
+                )
+    _backfill_analytics_share_codes()
+
+
+def _backfill_analytics_share_codes():
+    """Give every classroom an analytics share code (additive, idempotent)."""
+    import secrets
+    import string
+
+    from sqlalchemy.orm import Session
+
+    from app.models.classroom import Classroom as ClassroomModel
+
+    alphabet = string.ascii_uppercase + string.digits
+    with Session(engine) as session:
+        missing = (
+            session.query(ClassroomModel)
+            .filter(
+                (ClassroomModel.analytics_share_code.is_(None))
+                | (ClassroomModel.analytics_share_code == "")
             )
+            .all()
+        )
+        if not missing:
+            return
+        existing = {
+            row[0]
+            for row in session.query(ClassroomModel.analytics_share_code)
+            .filter(ClassroomModel.analytics_share_code.isnot(None))
+            .all()
+        }
+        for classroom in missing:
+            for _ in range(50):
+                code = "".join(secrets.choice(alphabet) for _ in range(8))
+                if code not in existing:
+                    existing.add(code)
+                    classroom.analytics_share_code = code
+                    break
+        session.commit()
+        print(f"[analytics-share] backfilled {len(missing)} classroom share code(s)")
 
 
 @app.get("/health")

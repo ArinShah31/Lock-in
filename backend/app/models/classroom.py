@@ -55,6 +55,15 @@ class Classroom(Base):
         index=True,
         nullable=False,
     )
+    # Analytics sharing: this code identifies the classroom as a *viewer*.
+    # Another teacher pastes it into their own classroom to grant this
+    # classroom view-only analytics of theirs. Separate from join_code.
+    analytics_share_code: Mapped[str | None] = mapped_column(
+        String(12),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
     academic_year: Mapped[str | None] = mapped_column(
         String(20),
         nullable=True,
@@ -202,6 +211,51 @@ class ClassroomTeacher(Base):
     classroom = relationship(
         "Classroom",
         back_populates="teachers",
+    )
+
+
+class ClassroomAnalyticsGrant(Base):
+    """View-only analytics grant between classrooms.
+
+    The *source* classroom's owner pasted the *viewer* classroom's share code,
+    granting the viewer classroom's owner a read-only analytics tab for the
+    source classroom. This never unlocks manage/course/assignment access.
+    """
+
+    __tablename__ = "classroom_analytics_grants"
+    __table_args__ = (
+        UniqueConstraint(
+            "viewer_classroom_id",
+            "source_classroom_id",
+            name="uq_analytics_grant_viewer_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    viewer_classroom_id: Mapped[int] = mapped_column(
+        ForeignKey("classrooms.id"),
+        nullable=False,
+        index=True,
+    )
+    source_classroom_id: Mapped[int] = mapped_column(
+        ForeignKey("classrooms.id"),
+        nullable=False,
+        index=True,
+    )
+    granted_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
 

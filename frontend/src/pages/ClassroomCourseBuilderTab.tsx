@@ -20,6 +20,7 @@ import {
   inputClass,
   PrimaryButton,
 } from "../components/ui";
+import { ClassroomMockExamsPanel } from "./ClassroomMockExamsPanel";
 import { StudentCourseView } from "./StudentCourseView";
 
 type OutletCtx = { classroom: Classroom };
@@ -1111,6 +1112,8 @@ export function ClassroomCourseBuilderTab() {
               })()
             }
           />
+
+          <ClassroomMockExamsPanel classroomId={id} />
         </>
       ) : null}
 

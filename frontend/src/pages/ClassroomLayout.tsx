@@ -97,6 +97,12 @@ export function ClassroomLayout() {
         <NavLink to={`/classrooms/${id}/assignments`} className={tabClass}>
           Assignments
         </NavLink>
+
+        {user && user.id === c.class_teacher_id ? (
+          <NavLink to={`/classrooms/${id}/analytics`} className={tabClass}>
+            Analytics
+          </NavLink>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">

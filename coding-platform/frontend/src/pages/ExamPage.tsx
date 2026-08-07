@@ -91,17 +91,20 @@ export function ExamPage() {
   const ss = String(remaining % 60).padStart(2, "0");
 
   if (session.isLoading || questions.isLoading) {
-    return <div className="p-8 text-slate-300">Loading exam…</div>;
+    return <div className="p-8 text-[#44474e]">Loading exam…</div>;
   }
 
   return (
-    <div className="flex h-screen flex-col bg-slate-950">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-2">
-        <div className="text-sm text-slate-300">
-          Timer <span className="font-mono text-cyan-300">{mm}:{ss}</span> · Violations{" "}
-          {session.data?.violation_score?.toFixed(1) ?? 0}/5
+    <div className="flex h-screen flex-col bg-[#f8f9fa]">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e1e3e4] bg-white px-4 py-3">
+        <div className="text-sm text-[#44474e]">
+          Timer{" "}
+          <span className="rounded-md border border-[#d6e3ff] bg-[#eef4ff] px-2 py-1 font-mono font-bold text-[#031635]">
+            {mm}:{ss}
+          </span>{" "}
+          · Violations {session.data?.violation_score?.toFixed(1) ?? 0}/5
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {[1, 2, 3].map((order) => {
             const q = questions.data?.find((item) => item.order_index === order);
             const locked = !q?.unlocked;
@@ -110,8 +113,12 @@ export function ExamPage() {
                 key={order}
                 disabled={locked}
                 onClick={() => setActiveOrder(order)}
-                className={`rounded-lg px-3 py-1 text-sm ${
-                  activeOrder === order ? "bg-cyan-700" : locked ? "bg-slate-900 text-slate-600" : "bg-slate-800"
+                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                  activeOrder === order
+                    ? "bg-[#031635] text-white"
+                    : locked
+                      ? "cursor-not-allowed bg-[#f1f3f5] text-[#a0a4ab]"
+                      : "border border-[#e1e3e4] bg-white text-[#031635] hover:border-[#031635]"
                 }`}
               >
                 Q{order} {q?.difficulty}
@@ -119,9 +126,9 @@ export function ExamPage() {
             );
           })}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
-            className="rounded-lg bg-slate-700 px-3 py-1 text-sm"
+            className="rounded-md border border-[#c5c6cf] bg-white px-3 py-1.5 text-sm font-semibold text-[#031635] transition hover:border-[#031635]"
             onClick={() => {
               if (!active) return;
               saveDraft.mutate({ question_id: active.question_id, code: codes[active.question_id] || "" });
@@ -130,7 +137,7 @@ export function ExamPage() {
             Save & unlock next
           </button>
           <button
-            className="rounded-lg bg-emerald-600 px-3 py-1 text-sm font-semibold"
+            className="rounded-md bg-[#031635] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#1a2b4b]"
             onClick={() => {
               if (!active) return;
               saveDraft.mutate(
@@ -143,13 +150,18 @@ export function ExamPage() {
           </button>
         </div>
       </header>
-      {warn ? <div className="bg-amber-950/70 px-4 py-2 text-sm text-amber-100">{warn}</div> : null}
+      {warn ? (
+        <div className="border-b border-[#ffe0b2] bg-[#fff4df] px-4 py-2 text-sm text-[#8a4f00]">{warn}</div>
+      ) : null}
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
-        <section className="overflow-auto border-r border-slate-800 p-4">
-          <h2 className="mb-2 text-lg font-semibold text-cyan-200">{active?.title}</h2>
-          <pre className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{active?.prompt_markdown}</pre>
+        <section className="overflow-auto border-r border-[#e1e3e4] bg-white p-5">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#3f5d9b]">Question prompt</p>
+          <h2 className="mt-2 text-xl font-extrabold text-[#031635]">{active?.title}</h2>
+          <pre className="mt-4 whitespace-pre-wrap font-sans text-sm leading-7 text-[#44474e]">
+            {active?.prompt_markdown}
+          </pre>
         </section>
-        <section className="min-h-0">
+        <section className="min-h-0 overflow-hidden border-t border-[#e1e3e4] lg:border-t-0">
           {active ? (
             <Editor
               height="100%"

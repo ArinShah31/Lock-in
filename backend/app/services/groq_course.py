@@ -208,7 +208,7 @@ class GeminiNotesClient:
     """Gemini 2.5 Flash client for lesson outline + full notes (OpenAI-compatible API)."""
 
     def __init__(self, *, pinned_key: str | None = None):
-        self.model = settings.gemini_model or "gemini-2.5-flash"
+        self.model = settings.gemini_model or "gemini-3.6-flash"
         pool = settings.gemini_keys_for_notes_pool()
         if pinned_key:
             others = [k for k in pool if k != pinned_key]

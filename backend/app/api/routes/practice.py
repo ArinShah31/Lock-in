@@ -1,7 +1,10 @@
 from math import ceil
 import logging
+import shutil
+import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -11,12 +14,22 @@ from app.models.classroom import Classroom, ClassroomStudent, MembershipStatus
 from app.models.classroom_course import (
     ClassroomCourse,
     CourseChapterAttempt,
+    MockExam,
+    MockExamAttempt,
     PracticeAssessmentLock,
 )
 from app.models.content import ClassroomContent
 from app.models.user import User, UserRole
+from app.services.mock_exam_gemini import extract_mock_exam_pattern, generate_mock_exam_paper
 from app.services.practice_gemini import generate_practice_chapters
 from app.schemas.practice import (
+    MockExamAttemptOut,
+    MockExamAttemptRequest,
+    MockExamCreateRequest,
+    MockExamOut,
+    MockExamPatternOut,
+    MockExamPublishRequest,
+    MockExamReviewRequest,
     PracticeAssessmentLockRequest,
     PracticeAssessmentOut,
     PracticeAttemptOut,
@@ -37,6 +50,7 @@ ASSESSMENT_SUBJECT = "ASSESSMENT_SUBJECT"
 ASSESSMENT_KIND_TOPIC = "TOPIC"
 ASSESSMENT_KIND_SUBJECT = "SUBJECT"
 SUBJECT_TARGET_KEY = "overall"
+MOCK_EXAM_UPLOAD_DIR = Path("uploads/mock_exams")
 
 
 def _ensure_class_teacher(user: User, classroom: Classroom) -> None:
@@ -47,6 +61,51 @@ def _ensure_class_teacher(user: User, classroom: Classroom) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the class teacher can manage assessment access",
         )
+
+
+def _sanitize_paper_for_student(paper: dict) -> dict:
+    """Strip answer keys so students never see correct/expected answers before or after attempt."""
+    sections = []
+    for section in paper.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        questions = []
+        for question in section.get("questions") or []:
+            if not isinstance(question, dict):
+                continue
+            safe = {k: v for k, v in question.items() if k not in {"correct_answer", "expected_answer"}}
+            questions.append(safe)
+        sections.append({**section, "questions": questions})
+    return {
+        "instructions": paper.get("instructions") or "",
+        "sections": sections,
+    }
+
+
+def _mock_exam_out(exam: MockExam, *, viewer: User | None = None) -> MockExamOut:
+    payload = MockExamOut.model_validate(exam)
+    if viewer is not None and viewer.role == UserRole.STUDENT:
+        payload.paper = _sanitize_paper_for_student(exam.paper or {})
+    return payload
+
+
+def _mock_exam_visible_query(db: Session, classroom_id: int, user: User):
+    query = db.query(MockExam).filter(MockExam.classroom_id == classroom_id)
+    if user.role == UserRole.STUDENT:
+        query = query.filter(MockExam.status == "PUBLISHED")
+    return query.order_by(MockExam.created_at.desc(), MockExam.id.desc())
+
+
+def _flatten_mock_questions(paper: dict) -> list[dict]:
+    questions: list[dict] = []
+    for section in paper.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        section_title = str(section.get("title") or "")
+        for question in section.get("questions") or []:
+            if isinstance(question, dict):
+                questions.append({**question, "section_title": question.get("section_title") or section_title})
+    return questions
 
 
 def _require_student_membership(db: Session, classroom_id: int, user: User) -> None:
@@ -438,6 +497,309 @@ def get_practice_overview(
     course = _get_or_create_course(db, classroom, current_user)
     course = _bootstrap_practice_content(db, classroom=classroom, course=course)
     return _overview_payload(db, classroom=classroom, course=course, viewer=current_user)
+
+
+@router.post("/classrooms/{classroom_id}/practice/mock-exams/pattern", response_model=MockExamPatternOut)
+def extract_mock_pattern(
+    classroom_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _ensure_class_teacher(current_user, classroom)
+
+    mime_type = file.content_type or "application/octet-stream"
+    if mime_type not in {"application/pdf", "image/png", "image/jpeg", "image/webp"}:
+        raise HTTPException(status_code=400, detail="Upload a PDF or image PYQ")
+
+    MOCK_EXAM_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = Path(file.filename or "pyq").suffix or ".pdf"
+    stored = MOCK_EXAM_UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    with stored.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    try:
+        pattern = extract_mock_exam_pattern(
+            file_path=str(stored),
+            mime_type=mime_type,
+            fallback_title=Path(file.filename or "Mock Exam").stem or "Mock Exam",
+        )
+    except Exception as exc:
+        logger.warning("Mock exam pattern extraction failed for classroom %s: %s", classroom.id, exc)
+        detail = str(exc).strip() or "Could not extract PYQ pattern."
+        if "quota" in detail.lower() or "429" in detail:
+            detail = (
+                "Gemini quota/rate limit reached. Wait a bit, switch GEMINI_CHAT_MODEL "
+                "(for example gemini-3.6-flash or gemini-flash-latest), or add another API key in backend/.env."
+            )
+        elif "DUMMY_KEY" in detail or "api key" in detail.lower():
+            detail = "Gemini API key is missing. Set GEMINI_API_KEY in backend/.env and restart the API."
+        else:
+            detail = f"Could not extract PYQ pattern. {detail}"
+        raise HTTPException(status_code=502, detail=detail) from exc
+    return MockExamPatternOut(
+        **pattern,
+        pyq_file_name=file.filename,
+        pyq_file_path=str(stored),
+    )
+
+
+@router.post("/classrooms/{classroom_id}/practice/mock-exams", response_model=MockExamOut, status_code=status.HTTP_201_CREATED)
+def create_mock_exam(
+    classroom_id: int,
+    payload: MockExamCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _ensure_class_teacher(current_user, classroom)
+    course = _get_or_create_course(db, classroom, current_user)
+    documents = _active_documents(db, classroom.id)
+
+    exam = MockExam(
+        classroom_id=classroom.id,
+        created_by_id=current_user.id,
+        title=payload.title.strip() or "Mock Exam",
+        total_marks=payload.total_marks,
+        duration_minutes=payload.duration_minutes,
+        pattern=payload.pattern,
+        pyq_file_name=payload.pyq_file_name,
+        pyq_file_path=payload.pyq_file_path,
+        status="DRAFT",
+    )
+    db.add(exam)
+    db.flush()
+
+    try:
+        paper = generate_mock_exam_paper(
+            classroom_name=classroom.name,
+            pattern=payload.pattern,
+            syllabus_text=course.syllabus_text,
+            syllabus_path=course.syllabus_file_path,
+            syllabus_name=course.syllabus_file_name,
+            documents=documents,
+        )
+        exam.paper = paper
+        exam.error_message = None
+    except Exception as exc:
+        logger.warning("Mock exam generation failed for classroom %s: %s", classroom.id, exc)
+        exam.paper = {"instructions": "", "sections": []}
+        detail = str(exc).strip()
+        if "quota" in detail.lower() or "429" in detail:
+            exam.error_message = (
+                "Gemini quota/rate limit reached while generating the paper. "
+                "Retry shortly or switch GEMINI_CHAT_MODEL to gemini-3.6-flash / gemini-flash-latest."
+            )
+        else:
+            exam.error_message = (
+                f"Could not generate mock exam. {detail[:240]}"
+                if detail
+                else "Could not generate mock exam. Check Gemini configuration and source material."
+            )
+
+    db.commit()
+    db.refresh(exam)
+    return _mock_exam_out(exam, viewer=current_user)
+
+
+@router.post("/classrooms/{classroom_id}/practice/mock-exams/{exam_id}/regenerate", response_model=MockExamOut)
+def regenerate_mock_exam(
+    classroom_id: int,
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _ensure_class_teacher(current_user, classroom)
+    exam = db.query(MockExam).filter(MockExam.id == exam_id, MockExam.classroom_id == classroom_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Mock exam not found")
+    if exam.status == "PUBLISHED":
+        raise HTTPException(status_code=400, detail="Unpublish the mock exam before regenerating")
+
+    course = _get_or_create_course(db, classroom, current_user)
+    documents = _active_documents(db, classroom.id)
+    try:
+        paper = generate_mock_exam_paper(
+            classroom_name=classroom.name,
+            pattern=exam.pattern or {},
+            syllabus_text=course.syllabus_text,
+            syllabus_path=course.syllabus_file_path,
+            syllabus_name=course.syllabus_file_name,
+            documents=documents,
+        )
+        exam.paper = paper
+        exam.error_message = None
+    except Exception as exc:
+        logger.warning("Mock exam regenerate failed for classroom %s exam %s: %s", classroom.id, exam.id, exc)
+        exam.paper = {"instructions": "", "sections": []}
+        detail = str(exc).strip()
+        if "quota" in detail.lower() or "429" in detail:
+            exam.error_message = (
+                "Gemini quota/rate limit reached while regenerating the paper. "
+                "Retry shortly or switch GEMINI_CHAT_MODEL."
+            )
+        else:
+            exam.error_message = (
+                f"Could not regenerate mock exam. {detail[:240]}"
+                if detail
+                else "Could not regenerate mock exam. Check Gemini configuration and source material."
+            )
+
+    db.commit()
+    db.refresh(exam)
+    return _mock_exam_out(exam, viewer=current_user)
+
+
+@router.get("/classrooms/{classroom_id}/practice/mock-exams", response_model=list[MockExamOut])
+def list_mock_exams(
+    classroom_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    return [
+        _mock_exam_out(exam, viewer=current_user)
+        for exam in _mock_exam_visible_query(db, classroom_id, current_user).all()
+    ]
+
+
+@router.patch("/classrooms/{classroom_id}/practice/mock-exams/{exam_id}/publish", response_model=MockExamOut)
+def publish_mock_exam(
+    classroom_id: int,
+    exam_id: int,
+    payload: MockExamPublishRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _ensure_class_teacher(current_user, classroom)
+    exam = db.query(MockExam).filter(MockExam.id == exam_id, MockExam.classroom_id == classroom_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Mock exam not found")
+    if payload.is_published and not _flatten_mock_questions(exam.paper or {}):
+        raise HTTPException(status_code=400, detail="Cannot publish an empty mock exam")
+    if payload.is_published and exam.error_message:
+        raise HTTPException(status_code=400, detail="Cannot publish a mock exam that failed generation")
+    exam.status = "PUBLISHED" if payload.is_published else "DRAFT"
+    db.commit()
+    db.refresh(exam)
+    return _mock_exam_out(exam, viewer=current_user)
+
+
+@router.post(
+    "/classrooms/{classroom_id}/practice/mock-exams/{exam_id}/attempt",
+    response_model=MockExamAttemptOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_mock_exam_attempt(
+    classroom_id: int,
+    exam_id: int,
+    payload: MockExamAttemptRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can submit mock exams")
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _require_student_membership(db, classroom_id, current_user)
+    exam = db.query(MockExam).filter(MockExam.id == exam_id, MockExam.classroom_id == classroom_id).first()
+    if not exam or exam.status != "PUBLISHED":
+        raise HTTPException(status_code=404, detail="Mock exam not found")
+
+    mcq_total = 0.0
+    mcq_scored = 0.0
+    theory_marks = 0.0
+    for question in _flatten_mock_questions(exam.paper or {}):
+        qid = str(question.get("id") or "")
+        qtype = str(question.get("question_type") or "").upper()
+        marks = float(question.get("marks") or 0)
+        if qtype == "MCQ" and question.get("correct_answer"):
+            mcq_total += marks
+            if payload.answers.get(qid) == question.get("correct_answer"):
+                mcq_scored += marks
+        else:
+            theory_marks += marks
+
+    attempt = MockExamAttempt(
+        mock_exam_id=exam.id,
+        classroom_id=classroom_id,
+        student_id=current_user.id,
+        answers=payload.answers,
+        mcq_score=mcq_scored,
+        theory_score=None,
+        total_score=mcq_scored if theory_marks <= 0 else None,
+        theory_status="REVIEWED" if theory_marks <= 0 else "PENDING_REVIEW",
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return attempt
+
+
+@router.get("/classrooms/{classroom_id}/practice/mock-exams/{exam_id}/attempts", response_model=list[MockExamAttemptOut])
+def list_mock_exam_attempts(
+    classroom_id: int,
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    exam = db.query(MockExam).filter(MockExam.id == exam_id, MockExam.classroom_id == classroom_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Mock exam not found")
+    query = db.query(MockExamAttempt).filter(MockExamAttempt.mock_exam_id == exam_id)
+    if current_user.role == UserRole.STUDENT:
+        query = query.filter(MockExamAttempt.student_id == current_user.id)
+    else:
+        _ensure_class_teacher(current_user, classroom)
+    return query.order_by(MockExamAttempt.submitted_at.desc()).all()
+
+
+@router.patch(
+    "/classrooms/{classroom_id}/practice/mock-exams/{exam_id}/attempts/{attempt_id}/review",
+    response_model=MockExamAttemptOut,
+)
+def review_mock_exam_attempt(
+    classroom_id: int,
+    exam_id: int,
+    attempt_id: int,
+    payload: MockExamReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _ensure_class_teacher(current_user, classroom)
+    attempt = (
+        db.query(MockExamAttempt)
+        .filter(
+            MockExamAttempt.id == attempt_id,
+            MockExamAttempt.mock_exam_id == exam_id,
+            MockExamAttempt.classroom_id == classroom_id,
+        )
+        .first()
+    )
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    attempt.theory_score = payload.theory_score
+    attempt.total_score = float(attempt.mcq_score or 0) + float(payload.theory_score or 0)
+    attempt.theory_status = "REVIEWED"
+    attempt.feedback = payload.feedback
+    from datetime import datetime, timezone
+
+    attempt.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(attempt)
+    return attempt
 
 
 @router.post(

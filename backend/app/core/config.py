@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     gemini_api_key_notes_1: str = ""
     gemini_api_key_notes_2: str = ""
     gemini_api_key_notes_3: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
     youtube_api_key: str = ""
 
     # -------------------------

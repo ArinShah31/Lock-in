@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type User } from "../api";
 import { useAuth } from "../auth";
+import { MagicCard } from "../components/ui/magic-card";
 
 /** Exchange ASTRA SSO token for a coding-platform session. */
 export function SsoPage() {
@@ -20,7 +21,6 @@ export function SsoPage() {
     }
     started.current = true;
 
-    // Drop any previous student/teacher session before exchanging.
     clearSession();
 
     void (async () => {
@@ -39,18 +39,20 @@ export function SsoPage() {
   }, [params, navigate, applySsoSession, clearSession]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-slate-200">
-      {error ? (
-        <div className="max-w-md rounded-xl border border-red-500/60 bg-red-950 px-5 py-4 text-sm text-red-50 shadow-lg">
-          <p className="mb-1 font-semibold text-red-200">Could not sign you in</p>
-          <p className="text-red-100/90">{error}</p>
-          <a href="/login" className="mt-3 inline-block text-xs text-slate-300 underline">
-            Go to coding login
-          </a>
-        </div>
-      ) : (
-        <p className="text-base text-slate-200">Signing you in…</p>
-      )}
+    <div className="flex min-h-screen items-center justify-center p-6">
+      <MagicCard className="w-full max-w-md p-5 shadow-sm">
+        {error ? (
+          <div className="text-sm">
+            <p className="font-semibold text-[#a03a3a]">Could not sign you in</p>
+            <p className="mt-1 text-[#44474e]">{error}</p>
+            <a href="/login" className="mt-3 inline-block text-xs font-semibold text-[#3f5d9b] underline">
+              Go to coding login
+            </a>
+          </div>
+        ) : (
+          <p className="text-sm text-[#44474e]">Signing you in to Astra Coding…</p>
+        )}
+      </MagicCard>
     </div>
   );
 }

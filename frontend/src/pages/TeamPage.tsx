@@ -190,8 +190,7 @@ export function TeamPage() {
                 value={form.member_role}
                 onChange={(e) => setForm((f) => ({ ...f, member_role: e.target.value as HodCreateRole }))}
               >
-                <option value="CLASS_TEACHER">Class Teacher</option>
-                <option value="SUBJECT_TEACHER">Subject Teacher</option>
+                <option value="CLASS_TEACHER">Teacher</option>
               </select>
             </Field>
           ) : null}

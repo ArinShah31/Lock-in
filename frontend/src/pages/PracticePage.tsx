@@ -1,9 +1,13 @@
-import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { classroomsApi, practiceApi } from "../api";
 import type {
   Classroom,
+  MockExam,
+  MockExamAttempt,
+  MockExamQuestion,
+  MockExamSection,
   PracticeAssessment,
   PracticeFlashcard,
   PracticeFlashcardDeck,
@@ -15,6 +19,7 @@ import {
   EmptyState,
   ErrorText,
   GhostButton,
+  inputClass,
   PageHeader,
   Panel,
   PrimaryButton,
@@ -69,7 +74,7 @@ const assessmentSections: AssessmentSectionOption[] = [
   {
     key: "subject",
     label: "Subject Wise Assessments",
-    description: "Longer mixed rounds across the whole classroom scope.",
+    description: "Mixed rounds and published mock exams across the classroom scope.",
     icon: "library_books",
   },
 ];
@@ -587,19 +592,476 @@ function AssessmentGrid({
   );
 }
 
+function mockExamQuestionCount(exam: MockExam) {
+  return (exam.paper?.sections ?? []).reduce((sum, section) => sum + (section.questions?.length ?? 0), 0);
+}
+
+function formatCountdown(totalSeconds: number) {
+  const safe = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function MockExamGrid({
+  items,
+  attemptsByExam,
+  onOpen,
+}: {
+  items: MockExam[];
+  attemptsByExam: Record<number, MockExamAttempt | undefined>;
+  onOpen: (exam: MockExam) => void;
+}) {
+  if (!items.length) {
+    return (
+      <EmptyState
+        title="No mock exams published yet"
+        body="When your teacher publishes a mock exam from a previous-year paper pattern, it will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((exam) => {
+        const attempt = attemptsByExam[exam.id];
+        const status =
+          attempt == null
+            ? { label: "Ready", className: "border-[#d6e3ff] bg-[#eef4ff] text-[#3f5d9b]" }
+            : attempt.theory_status === "PENDING_REVIEW"
+              ? { label: "Pending review", className: "border-[#ffe0b2] bg-[#fff4df] text-[#8a4f00]" }
+              : { label: "Reviewed", className: "border-[#cfe9d5] bg-[#edf9ef] text-[#1f6a34]" };
+
+        return (
+          <Panel key={exam.id} className="flex h-full flex-col justify-between gap-4 border-[#c9d7ef] p-0">
+            <div className="space-y-3 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
+                    Mock Exam · {exam.duration_minutes} mins
+                  </p>
+                  <h3 className="mt-2 font-display text-lg font-bold text-[#031635]">{exam.title}</h3>
+                </div>
+                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${status.className}`}>
+                  {status.label}
+                </span>
+              </div>
+              <p className="text-sm leading-6 text-[#44474e]">
+                Full paper built from your classroom syllabus and documents using the published exam pattern.
+              </p>
+            </div>
+            <div className="space-y-3 border-t border-[#e1e3e4] px-5 py-4">
+              <div className="flex items-center justify-between text-sm text-[#5d6167]">
+                <span>
+                  {mockExamQuestionCount(exam)} questions · {exam.total_marks} marks
+                </span>
+                <span className="font-semibold text-[#031635]">
+                  {attempt?.total_score != null
+                    ? `${attempt.total_score}/${exam.total_marks}`
+                    : attempt
+                      ? `MCQ ${attempt.mcq_score ?? 0}`
+                      : "Not attempted"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpen(exam)}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#031635] transition hover:text-[#3f5d9b]"
+              >
+                <span>{attempt ? "View result / retake" : "Start mock exam"}</span>
+                <span className="material-symbols-outlined text-base">arrow_forward</span>
+              </button>
+            </div>
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
+
+function MockExamRunner({
+  exam,
+  onClose,
+  onRetake,
+  onSubmit,
+  isSubmitting,
+  result,
+}: {
+  exam: MockExam;
+  onClose: () => void;
+  onRetake: () => void;
+  onSubmit: (answers: Record<string, string>) => Promise<void> | void;
+  isSubmitting: boolean;
+  result: MockExamAttempt | null;
+}) {
+  const sections = (exam.paper?.sections ?? []) as MockExamSection[];
+  const questions = sections.flatMap((section) =>
+    (section.questions ?? []).map((question) => ({
+      ...question,
+      section_title: question.section_title || section.title,
+    })),
+  ) as MockExamQuestion[];
+
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [secondsLeft, setSecondsLeft] = useState(exam.duration_minutes * 60);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(questions[0]?.id ?? null);
+  const answersRef = useRef(answers);
+  const submittedRef = useRef(false);
+  const onSubmitRef = useRef(onSubmit);
+  answersRef.current = answers;
+  onSubmitRef.current = onSubmit;
+
+  const answeredCount = Object.values(answers).filter((value) => value.trim()).length;
+  const progress = questions.length ? Math.round((answeredCount / questions.length) * 100) : 0;
+
+  useEffect(() => {
+    setAnswers({});
+    setSecondsLeft(exam.duration_minutes * 60);
+    setConfirmSubmit(false);
+    submittedRef.current = false;
+    setActiveQuestionId(questions[0]?.id ?? null);
+  }, [exam.id, exam.duration_minutes]);
+
+  useEffect(() => {
+    if (result) return;
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          if (!submittedRef.current) {
+            submittedRef.current = true;
+            void onSubmitRef.current(answersRef.current);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [exam.id, result]);
+
+  function scrollToQuestion(questionId: string) {
+    setActiveQuestionId(questionId);
+    const node = document.getElementById(`mock-question-${questionId}`);
+    node?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  if (result) {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-[#031635]/35 px-4 py-8 backdrop-blur-[2px]">
+        <div className="mx-auto max-w-2xl rounded-2xl border border-[#e1e3e4] bg-white p-6 shadow-xl">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#d6e3ff] bg-[#eef4ff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
+            Mock exam submitted
+          </div>
+          <h3 className="mt-4 font-display text-2xl font-extrabold text-[#031635] sm:text-3xl">{exam.title}</h3>
+          <p className="mt-2 text-sm text-[#44474e]">
+            MCQs are scored now. Theory stays pending until your teacher reviews it.
+          </p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#75777f]">MCQ score</p>
+              <p className="mt-2 font-display text-2xl font-extrabold text-[#031635]">{result.mcq_score ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#75777f]">Theory</p>
+              <p className="mt-2 text-sm font-semibold text-[#031635]">
+                {result.theory_status === "PENDING_REVIEW"
+                  ? "Pending review"
+                  : result.theory_score != null
+                    ? String(result.theory_score)
+                    : "Reviewed"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#75777f]">Total</p>
+              <p className="mt-2 font-display text-2xl font-extrabold text-[#031635]">
+                {result.total_score != null ? `${result.total_score}/${exam.total_marks}` : "Awaiting review"}
+              </p>
+            </div>
+          </div>
+          {result.feedback ? (
+            <p className="mt-4 rounded-xl border border-[#d6e3ff] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#44474e]">
+              Teacher feedback: {result.feedback}
+            </p>
+          ) : null}
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <GhostButton onClick={onRetake}>Retake</GhostButton>
+            <PrimaryButton onClick={onClose}>Back to Practice</PrimaryButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f8f9fa]">
+      <div className="sticky top-0 z-20 border-b border-[#e1e3e4] bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">Mock exam in progress</p>
+            <h3 className="truncate font-display text-lg font-extrabold text-[#031635] sm:text-xl">{exam.title}</h3>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[#d6e3ff] bg-[#eef4ff] px-3 py-1.5 text-xs font-semibold text-[#3f5d9b]">
+              {answeredCount}/{questions.length} answered
+            </span>
+            <span
+              className={`rounded-full border px-3 py-1.5 font-mono text-sm font-bold ${
+                secondsLeft <= 60
+                  ? "border-[#ffe0b2] bg-[#fff4df] text-[#8a4f00]"
+                  : "border-[#e1e3e4] bg-[#f8f9fa] text-[#031635]"
+              }`}
+            >
+              {formatCountdown(secondsLeft)}
+            </span>
+            <GhostButton onClick={onClose}>Exit</GhostButton>
+            <PrimaryButton onClick={() => setConfirmSubmit(true)} disabled={isSubmitting}>
+              {isSubmitting ? "Submitting…" : "Submit exam"}
+            </PrimaryButton>
+          </div>
+        </div>
+        <div className="h-1 w-full bg-[#eef2f6]">
+          <div
+            className="h-full bg-[#031635] transition-[width] duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[220px_1fr]">
+        <aside className="lg:sticky lg:top-[88px] lg:self-start">
+          <Panel className="space-y-3 p-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#75777f]">Paper map</p>
+              <p className="mt-1 text-sm text-[#44474e]">
+                {exam.total_marks} marks · {exam.duration_minutes} mins
+              </p>
+            </div>
+            <div className="space-y-3">
+              {sections.map((section) => (
+                <div key={section.id} className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#3f5d9b]">
+                    {section.title || "Section"}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(section.questions ?? []).map((question, index) => {
+                      const answered = Boolean(answers[question.id]?.trim());
+                      const active = activeQuestionId === question.id;
+                      return (
+                        <button
+                          key={question.id || index}
+                          type="button"
+                          onClick={() => scrollToQuestion(question.id)}
+                          className={`flex h-8 w-8 items-center justify-center rounded-md border text-xs font-bold transition ${
+                            active
+                              ? "border-[#031635] bg-[#031635] text-white"
+                              : answered
+                                ? "border-[#cfe9d5] bg-[#edf9ef] text-[#1f6a34]"
+                                : "border-[#e1e3e4] bg-white text-[#5d6167] hover:border-[#9db2d1]"
+                          }`}
+                        >
+                          {index + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </aside>
+
+        <div className="space-y-5 pb-10">
+          {exam.paper?.instructions ? (
+            <Panel className="border-[#d6e3ff] bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)]">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#3f5d9b]">Instructions</p>
+              <p className="mt-2 text-sm leading-6 text-[#44474e]">{exam.paper.instructions}</p>
+            </Panel>
+          ) : null}
+
+          {sections.map((section) => {
+            const sectionQuestions = section.questions ?? [];
+            const usesOrPairs =
+              /or pair|q\d+\s+or\s+q\d+/i.test(section.instructions || "") && sectionQuestions.length >= 2;
+            const groups: MockExamQuestion[][] = [];
+            if (usesOrPairs) {
+              for (let i = 0; i < sectionQuestions.length; i += 2) {
+                groups.push(sectionQuestions.slice(i, i + 2));
+              }
+            } else {
+              groups.push(...sectionQuestions.map((question) => [question]));
+            }
+
+            return (
+              <Panel
+                key={section.id}
+                className="space-y-4 border-[#d6e3ff] bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)]"
+              >
+                <div>
+                  <h4 className="font-display text-xl font-extrabold text-[#031635]">{section.title}</h4>
+                  {section.instructions ? (
+                    <p className="mt-2 rounded-xl border border-[#dce7fa] bg-white px-4 py-3 text-sm leading-6 text-[#44474e]">
+                      {section.instructions}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-4">
+                  {groups.map((group, groupIndex) => (
+                    <div
+                      key={`${section.id}-group-${groupIndex}`}
+                      className={
+                        group.length > 1
+                          ? "space-y-3 rounded-2xl border border-dashed border-[#c9d7ef] bg-white/70 p-3"
+                          : "space-y-3"
+                      }
+                    >
+                      {group.length > 1 ? (
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
+                          Choice pair {groupIndex + 1} · answer either question
+                        </p>
+                      ) : null}
+                      {group.map((question, indexInGroup) => {
+                        const globalIndex =
+                          sectionQuestions.findIndex((item) => item.id === question.id) + 1;
+                        const isMcq = (question.question_type || "").toUpperCase() === "MCQ";
+                        return (
+                          <div key={question.id || `${groupIndex}-${indexInGroup}`}>
+                            {group.length > 1 && indexInGroup === 1 ? (
+                              <div className="my-2 flex items-center gap-3">
+                                <div className="h-px flex-1 bg-[#e1e3e4]" />
+                                <span className="rounded-full border border-[#e1e3e4] bg-[#f8f9fa] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#5d6167]">
+                                  or
+                                </span>
+                                <div className="h-px flex-1 bg-[#e1e3e4]" />
+                              </div>
+                            ) : null}
+                            <div
+                              id={`mock-question-${question.id}`}
+                              className="rounded-2xl border border-[#dfe4ea] bg-white px-5 py-5 shadow-sm"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-[#d6e3ff] bg-[#eef4ff] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
+                                  Q{globalIndex}
+                                </span>
+                                <span className="rounded-full border border-[#e1e3e4] bg-[#f8f9fa] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#5d6167]">
+                                  {question.question_type}
+                                </span>
+                                <span className="rounded-full border border-[#e1e3e4] bg-[#f8f9fa] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#5d6167]">
+                                  {question.marks} marks
+                                </span>
+                              </div>
+                              <p className="mt-3 whitespace-pre-wrap font-display text-lg font-bold leading-8 text-[#031635]">
+                                {question.question}
+                              </p>
+                              {isMcq ? (
+                                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                  {(question.options ?? []).map((option) => {
+                                    const checked = answers[question.id] === option;
+                                    return (
+                                      <label
+                                        key={option}
+                                        className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-sm transition ${
+                                          checked
+                                            ? "border-[#031635] bg-[#eef4ff] text-[#031635]"
+                                            : "border-[#d8dde3] bg-[#fafbfc] text-[#4b5563] hover:border-[#9db2d1] hover:bg-white"
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name={`mock-${question.id}`}
+                                          checked={checked}
+                                          onChange={() => {
+                                            setActiveQuestionId(question.id);
+                                            setAnswers((prev) => ({ ...prev, [question.id]: option }));
+                                          }}
+                                          className="mt-1 h-4 w-4 accent-[#031635]"
+                                        />
+                                        <span>{option}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <textarea
+                                  className={`${inputClass} mt-4 min-h-[140px]`}
+                                  placeholder="Write your answer…"
+                                  value={answers[question.id] ?? ""}
+                                  onFocus={() => setActiveQuestionId(question.id)}
+                                  onChange={(e) =>
+                                    setAnswers((prev) => ({ ...prev, [question.id]: e.target.value }))
+                                  }
+                                />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            );
+          })}
+
+          <div className="flex flex-wrap justify-end gap-3 border-t border-[#e1e3e4] pt-4">
+            <GhostButton onClick={onClose}>Exit without submitting</GhostButton>
+            <PrimaryButton onClick={() => setConfirmSubmit(true)} disabled={isSubmitting}>
+              {isSubmitting ? "Submitting…" : "Submit exam"}
+            </PrimaryButton>
+          </div>
+        </div>
+      </div>
+
+      {confirmSubmit ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#031635]/40 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-[#e1e3e4] bg-white p-5 shadow-xl">
+            <h4 className="font-display text-xl font-extrabold text-[#031635]">Submit mock exam?</h4>
+            <p className="mt-2 text-sm leading-6 text-[#44474e]">
+              MCQs are scored immediately. Theory answers stay pending until your teacher reviews them.
+              You have answered {answeredCount} of {questions.length} questions.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <GhostButton onClick={() => setConfirmSubmit(false)}>Keep editing</GhostButton>
+              <PrimaryButton
+                disabled={isSubmitting}
+                onClick={() => {
+                  setConfirmSubmit(false);
+                  void onSubmit(answers);
+                }}
+              >
+                Confirm submit
+              </PrimaryButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function PracticePage() {
   const { user, loading: authLoading } = useAuth();
   const [section, setSection] = useState<PracticeSection>("quizzes");
   const [assessmentSection, setAssessmentSection] = useState<AssessmentSection>("topic");
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [classroomId, setClassroomId] = useState<number | null>(null);
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [practice, setPractice] = useState<PracticeOverview | null>(null);
+  const [mockExams, setMockExams] = useState<MockExam[]>([]);
+  const [mockAttempts, setMockAttempts] = useState<Record<number, MockExamAttempt>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFlashcardDeckId, setSelectedFlashcardDeckId] = useState("");
   const [flippedFlashcards, setFlippedFlashcards] = useState<Set<string>>(new Set());
   const [activeQuizChapter, setActiveQuizChapter] = useState<number | null>(null);
   const [activeAssessment, setActiveAssessment] = useState<{ kind: string; targetKey: string } | null>(null);
-  const [submitState, setSubmitState] = useState<{ kind: "quiz" | "assessment"; loading: boolean } | null>(null);
+  const [activeMockExamId, setActiveMockExamId] = useState<number | null>(null);
+  const [mockExamResult, setMockExamResult] = useState<MockExamAttempt | null>(null);
+  const [submitState, setSubmitState] = useState<{ kind: "quiz" | "assessment" | "mock"; loading: boolean } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (authLoading) return;
@@ -610,44 +1072,119 @@ export function PracticePage() {
 
     let cancelled = false;
 
-    async function load() {
+    async function loadClassrooms() {
       setLoading(true);
       setError(null);
       try {
-        const classrooms = await classroomsApi.list();
-        const firstClassroom = classrooms[0] ?? null;
-        if (!firstClassroom) {
-          if (!cancelled) {
-            setClassroom(null);
-            setPractice(null);
-          }
+        const list = await classroomsApi.list();
+        if (cancelled) return;
+        setClassrooms(list);
+        if (!list.length) {
+          setClassroomId(null);
+          setClassroom(null);
+          setPractice(null);
+          setMockExams([]);
+          setMockAttempts({});
+          setLoading(false);
           return;
         }
 
-        const overview = await practiceApi.get(firstClassroom.id);
-        if (!cancelled) {
-          setClassroom(firstClassroom);
-          setPractice(overview);
-          setSelectedFlashcardDeckId(overview.flashcard_decks[0]?.id ?? "");
+        const savedId = Number(localStorage.getItem("astra_practice_classroom_id") || "");
+        const saved = list.find((item) => item.id === savedId) ?? null;
+
+        // Prefer a remembered classroom; otherwise prefer one with published mock exams.
+        let next = saved;
+        if (!next) {
+          const examLists = await Promise.all(
+            list.map(async (item) => {
+              try {
+                const exams = await practiceApi.listMockExams(item.id);
+                return { id: item.id, count: exams.length };
+              } catch {
+                return { id: item.id, count: 0 };
+              }
+            }),
+          );
+          const withMocks = examLists.find((item) => item.count > 0);
+          next = list.find((item) => item.id === withMocks?.id) ?? list[0];
         }
+
+        setClassroomId(next.id);
+        localStorage.setItem("astra_practice_classroom_id", String(next.id));
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Could not load practice space");
-          setClassroom(null);
-          setPractice(null);
-        }
-      } finally {
-        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load classrooms");
+          setClassrooms([]);
+          setClassroomId(null);
           setLoading(false);
         }
       }
     }
 
-    void load();
+    void loadClassrooms();
     return () => {
       cancelled = true;
     };
   }, [authLoading, user?.id, user?.role]);
+
+  useEffect(() => {
+    if (authLoading || user?.role !== "STUDENT" || classroomId == null) return;
+
+    let cancelled = false;
+
+    async function loadPractice() {
+      setLoading(true);
+      setError(null);
+      setActiveQuizChapter(null);
+      setActiveAssessment(null);
+      setActiveMockExamId(null);
+      setMockExamResult(null);
+      try {
+        const selected = classrooms.find((item) => item.id === classroomId) ?? null;
+        const [overview, exams] = await Promise.all([
+          practiceApi.get(classroomId),
+          practiceApi.listMockExams(classroomId),
+        ]);
+        const attemptEntries = await Promise.all(
+          exams.map(async (exam) => {
+            try {
+              const attempts = await practiceApi.listMockExamAttempts(classroomId, exam.id);
+              return [exam.id, attempts[0]] as const;
+            } catch {
+              return [exam.id, undefined] as const;
+            }
+          }),
+        );
+        if (!cancelled) {
+          setClassroom(selected);
+          setPractice(overview);
+          setMockExams(exams);
+          setMockAttempts(
+            Object.fromEntries(attemptEntries.filter((entry) => entry[1] != null)) as Record<number, MockExamAttempt>,
+          );
+          setSelectedFlashcardDeckId(overview.flashcard_decks[0]?.id ?? "");
+          if (exams.length) {
+            setSection("assessments");
+            setAssessmentSection("subject");
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load practice space");
+          setPractice(null);
+          setMockExams([]);
+          setMockAttempts({});
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadPractice();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.role, classroomId, classrooms]);
 
   useEffect(() => {
     setFlippedFlashcards(new Set());
@@ -672,10 +1209,52 @@ export function PracticePage() {
 
   async function refreshPractice() {
     if (!classroom) return;
-    const overview = await practiceApi.get(classroom.id);
+    const [overview, exams] = await Promise.all([
+      practiceApi.get(classroom.id),
+      practiceApi.listMockExams(classroom.id),
+    ]);
+    const attemptEntries = await Promise.all(
+      exams.map(async (exam) => {
+        try {
+          const attempts = await practiceApi.listMockExamAttempts(classroom.id, exam.id);
+          return [exam.id, attempts[0]] as const;
+        } catch {
+          return [exam.id, undefined] as const;
+        }
+      }),
+    );
     setPractice(overview);
+    setMockExams(exams);
+    setMockAttempts(
+      Object.fromEntries(attemptEntries.filter((entry) => entry[1] != null)) as Record<number, MockExamAttempt>,
+    );
     if (!overview.flashcard_decks.some((deck) => deck.id === selectedFlashcardDeckId)) {
       setSelectedFlashcardDeckId(overview.flashcard_decks[0]?.id ?? "");
+    }
+  }
+
+  const activeMockExam = useMemo(
+    () => mockExams.find((exam) => exam.id === activeMockExamId) ?? null,
+    [mockExams, activeMockExamId],
+  );
+
+  function handleClassroomChange(nextId: number) {
+    setClassroomId(nextId);
+    localStorage.setItem("astra_practice_classroom_id", String(nextId));
+  }
+
+  async function handleMockExamSubmit(answers: Record<string, string>) {
+    if (!classroom || !activeMockExam) return;
+    setSubmitState({ kind: "mock", loading: true });
+    try {
+      const attempt = await practiceApi.submitMockExam(classroom.id, activeMockExam.id, answers);
+      setMockExamResult(attempt);
+      setMockAttempts((prev) => ({ ...prev, [activeMockExam.id]: attempt }));
+      await refreshPractice();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit mock exam");
+    } finally {
+      setSubmitState(null);
     }
   }
 
@@ -761,21 +1340,42 @@ export function PracticePage() {
         title="Practise"
         subtitle={`Generated from ${classroom.name} classroom material so your revision stays within syllabus and shared document context.`}
         action={
-          <SecondaryButton
-            onClick={() => {
-              if (practice?.quizzes.length) {
-                setSection("quizzes");
-                setActiveQuizChapter(practice.quizzes[0].chapter_number);
-              } else if (practice?.flashcard_decks.length) {
-                setSection("flashcards");
-                setSelectedFlashcardDeckId(practice.flashcard_decks[0].id);
-              } else {
-                setSection("assessments");
-              }
-            }}
-          >
-            Continue latest
-          </SecondaryButton>
+          <div className="flex flex-wrap items-center gap-2">
+            {classrooms.length > 1 ? (
+              <label className="flex items-center gap-2 text-sm text-[#44474e]">
+                <span className="whitespace-nowrap font-semibold">Classroom</span>
+                <select
+                  className="min-w-[200px] rounded-md border border-[#c5c6cf] bg-white px-3 py-2 text-sm text-[#191c1d] outline-none focus:border-[#031635] focus:ring-1 focus:ring-[#031635]"
+                  value={classroom.id}
+                  onChange={(event) => handleClassroomChange(Number(event.target.value))}
+                >
+                  {classrooms.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <SecondaryButton
+              onClick={() => {
+                if (mockExams.length) {
+                  setSection("assessments");
+                  setAssessmentSection("subject");
+                } else if (practice?.quizzes.length) {
+                  setSection("quizzes");
+                  setActiveQuizChapter(practice.quizzes[0].chapter_number);
+                } else if (practice?.flashcard_decks.length) {
+                  setSection("flashcards");
+                  setSelectedFlashcardDeckId(practice.flashcard_decks[0].id);
+                } else {
+                  setSection("assessments");
+                }
+              }}
+            >
+              Continue latest
+            </SecondaryButton>
+          </div>
         }
       />
 
@@ -868,7 +1468,9 @@ export function PracticePage() {
             <div>
               <h3 className="font-display text-lg font-bold text-[#031635]">Assessment tracks</h3>
               <p className="text-sm text-[#44474e]">
-                Topic assessments stay locked until your class teacher opens them. Subject assessments follow the same classroom-wide release model.
+                Topic assessments stay locked until your class teacher opens them. Subject assessments include mixed
+                rounds and published mock exams for this classroom
+                {mockExams.length ? ` (${mockExams.length} mock exam${mockExams.length === 1 ? "" : "s"} ready)` : ""}.
               </p>
             </div>
             <div className="w-full lg:max-w-[720px]">
@@ -957,16 +1559,40 @@ export function PracticePage() {
       {section === "assessments" ? (
         <div className="space-y-6">
           <AnimatedSwitchContent motionKey={`practice-assessments-${assessmentSection}`}>
-            <AssessmentGrid
-              items={assessmentItems}
-              onOpen={(assessment) => {
-                setActiveAssessment({
-                  kind: assessment.assessment_kind,
-                  targetKey: assessment.target_key,
-                });
-                setActiveQuizChapter(null);
-              }}
-            />
+            <div className="space-y-8">
+              {assessmentSection === "subject" ? (
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-[#031635]">Mock Exams</h3>
+                    <p className="text-sm text-[#44474e]">
+                      Published classroom mock papers with timed attempt, instant MCQ scoring, and teacher theory review.
+                    </p>
+                  </div>
+                  <MockExamGrid
+                    items={mockExams}
+                    attemptsByExam={mockAttempts}
+                    onOpen={(exam) => {
+                      setActiveMockExamId(exam.id);
+                      setMockExamResult(mockAttempts[exam.id] ?? null);
+                      setActiveAssessment(null);
+                      setActiveQuizChapter(null);
+                    }}
+                  />
+                </div>
+              ) : null}
+              <AssessmentGrid
+                items={assessmentItems}
+                onOpen={(assessment) => {
+                  setActiveAssessment({
+                    kind: assessment.assessment_kind,
+                    targetKey: assessment.target_key,
+                  });
+                  setActiveQuizChapter(null);
+                  setActiveMockExamId(null);
+                  setMockExamResult(null);
+                }}
+              />
+            </div>
           </AnimatedSwitchContent>
           {activeAssessmentItem && !activeAssessmentItem.is_locked ? (
             <QuestionRunner
@@ -981,6 +1607,20 @@ export function PracticePage() {
             />
           ) : null}
         </div>
+      ) : null}
+
+      {activeMockExam ? (
+        <MockExamRunner
+          exam={activeMockExam}
+          result={mockExamResult}
+          isSubmitting={submitState?.kind === "mock" && submitState.loading}
+          onSubmit={handleMockExamSubmit}
+          onRetake={() => setMockExamResult(null)}
+          onClose={() => {
+            setActiveMockExamId(null);
+            setMockExamResult(null);
+          }}
+        />
       ) : null}
     </div>
   );
