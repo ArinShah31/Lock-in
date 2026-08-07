@@ -8,7 +8,7 @@ def get_client():
     return genai.Client(api_key=api_key)
 
 
-def generate_answer(prompt: str) -> ChatResponse:
+def generate_answer(prompt: str) -> ChatResponse | None:
     client = get_client()
     response = client.models.generate_content(
         model=settings.gemini_chat_model,
@@ -19,4 +19,15 @@ def generate_answer(prompt: str) -> ChatResponse:
         },
     )
 
-    return response.parsed
+    parsed = response.parsed
+    if parsed is not None:
+        return parsed
+
+    # Fallback if the SDK returns raw JSON text without parsed schema.
+    raw = (getattr(response, "text", None) or "").strip()
+    if not raw:
+        return None
+    try:
+        return ChatResponse.model_validate_json(raw)
+    except Exception:
+        return None
