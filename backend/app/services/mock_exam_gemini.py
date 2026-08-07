@@ -95,7 +95,7 @@ def _model_candidates() -> list[str]:
         "gemini-3.5-flash-lite",
         "gemini-flash-lite-latest",
         "gemini-2.0-flash",
-        "gemini-2.5-flash",
+        "gemini-3.6-flash",
         "gemini-3.5-flash",
     ]:
         cleaned = (model or "").strip()
