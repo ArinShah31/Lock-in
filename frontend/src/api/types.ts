@@ -296,6 +296,68 @@ export type PracticeQuestion = {
   options: string[];
 };
 
+export type MockExamQuestion = {
+  id: string;
+  question_type: string;
+  question: string;
+  marks: number;
+  options: string[];
+  correct_answer?: string | null;
+  expected_answer?: string | null;
+  section_title: string;
+};
+
+export type MockExamSection = {
+  id: string;
+  title: string;
+  instructions: string;
+  question_type: string;
+  marks_per_question: number;
+  question_count: number;
+  required_count?: number | null;
+  questions: MockExamQuestion[];
+};
+
+export type MockExamPattern = {
+  title: string;
+  total_marks: number;
+  duration_minutes: number;
+  instructions: string;
+  sections: MockExamSection[];
+  pyq_file_name?: string | null;
+  pyq_file_path?: string | null;
+};
+
+export type MockExam = {
+  id: number;
+  classroom_id: number;
+  title: string;
+  total_marks: number;
+  duration_minutes: number;
+  status: string;
+  pyq_file_name?: string | null;
+  pattern: MockExamPattern | Record<string, unknown>;
+  paper: { instructions?: string; sections?: MockExamSection[] };
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MockExamAttempt = {
+  id: number;
+  mock_exam_id: number;
+  classroom_id: number;
+  student_id: number;
+  answers: Record<string, string>;
+  mcq_score: number | null;
+  theory_score: number | null;
+  total_score: number | null;
+  theory_status: string;
+  feedback: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+};
+
 export type PracticeQuiz = {
   chapter_number: number;
   title: string;

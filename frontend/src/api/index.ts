@@ -11,6 +11,9 @@ import type {
   CourseBuildJob,
   Department,
   Institution,
+  MockExam,
+  MockExamAttempt,
+  MockExamPattern,
   StudentAssignmentFeedItem,
   PracticeAttempt,
   PracticeOverview,
@@ -239,6 +242,57 @@ export const courseBuilderApi = {
 
 export const practiceApi = {
   get: (classroomId: number) => api<PracticeOverview>(`/classrooms/${classroomId}/practice`),
+  extractMockPattern: (classroomId: number, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiForm<MockExamPattern>(
+      `/classrooms/${classroomId}/practice/mock-exams/pattern`,
+      formData,
+    );
+  },
+  createMockExam: (
+    classroomId: number,
+    body: {
+      title: string;
+      total_marks: number;
+      duration_minutes: number;
+      pattern: Record<string, unknown>;
+      pyq_file_name?: string | null;
+      pyq_file_path?: string | null;
+    },
+  ) =>
+    api<MockExam>(`/classrooms/${classroomId}/practice/mock-exams`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listMockExams: (classroomId: number) =>
+    api<MockExam[]>(`/classrooms/${classroomId}/practice/mock-exams`),
+  publishMockExam: (classroomId: number, examId: number, is_published: boolean) =>
+    api<MockExam>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/publish`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_published }),
+    }),
+  regenerateMockExam: (classroomId: number, examId: number) =>
+    api<MockExam>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/regenerate`, {
+      method: "POST",
+    }),
+  submitMockExam: (classroomId: number, examId: number, answers: Record<string, string>) =>
+    api<MockExamAttempt>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/attempt`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
+  listMockExamAttempts: (classroomId: number, examId: number) =>
+    api<MockExamAttempt[]>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/attempts`),
+  reviewMockExamAttempt: (
+    classroomId: number,
+    examId: number,
+    attemptId: number,
+    body: { theory_score: number; feedback?: string | null },
+  ) =>
+    api<MockExamAttempt>(`/classrooms/${classroomId}/practice/mock-exams/${examId}/attempts/${attemptId}/review`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   submitQuiz: (classroomId: number, chapterNumber: number, selected_answers: string[]) =>
     api<PracticeAttempt>(`/classrooms/${classroomId}/practice/quizzes/${chapterNumber}/attempt`, {
       method: "POST",

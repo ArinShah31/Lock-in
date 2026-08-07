@@ -30,6 +30,8 @@ from app.models import (  # noqa: F401
     CourseBuildJob,
     CourseChapterAttempt,
     CourseChapterLock,
+    MockExam,
+    MockExamAttempt,
     PracticeAssessmentLock,
     Department,
     Institution,

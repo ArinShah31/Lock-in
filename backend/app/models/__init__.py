@@ -11,6 +11,8 @@ from app.models.classroom_course import (
     CourseBuildJob,
     CourseChapterAttempt,
     CourseChapterLock,
+    MockExam,
+    MockExamAttempt,
     PracticeAssessmentLock,
 )
 from app.models.content import ClassroomContent, ContentType
@@ -38,4 +40,6 @@ __all__ = [
     "CourseChapterLock",
     "CourseChapterAttempt",
     "PracticeAssessmentLock",
+    "MockExam",
+    "MockExamAttempt",
 ]

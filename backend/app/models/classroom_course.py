@@ -142,3 +142,52 @@ class PracticeAssessmentLock(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+
+class MockExam(Base):
+    __tablename__ = "mock_exams"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), nullable=False, index=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="Mock Exam")
+    total_marks: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
+    pyq_file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pyq_file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    pattern: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    paper: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class MockExamAttempt(Base):
+    __tablename__ = "mock_exam_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    mock_exam_id: Mapped[int] = mapped_column(ForeignKey("mock_exams.id"), nullable=False, index=True)
+    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    answers: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    mcq_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    theory_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    theory_status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING_REVIEW")
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
