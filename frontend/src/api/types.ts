@@ -61,6 +61,47 @@ export type Classroom = {
 
 export type MembershipStatus = "PENDING" | "APPROVED" | "REJECTED";
 
+export type AnalyticsShareCode = {
+  classroom_id: number;
+  analytics_share_code: string;
+};
+
+export type AnalyticsGrant = {
+  id: number;
+  viewer_classroom_id: number;
+  source_classroom_id: number;
+  granted_by_user_id: number;
+  is_active: boolean;
+  created_at: string;
+  viewer_classroom_name?: string | null;
+  viewer_classroom_code?: string | null;
+  source_classroom_name?: string | null;
+  source_classroom_code?: string | null;
+  source_teacher_name?: string | null;
+};
+
+export type LinkedStudentAnalytics = {
+  student_id: number;
+  full_name: string;
+  email: string;
+  assignments_submitted: number;
+  assignments_total: number;
+  average_score_pct: number | null;
+  last_submission_at: string | null;
+};
+
+export type SourceAnalyticsSummary = {
+  source_classroom_id: number;
+  source_classroom_name: string;
+  source_classroom_code: string;
+  source_teacher_name: string | null;
+  student_count: number;
+  assignment_count: number;
+  course_published: boolean;
+  average_completion_pct: number | null;
+  students: LinkedStudentAnalytics[];
+};
+
 export type ClassroomStudent = {
   id: number;
   classroom_id: number;

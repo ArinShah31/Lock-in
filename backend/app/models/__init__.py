@@ -1,6 +1,7 @@
 from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.classroom import (
     Classroom,
+    ClassroomAnalyticsGrant,
     ClassroomAnnouncement,
     ClassroomStudent,
     ClassroomTeacher,
@@ -25,6 +26,7 @@ __all__ = [
     "Institution",
     "Department",
     "Classroom",
+    "ClassroomAnalyticsGrant",
     "ClassroomStudent",
     "ClassroomTeacher",
     "ClassroomAnnouncement",

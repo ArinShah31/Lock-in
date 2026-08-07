@@ -80,6 +80,12 @@ export function ClassroomLayout() {
         <NavLink to={`/classrooms/${id}/assignments`} className={tabClass}>
           Assignments
         </NavLink>
+
+        {user && user.id === c.class_teacher_id ? (
+          <NavLink to={`/classrooms/${id}/analytics`} className={tabClass}>
+            Analytics
+          </NavLink>
+        ) : null}
       </div>
 
       <Panel>

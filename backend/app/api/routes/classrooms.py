@@ -6,16 +6,22 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_institution_access, get_current_user, require_roles
 from app.core.database import get_db
+from app.models.assignment import Assignment, AssignmentSubmission
 from app.models.classroom import (
     Classroom,
+    ClassroomAnalyticsGrant,
     ClassroomAnnouncement,
     ClassroomStudent,
     ClassroomTeacher,
     MembershipStatus,
 )
+from app.models.classroom_course import ClassroomCourse
 from app.models.institution import Department, Institution
 from app.models.user import User, UserRole
 from app.schemas.classroom import (
+    AnalyticsGrantCreate,
+    AnalyticsGrantOut,
+    AnalyticsShareCodeOut,
     AnnouncementCreate,
     AnnouncementOut,
     AssignTeacherRequest,
@@ -25,6 +31,8 @@ from app.schemas.classroom import (
     ClassroomTeacherOut,
     ClassroomUpdate,
     JoinClassroomRequest,
+    LinkedStudentAnalyticsOut,
+    SourceAnalyticsSummaryOut,
 )
 
 router = APIRouter(prefix="/classrooms", tags=["classrooms"])
@@ -710,4 +718,337 @@ def list_announcements(
         )
         .order_by(ClassroomAnnouncement.id.desc())
         .all()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Analytics sharing (view-only grants between classrooms).
+#
+# HARD BOUNDARY: a grant only authorizes the analytics endpoints below.
+# It must never be consulted by _user_can_view_classroom /
+# _user_can_manage_classroom or any teaching route (course, assignments,
+# documents, joins, roster management).
+# ---------------------------------------------------------------------------
+
+ANALYTICS_CODE_LENGTH = 8
+
+
+def _generate_analytics_share_code(db: Session) -> str:
+    for _ in range(20):
+        code = "".join(secrets.choice(JOIN_CODE_ALPHABET) for _ in range(ANALYTICS_CODE_LENGTH))
+        exists = db.query(Classroom).filter(Classroom.analytics_share_code == code).first()
+        if not exists:
+            return code
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Could not generate analytics share code",
+    )
+
+
+def _ensure_share_code(db: Session, classroom: Classroom) -> str:
+    if not classroom.analytics_share_code:
+        classroom.analytics_share_code = _generate_analytics_share_code(db)
+        db.commit()
+        db.refresh(classroom)
+    return classroom.analytics_share_code
+
+
+def _grant_out(db: Session, grant: ClassroomAnalyticsGrant) -> AnalyticsGrantOut:
+    viewer = db.query(Classroom).filter(Classroom.id == grant.viewer_classroom_id).first()
+    source = db.query(Classroom).filter(Classroom.id == grant.source_classroom_id).first()
+    source_teacher = (
+        db.query(User).filter(User.id == source.class_teacher_id).first() if source else None
+    )
+    return AnalyticsGrantOut(
+        id=grant.id,
+        viewer_classroom_id=grant.viewer_classroom_id,
+        source_classroom_id=grant.source_classroom_id,
+        granted_by_user_id=grant.granted_by_user_id,
+        is_active=grant.is_active,
+        created_at=grant.created_at,
+        viewer_classroom_name=viewer.name if viewer else None,
+        viewer_classroom_code=viewer.code if viewer else None,
+        source_classroom_name=source.name if source else None,
+        source_classroom_code=source.code if source else None,
+        source_teacher_name=source_teacher.full_name if source_teacher else None,
+    )
+
+
+@router.get("/{classroom_id}/analytics-share-code", response_model=AnalyticsShareCodeOut)
+def get_analytics_share_code(
+    classroom_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, classroom)
+    return AnalyticsShareCodeOut(
+        classroom_id=classroom.id,
+        analytics_share_code=_ensure_share_code(db, classroom),
+    )
+
+
+@router.post("/{classroom_id}/analytics-share-code/rotate", response_model=AnalyticsShareCodeOut)
+def rotate_analytics_share_code(
+    classroom_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, classroom)
+    classroom.analytics_share_code = _generate_analytics_share_code(db)
+    db.commit()
+    db.refresh(classroom)
+    return AnalyticsShareCodeOut(
+        classroom_id=classroom.id,
+        analytics_share_code=classroom.analytics_share_code,
+    )
+
+
+@router.post(
+    "/{classroom_id}/analytics-grants",
+    response_model=AnalyticsGrantOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_analytics_grant(
+    classroom_id: int,
+    payload: AnalyticsGrantCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Source classroom owner pastes another classroom's share code.
+
+    Grants that (viewer) classroom view-only analytics of this (source) room.
+    """
+    source = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, source)
+
+    code = payload.viewer_code.strip().upper()
+    viewer = (
+        db.query(Classroom)
+        .filter(Classroom.analytics_share_code == code, Classroom.is_active.is_(True))
+        .first()
+    )
+    if not viewer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid analytics share code")
+    if viewer.id == source.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot share a classroom's analytics with itself",
+        )
+    if viewer.institution_id != source.institution_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both classrooms must belong to the same institution",
+        )
+
+    existing = (
+        db.query(ClassroomAnalyticsGrant)
+        .filter(
+            ClassroomAnalyticsGrant.viewer_classroom_id == viewer.id,
+            ClassroomAnalyticsGrant.source_classroom_id == source.id,
+        )
+        .first()
+    )
+    if existing:
+        if existing.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Analytics already shared with that classroom",
+            )
+        existing.is_active = True
+        existing.granted_by_user_id = current_user.id
+        db.commit()
+        db.refresh(existing)
+        return _grant_out(db, existing)
+
+    grant = ClassroomAnalyticsGrant(
+        viewer_classroom_id=viewer.id,
+        source_classroom_id=source.id,
+        granted_by_user_id=current_user.id,
+    )
+    db.add(grant)
+    db.commit()
+    db.refresh(grant)
+    return _grant_out(db, grant)
+
+
+@router.get("/{classroom_id}/analytics-grants", response_model=list[AnalyticsGrantOut])
+def list_inbound_analytics_grants(
+    classroom_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sources this classroom (as viewer) has been granted analytics access to."""
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, classroom)
+    grants = (
+        db.query(ClassroomAnalyticsGrant)
+        .filter(
+            ClassroomAnalyticsGrant.viewer_classroom_id == classroom_id,
+            ClassroomAnalyticsGrant.is_active.is_(True),
+        )
+        .order_by(ClassroomAnalyticsGrant.id)
+        .all()
+    )
+    return [_grant_out(db, g) for g in grants]
+
+
+@router.get("/{classroom_id}/analytics-grants/outbound", response_model=list[AnalyticsGrantOut])
+def list_outbound_analytics_grants(
+    classroom_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Viewer classrooms this classroom (as source) shares analytics with."""
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, classroom)
+    grants = (
+        db.query(ClassroomAnalyticsGrant)
+        .filter(
+            ClassroomAnalyticsGrant.source_classroom_id == classroom_id,
+            ClassroomAnalyticsGrant.is_active.is_(True),
+        )
+        .order_by(ClassroomAnalyticsGrant.id)
+        .all()
+    )
+    return [_grant_out(db, g) for g in grants]
+
+
+@router.delete("/{classroom_id}/analytics-grants/{grant_id}", response_model=AnalyticsGrantOut)
+def revoke_analytics_grant(
+    classroom_id: int,
+    grant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Either side (viewer or source owner) can remove the grant."""
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, classroom)
+
+    grant = (
+        db.query(ClassroomAnalyticsGrant)
+        .filter(
+            ClassroomAnalyticsGrant.id == grant_id,
+            ClassroomAnalyticsGrant.is_active.is_(True),
+            (
+                (ClassroomAnalyticsGrant.viewer_classroom_id == classroom_id)
+                | (ClassroomAnalyticsGrant.source_classroom_id == classroom_id)
+            ),
+        )
+        .first()
+    )
+    if not grant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grant not found")
+
+    grant.is_active = False
+    db.commit()
+    db.refresh(grant)
+    return _grant_out(db, grant)
+
+
+@router.get(
+    "/{classroom_id}/analytics/sources/{source_id}",
+    response_model=SourceAnalyticsSummaryOut,
+)
+def get_source_analytics_summary(
+    classroom_id: int,
+    source_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """View-only analytics of a source classroom, authorized purely by grant."""
+    viewer = _get_classroom_or_404(db, classroom_id)
+    _ensure_manage_access(current_user, viewer)
+
+    grant = (
+        db.query(ClassroomAnalyticsGrant)
+        .filter(
+            ClassroomAnalyticsGrant.viewer_classroom_id == classroom_id,
+            ClassroomAnalyticsGrant.source_classroom_id == source_id,
+            ClassroomAnalyticsGrant.is_active.is_(True),
+        )
+        .first()
+    )
+    if not grant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No analytics grant for that classroom",
+        )
+
+    source = _get_classroom_or_404(db, source_id)
+    source_teacher = db.query(User).filter(User.id == source.class_teacher_id).first()
+
+    memberships = (
+        db.query(ClassroomStudent, User)
+        .join(User, User.id == ClassroomStudent.student_id)
+        .filter(
+            ClassroomStudent.classroom_id == source_id,
+            ClassroomStudent.is_active.is_(True),
+            ClassroomStudent.status == MembershipStatus.APPROVED,
+        )
+        .order_by(User.full_name)
+        .all()
+    )
+
+    assignments = (
+        db.query(Assignment)
+        .filter(Assignment.classroom_id == source_id, Assignment.is_active.is_(True))
+        .all()
+    )
+    assignment_ids = [a.id for a in assignments]
+    assignment_count = len(assignment_ids)
+
+    submissions_by_student: dict[int, list[AssignmentSubmission]] = {}
+    if assignment_ids:
+        submissions = (
+            db.query(AssignmentSubmission)
+            .filter(AssignmentSubmission.assignment_id.in_(assignment_ids))
+            .all()
+        )
+        for sub in submissions:
+            submissions_by_student.setdefault(sub.student_id, []).append(sub)
+
+    max_marks_by_assignment = {a.id: a.max_marks for a in assignments}
+
+    students: list[LinkedStudentAnalyticsOut] = []
+    completion_values: list[float] = []
+    for membership, student in memberships:
+        subs = submissions_by_student.get(student.id, [])
+        submitted = len(subs)
+        score_pcts = [
+            (sub.marks / max_marks_by_assignment[sub.assignment_id]) * 100
+            for sub in subs
+            if sub.marks is not None and max_marks_by_assignment.get(sub.assignment_id)
+        ]
+        avg_score = round(sum(score_pcts) / len(score_pcts), 1) if score_pcts else None
+        last_sub = max((s.submitted_at for s in subs), default=None)
+        if assignment_count:
+            completion_values.append((submitted / assignment_count) * 100)
+        students.append(
+            LinkedStudentAnalyticsOut(
+                student_id=student.id,
+                full_name=student.full_name,
+                email=student.email,
+                assignments_submitted=submitted,
+                assignments_total=assignment_count,
+                average_score_pct=avg_score,
+                last_submission_at=last_sub,
+            )
+        )
+
+    course = db.query(ClassroomCourse).filter(ClassroomCourse.classroom_id == source_id).first()
+
+    return SourceAnalyticsSummaryOut(
+        source_classroom_id=source.id,
+        source_classroom_name=source.name,
+        source_classroom_code=source.code,
+        source_teacher_name=source_teacher.full_name if source_teacher else None,
+        student_count=len(students),
+        assignment_count=assignment_count,
+        course_published=bool(course and course.is_published),
+        average_completion_pct=(
+            round(sum(completion_values) / len(completion_values), 1) if completion_values else None
+        ),
+        students=students,
     )

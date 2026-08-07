@@ -76,6 +76,53 @@ class ClassroomTeacherOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AnalyticsShareCodeOut(BaseModel):
+    classroom_id: int
+    analytics_share_code: str
+
+
+class AnalyticsGrantCreate(BaseModel):
+    viewer_code: str = Field(min_length=6, max_length=12)
+
+
+class AnalyticsGrantOut(BaseModel):
+    id: int
+    viewer_classroom_id: int
+    source_classroom_id: int
+    granted_by_user_id: int
+    is_active: bool
+    created_at: datetime
+    viewer_classroom_name: str | None = None
+    viewer_classroom_code: str | None = None
+    source_classroom_name: str | None = None
+    source_classroom_code: str | None = None
+    source_teacher_name: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LinkedStudentAnalyticsOut(BaseModel):
+    student_id: int
+    full_name: str
+    email: str
+    assignments_submitted: int
+    assignments_total: int
+    average_score_pct: float | None = None
+    last_submission_at: datetime | None = None
+
+
+class SourceAnalyticsSummaryOut(BaseModel):
+    source_classroom_id: int
+    source_classroom_name: str
+    source_classroom_code: str
+    source_teacher_name: str | None = None
+    student_count: int
+    assignment_count: int
+    course_published: bool
+    average_completion_pct: float | None = None
+    students: list[LinkedStudentAnalyticsOut]
+
+
 class AnnouncementCreate(BaseModel):
     title: str = Field(min_length=2, max_length=200)
     body: str = Field(min_length=1)

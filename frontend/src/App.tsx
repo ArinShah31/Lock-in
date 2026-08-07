@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { ClassroomAnalyticsTab } from "./pages/ClassroomAnalyticsTab";
 import { ClassroomAssignmentsTab } from "./pages/ClassroomAssignmentsTab";
 import { ClassroomCourseBuilderTab } from "./pages/ClassroomCourseBuilderTab";
 import { ClassroomDashboardTab } from "./pages/ClassroomDashboardTab";
@@ -50,6 +51,7 @@ export default function App() {
                   <Route path="course-builder" element={<ClassroomCourseBuilderTab />} />
                   <Route path="documents" element={<ClassroomDocumentsTab />} />
                   <Route path="assignments" element={<ClassroomAssignmentsTab />} />
+                  <Route path="analytics" element={<ClassroomAnalyticsTab />} />
                 </Route>
                 <Route path="/classrooms" element={<ClassroomsPage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
