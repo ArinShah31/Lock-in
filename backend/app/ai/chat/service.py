@@ -5,6 +5,11 @@ from app.ai.llm.models import ChatResponse
 from app.ai.retrieval.document_fallback import fallback_context_chunks
 from app.ai.retrieval.service import search_classroom
 
+def _clean_markdown(text: str | None) -> str:
+    if not text:
+        return ""
+    return text.replace("\\n", "\n").strip()
+
 
 def _empty_response(message: str) -> ChatResponse:
     return ChatResponse(
@@ -49,17 +54,55 @@ def answer_classroom_question(
     context = "\n\n---\n\n".join(context_parts)
 
     prompt = f"""
-You are ASTRA AI, a classroom document assistant.
+You are ASTRA AI, an academic tutor.
 
-You MUST answer ONLY using the Classroom Documents excerpt below.
-Do NOT use general knowledge, training data, or invented facts.
-If the excerpt does not contain the answer, say clearly that it is not in the uploaded documents.
+Answer the student's question using the Classroom Documents first.
 
-Return a JSON object matching this schema:
-- document_answer: answer grounded ONLY in the excerpt. Quote or paraphrase the docs. If missing, say it is not in the uploaded documents.
-- additional_explanation: ALWAYS leave this as an empty string. Do not add outside knowledge.
-- used_document: true only if document_answer is supported by the excerpt.
-- used_general_knowledge: ALWAYS false.
+If the uploaded documents fully answer the question:
+
+- Put the document-based answer in document_answer.
+- Then provide a richer educational explanation in additional_explanation.
+
+The additional explanation should:
+- Help the student understand the concept better.
+- Use your own academic knowledge.
+- Never contradict the uploaded documents.
+- Clearly expand on the topic instead of repeating it.
+
+Formatting rules:
+
+For BOTH fields:
+- Use proper Markdown.
+- Use headings.
+- Use bullet points.
+- Use numbered lists where appropriate.
+- Use **bold** text for important terms.
+- Use real line breaks.
+- Never output "\n".
+
+Return ONLY valid JSON with these fields:
+
+document_answer
+additional_explanation
+used_document
+used_general_knowledge
+
+Set:
+
+- used_document=true if document_answer comes from the uploaded documents.
+- used_general_knowledge=true if additional_explanation contains information beyond the uploaded documents.
+
+---
+
+## Classroom Documents
+
+{context}
+
+---
+
+## Student Question
+
+{question}
 
 -------------------------
 Classroom Documents
@@ -76,10 +119,10 @@ Student Question
             "I found classroom documents, but could not form an answer just now. Please try again."
         )
 
-    # Never surface invented "extra" knowledge to the student UI.
     return ChatResponse(
-        document_answer=(result.document_answer or "").strip(),
-        additional_explanation="",
-        used_document=bool(result.used_document) and bool((result.document_answer or "").strip()),
-        used_general_knowledge=False,
+        document_answer=_clean_markdown(result.document_answer),
+        additional_explanation=_clean_markdown(result.additional_explanation),
+        used_document=bool(result.used_document)
+        and bool(_clean_markdown(result.document_answer)),
+        used_general_knowledge=bool(result.used_general_knowledge),
     )
