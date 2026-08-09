@@ -489,56 +489,97 @@ export function ClassroomDocumentsTab() {
           })}
 
         {/* Edit Modal */}
-        {editingDoc && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="w-full max-w-lg rounded-xl border border-line bg-slate-900 p-6 shadow-xl">
-              <h2 className="mb-6 text-xl font-semibold">Edit Document</h2>
+        {editingDoc &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm"
+              onClick={() => setEditingDoc(null)}
+            >
+              <div
+                className="w-full max-w-lg rounded-2xl border border-line bg-panel p-6 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent">
+                      <Pencil className="h-5 w-5" />
+                    </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Title
-                  </label>
+                    <div>
+                      <h2 className="text-xl font-semibold text-paper">
+                        Edit document
+                      </h2>
 
-                  <input
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full rounded-lg border border-line bg-slate-800 px-3 py-2"
-                  />
+                      <p className="mt-0.5 text-sm text-mist">
+                        Update the document title or description.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditingDoc(null)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-lg text-mist transition hover:bg-panel-low hover:text-paper"
+                    title="Close"
+                  >
+                    ×
+                  </button>
                 </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Description
-                  </label>
+                {/* Form */}
+                <div className="mt-6 space-y-5">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-paper">
+                      Title
+                    </label>
 
-                  <textarea
-                    rows={4}
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full rounded-lg border border-line bg-slate-800 px-3 py-2"
-                  />
+                    <input
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="w-full rounded-xl border border-line bg-panel-low px-3.5 py-3 text-sm text-paper outline-none transition placeholder:text-mist focus:border-accent focus:ring-2 focus:ring-accent/10"
+                      placeholder="Enter document title"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-paper">
+                      Description
+                    </label>
+
+                    <textarea
+                      rows={5}
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      className="w-full resize-none rounded-xl border border-line bg-panel-low px-3.5 py-3 text-sm leading-5 text-paper outline-none transition placeholder:text-mist focus:border-accent focus:ring-2 focus:ring-accent/10"
+                      placeholder="Add a short description for this document..."
+                    />
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="mt-7 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingDoc(null)}
+                    className="rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-paper transition hover:bg-panel-low"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateMutation.mutate()}
+                    disabled={updateMutation.isPending}
+                    className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {updateMutation.isPending ? "Saving..." : "Save changes"}
+                  </button>
                 </div>
               </div>
-
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setEditingDoc(null)}
-                  className="rounded-lg border border-line px-4 py-2"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  onClick={() => updateMutation.mutate()}
-                  className="rounded-lg bg-accent px-4 py-2 text-white hover:opacity-90"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+            </div>,
+            document.body,
+          )}
       </div>
       {deletingDoc &&
         createPortal(
@@ -582,12 +623,16 @@ export function ClassroomDocumentsTab() {
                 <button
                   type="button"
                   onClick={() => {
-                    deleteMutation.mutate(deletingDoc.id);
-                    setDeletingDoc(null);
+                    deleteMutation.mutate(deletingDoc.id, {
+                      onSuccess: () => {
+                        setDeletingDoc(null);
+                      },
+                    });
                   }}
-                  className="rounded-lg bg-red-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-600"
+                  disabled={deleteMutation.isPending}
+                  className="rounded-lg bg-red-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Delete document
+                  {deleteMutation.isPending ? "Deleting..." : "Delete document"}
                 </button>
               </div>
             </div>
