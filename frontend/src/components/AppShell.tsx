@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { classroomsApi, codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { BrandLogo } from "./BrandLogo";
+import { NotificationBell } from "./NotificationBell";
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -349,6 +350,7 @@ export function AppShell() {
           <span className="font-display font-bold text-[#031635] text-lg">ASTRA</span>
         </div>
         <div className="flex items-center gap-3">
+          <NotificationBell compact />
           <span className="text-xs font-semibold px-2 py-1 bg-[#e8edf5] text-[#031635] rounded-full">
             {user ? roleLabel[user.role] : ""}
           </span>
@@ -421,13 +423,7 @@ export function AppShell() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              title="Notifications (coming soon)"
-              className="flex size-9 items-center justify-center rounded-full border border-[#e1e3e4] bg-[#f8f9fa] text-[#44474e] transition hover:bg-white hover:text-[#031635]"
-            >
-              <span className="material-symbols-outlined text-xl">notifications</span>
-            </button>
+            <NotificationBell />
             <button
               type="button"
               title={user ? `${user.full_name} (profile coming soon)` : "Profile (coming soon)"}

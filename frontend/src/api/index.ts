@@ -87,6 +87,7 @@ export const classroomsApi = {
       body: JSON.stringify({ join_code }),
     }),
   myJoinRequests: () => api<ClassroomStudent[]>("/classrooms/my-join-requests"),
+  myMemberships: () => api<ClassroomStudent[]>("/classrooms/my-memberships"),
   listJoinRequests: (id: number) => api<ClassroomStudent[]>(`/classrooms/${id}/join-requests`),
   approveJoin: (id: number, studentId: number) =>
     api<ClassroomStudent>(`/classrooms/${id}/join-requests/${studentId}/approve`, { method: "POST" }),

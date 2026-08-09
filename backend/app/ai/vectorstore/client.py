@@ -1,15 +1,32 @@
+from pathlib import Path
+
 from qdrant_client import QdrantClient
+
 from app.core.config import settings
 
+_client: QdrantClient | None = None
 
-def get_qdrant_client():
+
+def get_qdrant_client() -> QdrantClient | None:
+    global _client
+    if _client is not None:
+        return _client
+
     try:
-        return QdrantClient(
-            host=settings.qdrant_host,
-            port=settings.qdrant_port,
-        )
+        path = (settings.qdrant_path or "").strip()
+        if path:
+            storage = Path(path)
+            storage.mkdir(parents=True, exist_ok=True)
+            _client = QdrantClient(path=str(storage.resolve()))
+        else:
+            _client = QdrantClient(
+                host=settings.qdrant_host,
+                port=settings.qdrant_port,
+            )
+        return _client
     except Exception as e:
         print("Qdrant connection warning:", e)
+        _client = None
         return None
 
 
