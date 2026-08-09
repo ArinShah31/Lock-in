@@ -110,6 +110,7 @@ export type ClassroomStudent = {
   status: MembershipStatus;
   is_active: boolean;
   joined_at: string;
+  decided_at?: string | null;
   student_full_name?: string | null;
   student_email?: string | null;
   classroom_name?: string | null;

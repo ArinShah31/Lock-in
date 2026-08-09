@@ -37,6 +37,12 @@ frontend/dist/
 # Uploaded files
 backend/uploads/
 
+# Local Qdrant embedded storage
+backend/qdrant_storage/
+backend/qdrant_docker_storage/
+**/qdrant_storage/
+**/qdrant_docker_storage/
+
 # OS
 .DS_Store
 Thumbs.db

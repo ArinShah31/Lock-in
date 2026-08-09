@@ -1,6 +1,9 @@
 export const API_BASE =
   import.meta.env.VITE_API_URL ?? "/api/v1";
 
+/** Prevents auth/UI from hanging forever when the backend accepts TCP but never responds. */
+const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
+
 export class ApiError extends Error {
   status: number;
 
@@ -8,6 +11,20 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+function withTimeoutSignal(signal?: AbortSignal | null): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS);
+  if (!signal) return timeoutSignal;
+  return AbortSignal.any([signal, timeoutSignal]);
+}
+
+function mapFetchError(err: unknown): never {
+  if (err instanceof ApiError) throw err;
+  if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+    throw new ApiError(0, "Request timed out. Is the ASTRA backend running?");
+  }
+  throw err;
 }
 
 function getAccessToken() {
@@ -46,6 +63,7 @@ async function refreshAccessToken(): Promise<boolean> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refresh }),
+      signal: withTimeoutSignal(),
     });
     if (!res.ok) return false;
     const data = (await res.json()) as { access_token: string; refresh_token: string };
@@ -99,18 +117,29 @@ export async function api<T>(
     return headers;
   };
 
-  let response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: buildHeaders(),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: buildHeaders(),
+      signal: withTimeoutSignal(options.signal),
+    });
+  } catch (err) {
+    mapFetchError(err);
+  }
 
   if (!response.ok) {
     const error = await toApiError(response);
     if (await handleUnauthorized(path, auth, error)) {
-      response = await fetch(`${API_BASE}${path}`, {
-        ...options,
-        headers: buildHeaders(),
-      });
+      try {
+        response = await fetch(`${API_BASE}${path}`, {
+          ...options,
+          headers: buildHeaders(),
+          signal: withTimeoutSignal(options.signal),
+        });
+      } catch (err) {
+        mapFetchError(err);
+      }
       if (!response.ok) throw await toApiError(response);
     } else {
       throw error;
@@ -133,20 +162,31 @@ export async function apiForm<T>(
     return headers;
   };
 
-  let response = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers: buildHeaders(),
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: buildHeaders(),
+      body: formData,
+      signal: withTimeoutSignal(),
+    });
+  } catch (err) {
+    mapFetchError(err);
+  }
 
   if (!response.ok) {
     const error = await toApiError(response);
     if (await handleUnauthorized(path, true, error)) {
-      response = await fetch(`${API_BASE}${path}`, {
-        method,
-        headers: buildHeaders(),
-        body: formData,
-      });
+      try {
+        response = await fetch(`${API_BASE}${path}`, {
+          method,
+          headers: buildHeaders(),
+          body: formData,
+          signal: withTimeoutSignal(),
+        });
+      } catch (err) {
+        mapFetchError(err);
+      }
       if (!response.ok) throw await toApiError(response);
     } else {
       throw error;

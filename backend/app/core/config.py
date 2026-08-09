@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_collection: str = "astra_documents"
+    # If set, use embedded on-disk Qdrant (no Docker). Example: ./qdrant_storage
+    qdrant_path: str = ""
 
     # -------------------------
     # Course builder (Groq structure + Gemini notes + YouTube)

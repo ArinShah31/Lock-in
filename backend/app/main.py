@@ -75,6 +75,14 @@ def on_startup():
     if cleared:
         print(f"[course-builder] marked {cleared} orphaned job(s) as FAILED")
 
+    try:
+        from app.ai.vectorstore.service import create_collection
+
+        create_collection()
+        print(f"[qdrant] collection ready: {settings.qdrant_collection}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[qdrant] startup skipped: {exc}")
+
 
 def _ensure_sqlite_columns():
     """Add columns introduced after initial create_all (SQLite has no ALTER via metadata)."""
@@ -102,6 +110,11 @@ def _ensure_sqlite_columns():
                         "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub ON users (google_sub)"
                     )
                 )
+    if "classroom_students" in tables:
+        cols = {c["name"] for c in inspector.get_columns("classroom_students")}
+        if "decided_at" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE classroom_students ADD COLUMN decided_at DATETIME"))
     if "classrooms" in tables:
         cols = {c["name"] for c in inspector.get_columns("classrooms")}
         if "analytics_share_code" not in cols:
