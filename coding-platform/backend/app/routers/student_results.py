@@ -49,6 +49,14 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _parse_email_filter(student_emails: str | None) -> set[str] | None:
+    """Comma-separated emails → lowercase set. None means no filter."""
+    if student_emails is None:
+        return None
+    emails = {part.strip().lower() for part in student_emails.split(",") if part.strip()}
+    return emails
+
+
 def _ensure_aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
@@ -578,13 +586,16 @@ def teacher_attempts(
 @results_router.get("/analytics", response_model=TeacherCodingAnalyticsOut)
 def teacher_coding_analytics(
     student_id: int | None = None,
+    student_emails: str | None = None,
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
     """Aggregate analytics across all tests owned by this teacher.
 
     Optional student_id scopes charts to one assigned student.
+    Optional student_emails (comma-separated) limits to a classroom roster.
     """
+    email_filter = _parse_email_filter(student_emails)
     tests = (
         db.query(CodingTest)
         .filter(CodingTest.created_by_id == teacher.id, CodingTest.is_active.is_(True))
@@ -609,7 +620,7 @@ def teacher_coding_analytics(
     focus_email: str | None = None
 
     empty = TeacherCodingAnalyticsOut(
-        test_count=len(tests),
+        test_count=0 if email_filter is not None else len(tests),
         participation=participation,
         score_distribution=score_buckets,
         verdict_mix=[AnalyticsBucketOut(label=k, count=0) for k in verdict_counts],
@@ -621,6 +632,9 @@ def teacher_coding_analytics(
         student_email=None,
         per_test=[],
     )
+
+    if email_filter is not None and not email_filter:
+        return empty
 
     if not test_ids:
         return empty
@@ -634,11 +648,19 @@ def teacher_coding_analytics(
     if student_id is not None:
         query = query.filter(TestAssignment.student_id == student_id)
     rows = query.order_by(CodingTest.id.asc()).all()
+    if email_filter is not None:
+        rows = [
+            row
+            for row in rows
+            if (row[2].email or "").strip().lower() in email_filter
+        ]
 
     if student_id is not None and not rows:
         student = db.query(User).filter(User.id == student_id).first()
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
+        if email_filter is not None and (student.email or "").strip().lower() not in email_filter:
+            raise HTTPException(status_code=404, detail="Student not found in this classroom")
         empty.student_name = student.full_name
         empty.student_email = student.email
         return empty
@@ -721,8 +743,15 @@ def teacher_coding_analytics(
 
     risk.sort(key=lambda r: r.violation_score, reverse=True)
 
+    if student_id is not None:
+        scoped_test_count = len(per_test)
+    elif email_filter is not None:
+        scoped_test_count = len({test.id for _, test, _ in rows})
+    else:
+        scoped_test_count = len(tests)
+
     return TeacherCodingAnalyticsOut(
-        test_count=len(tests) if student_id is None else len(per_test),
+        test_count=scoped_test_count,
         participation=participation,
         score_distribution=score_buckets,
         verdict_mix=[AnalyticsBucketOut(label=k, count=v) for k, v in verdict_counts.items()],
@@ -738,10 +767,15 @@ def teacher_coding_analytics(
 
 @results_router.get("/students", response_model=list[StudentResultSummaryOut])
 def teacher_result_students(
+    student_emails: str | None = None,
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
     """Students assigned to any of this teacher's tests (includes not started)."""
+    email_filter = _parse_email_filter(student_emails)
+    if email_filter is not None and not email_filter:
+        return []
+
     rows = (
         db.query(TestAssignment, User, CodingTest)
         .join(CodingTest, CodingTest.id == TestAssignment.coding_test_id)
@@ -751,6 +785,8 @@ def teacher_result_students(
     )
     by_student: dict[int, dict] = {}
     for assignment, student, _test in rows:
+        if email_filter is not None and (student.email or "").strip().lower() not in email_filter:
+            continue
         entry = by_student.setdefault(
             student.id,
             {

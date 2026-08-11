@@ -4,6 +4,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ClassroomAnalyticsTab } from "./pages/ClassroomAnalyticsTab";
+import { ClassroomAnnouncementsTab } from "./pages/ClassroomAnnouncementsTab";
 import { ClassroomAssignmentsTab } from "./pages/ClassroomAssignmentsTab";
 import { ClassroomCourseBuilderTab } from "./pages/ClassroomCourseBuilderTab";
 import { ClassroomDashboardTab } from "./pages/ClassroomDashboardTab";
@@ -48,6 +49,7 @@ export default function App() {
                   <Route index element={<Navigate to="dashboard" replace />} />
                   <Route path="dashboard" element={<ClassroomDashboardTab />} />
                   <Route path="details" element={<ClassroomDetailsTab />} />
+                  <Route path="announcements" element={<ClassroomAnnouncementsTab />} />
                   <Route path="course-builder" element={<ClassroomCourseBuilderTab />} />
                   <Route path="documents" element={<ClassroomDocumentsTab />} />
                   <Route path="assignments" element={<ClassroomAssignmentsTab />} />

@@ -381,7 +381,7 @@ def list_my_memberships(
             out.append(_membership_out(membership, current_user, classroom))
             continue
         if membership.status in {MembershipStatus.APPROVED, MembershipStatus.REJECTED}:
-            decided = membership.decided_at
+            decided = membership.decided_at or membership.joined_at
             if decided is None:
                 continue
             if decided.tzinfo is None:
