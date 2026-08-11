@@ -5,11 +5,8 @@ import { classroomsApi } from "../api";
 import type { Classroom } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import {
-  EmptyState,
   ErrorText,
-  Field,
   GhostButton,
-  inputClass,
   PrimaryButton,
 } from "../components/ui";
 
@@ -27,7 +24,6 @@ export function ClassroomDetailsTab() {
   const navState = (location.state as LocationState | null) ?? null;
   const [error, setError] = useState<string | null>(null);
   const [success] = useState<string | null>(navState?.success ?? null);
-  const [announcement, setAnnouncement] = useState({ title: "", body: "" });
   const isStudent = user?.role === "STUDENT";
   const isOwner =
     (user?.role === "CLASS_TEACHER" || user?.role === "SUBJECT_TEACHER") &&
@@ -42,11 +38,6 @@ export function ClassroomDetailsTab() {
     queryKey: ["classroom-join-requests", id],
     queryFn: () => classroomsApi.listJoinRequests(id),
     enabled: isOwner && !Number.isNaN(id),
-  });
-  const announcements = useQuery({
-    queryKey: ["classroom-announcements", id],
-    queryFn: () => classroomsApi.listAnnouncements(id),
-    enabled: !Number.isNaN(id),
   });
 
   const approveJoin = useMutation({
@@ -74,15 +65,6 @@ export function ClassroomDetailsTab() {
     onError: (err: Error) => setError(err.message),
   });
 
-  const createAnnouncement = useMutation({
-    mutationFn: (body: { title: string; body: string }) => classroomsApi.createAnnouncement(id, body),
-    onSuccess: async () => {
-      setAnnouncement({ title: "", body: "" });
-      await qc.invalidateQueries({ queryKey: ["classroom-announcements", id] });
-    },
-    onError: (err: Error) => setError(err.message),
-  });
-
   const deactivate = useMutation({
     mutationFn: () => classroomsApi.deactivate(id),
     onSuccess: async () => {
@@ -91,12 +73,6 @@ export function ClassroomDetailsTab() {
     },
     onError: (err: Error) => setError(err.message),
   });
-
-  function onPostAnnouncement(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    createAnnouncement.mutate(announcement);
-  }
 
   return (
     <div className="space-y-6">
@@ -168,45 +144,6 @@ export function ClassroomDetailsTab() {
           )}
         </div>
       ) : null}
-
-      {isOwner ? (
-        <form className="grid gap-3" onSubmit={onPostAnnouncement}>
-          <Field label="Announcement title">
-            <input
-              className={inputClass}
-              value={announcement.title}
-              onChange={(e) => setAnnouncement((a) => ({ ...a, title: e.target.value }))}
-              required
-            />
-          </Field>
-          <Field label="Body">
-            <textarea
-              className={inputClass}
-              rows={3}
-              value={announcement.body}
-              onChange={(e) => setAnnouncement((a) => ({ ...a, body: e.target.value }))}
-              required
-            />
-          </Field>
-          <PrimaryButton type="submit">Post announcement</PrimaryButton>
-        </form>
-      ) : null}
-
-      <div>
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Announcements</h3>
-        {!announcements.data?.length ? (
-          <EmptyState title="No announcements yet" body="Announcements for this classroom will appear here." />
-        ) : (
-          <ul className="space-y-2">
-            {announcements.data.map((a) => (
-              <li key={a.id} className="rounded-xl border border-line px-3 py-2">
-                <p className="font-medium text-paper">{a.title}</p>
-                <p className="text-sm text-mist">{a.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
 
       {isOwner && classroom.is_active ? (
         <div className="border-t border-line pt-4">

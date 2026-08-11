@@ -4,11 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   assignmentsApi,
   classroomsApi,
+  codingPlatformApi,
   contentsApi,
   courseBuilderApi,
 } from "../api";
 import type { Assignment, Classroom, ClassroomAnnouncement } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { TeacherCodingAnalyticsPanel } from "../components/TeacherCodingAnalyticsPanel";
 import {
   EmptyState,
   ErrorText,
@@ -171,7 +173,7 @@ export function ClassroomDashboardTab() {
   const announcements = useQuery({
     queryKey: ["classroom-announcements", id],
     queryFn: () => classroomsApi.listAnnouncements(id),
-    enabled: !Number.isNaN(id),
+    enabled: isOwner && !Number.isNaN(id),
   });
   const assignments = useQuery({
     queryKey: ["assignments", id],
@@ -188,6 +190,21 @@ export function ClassroomDashboardTab() {
     queryFn: () => courseBuilderApi.get(id),
     enabled: !Number.isNaN(id),
   });
+  const codingAccess = useQuery({
+    queryKey: ["coding-access"],
+    queryFn: codingPlatformApi.access,
+    enabled: isOwner,
+    staleTime: 30_000,
+  });
+
+  const classroomStudentEmails = useMemo(
+    () =>
+      (students.data || [])
+        .map((s) => (s.student_email || "").trim())
+        .filter(Boolean),
+    [students.data],
+  );
+  const codingEnabled = codingAccess.data?.enabled === true;
 
   const approveJoin = useMutation({
     mutationFn: (studentId: number) => classroomsApi.approveJoin(id, studentId),
@@ -335,6 +352,21 @@ export function ClassroomDashboardTab() {
         </div>
       ) : null}
 
+      {isOwner ? (
+        students.isLoading ? (
+          <div className="rounded-xl border border-[#e1e3e4] bg-white p-5 shadow-xs">
+            <h3 className="font-display font-bold text-[#031635] text-lg">Coding insights</h3>
+            <p className="mt-2 text-sm text-[#75777f]">Loading classroom students…</p>
+          </div>
+        ) : (
+          <TeacherCodingAnalyticsPanel
+            enabled={codingEnabled}
+            studentEmails={classroomStudentEmails}
+            scopeLabel={classroom.name}
+          />
+        )
+      ) : null}
+
       {/* Needs attention (owner) */}
       {isOwner ? (
         <div>
@@ -392,24 +424,26 @@ export function ClassroomDashboardTab() {
       ) : null}
 
       {/* Recent activity */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display font-bold text-[#031635] text-lg">Recent announcements</h3>
-            <button
-              type="button"
-              onClick={() => navigate(`/classrooms/${id}/details`)}
-              className="text-xs font-semibold text-[#3f5d9b] hover:underline"
-            >
-              Details →
-            </button>
+      <div className={`grid gap-6 ${isOwner ? "lg:grid-cols-2" : ""}`}>
+        {isOwner ? (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display font-bold text-[#031635] text-lg">Recent announcements</h3>
+              <button
+                type="button"
+                onClick={() => navigate(`/classrooms/${id}/announcements`)}
+                className="text-xs font-semibold text-[#3f5d9b] hover:underline"
+              >
+                Announcements →
+              </button>
+            </div>
+            {announcements.isLoading ? (
+              <p className="text-sm text-[#75777f]">Loading announcements…</p>
+            ) : (
+              <RecentAnnouncements items={recentAnnouncements} />
+            )}
           </div>
-          {announcements.isLoading ? (
-            <p className="text-sm text-[#75777f]">Loading announcements…</p>
-          ) : (
-            <RecentAnnouncements items={recentAnnouncements} />
-          )}
-        </div>
+        ) : null}
 
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -454,6 +488,13 @@ export function ClassroomDashboardTab() {
             icon="assignment"
             onClick={() => navigate(`/classrooms/${id}/assignments`)}
           />
+          {isOwner ? (
+            <QuickLink
+              label="Announcements"
+              icon="campaign"
+              onClick={() => navigate(`/classrooms/${id}/announcements`)}
+            />
+          ) : null}
           {isOwner ? (
             <QuickLink
               label="Analytics"

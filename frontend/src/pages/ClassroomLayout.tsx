@@ -60,7 +60,7 @@ export function ClassroomLayout() {
         </NavLink>
       </div>
 
-      <div className="mb-6 flex gap-6 border-b border-line">
+      <div className="mb-6 flex flex-wrap gap-6 border-b border-line">
         <NavLink to={`/classrooms/${id}/dashboard`} className={tabClass}>
           Dashboard
         </NavLink>
@@ -68,6 +68,12 @@ export function ClassroomLayout() {
         <NavLink to={`/classrooms/${id}/details`} className={tabClass}>
           Details
         </NavLink>
+
+        {!isStudent ? (
+          <NavLink to={`/classrooms/${id}/announcements`} className={tabClass}>
+            Announcements
+          </NavLink>
+        ) : null}
 
         <NavLink to={`/classrooms/${id}/course-builder`} className={tabClass}>
           {isStudent ? "Course" : "Course builder"}

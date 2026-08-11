@@ -52,6 +52,7 @@ class ClassroomStudentOut(BaseModel):
     status: MembershipStatus
     is_active: bool
     joined_at: datetime
+    decided_at: datetime | None = None
     student_full_name: str | None = None
     student_email: str | None = None
     classroom_name: str | None = None

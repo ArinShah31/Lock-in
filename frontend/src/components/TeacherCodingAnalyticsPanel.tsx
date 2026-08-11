@@ -173,12 +173,40 @@ function VerdictMix({
   );
 }
 
-export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
+export function TeacherCodingAnalyticsPanel({
+  enabled,
+  studentEmails,
+  scopeLabel,
+}: {
+  enabled: boolean;
+  /** When set, analytics are limited to these classroom student emails. */
+  studentEmails?: string[] | null;
+  scopeLabel?: string;
+}) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [studentFilter, setStudentFilter] = useState<number | "all">("all");
+
+  const emailScopeKey = useMemo(() => {
+    if (studentEmails == null) return null;
+    return [...studentEmails]
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join(",");
+  }, [studentEmails]);
+
+  const emailsQuery = useMemo(() => {
+    if (emailScopeKey === null) return "";
+    if (!emailScopeKey) return "student_emails=";
+    return `student_emails=${encodeURIComponent(emailScopeKey)}`;
+  }, [emailScopeKey]);
+
+  useEffect(() => {
+    setStudentFilter("all");
+  }, [emailScopeKey]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -200,21 +228,27 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
   }, [enabled, user?.email]);
 
   const students = useQuery({
-    queryKey: ["coding-result-students", user?.email],
-    queryFn: () => codingApi<StudentResultSummary[]>("/results/students"),
-    enabled: enabled && ready && !!user?.email,
+    queryKey: ["coding-result-students", user?.email, emailScopeKey],
+    queryFn: () =>
+      codingApi<StudentResultSummary[]>(
+        emailScopeKey === null ? "/results/students" : `/results/students?${emailsQuery}`,
+      ),
+    enabled: enabled && ready && !!user?.email && emailScopeKey !== "",
     staleTime: 30_000,
   });
 
   const analytics = useQuery({
-    queryKey: ["coding-teacher-analytics", user?.email, studentFilter],
-    queryFn: () =>
-      codingApi<TeacherCodingAnalytics>(
-        studentFilter === "all"
-          ? "/results/analytics"
-          : `/results/analytics?student_id=${studentFilter}`,
-      ),
-    enabled: enabled && ready && !!user?.email,
+    queryKey: ["coding-teacher-analytics", user?.email, studentFilter, emailScopeKey],
+    queryFn: () => {
+      const params: string[] = [];
+      if (studentFilter !== "all") params.push(`student_id=${studentFilter}`);
+      if (emailScopeKey !== null) params.push(emailsQuery);
+      const qs = params.filter(Boolean).join("&");
+      return codingApi<TeacherCodingAnalytics>(
+        qs ? `/results/analytics?${qs}` : "/results/analytics",
+      );
+    },
+    enabled: enabled && ready && !!user?.email && emailScopeKey !== "",
     staleTime: 30_000,
   });
 
@@ -224,6 +258,7 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
     () => Math.max(1, ...(data?.score_distribution.map((b) => b.count) || [0])),
     [data],
   );
+  const classroomScoped = emailScopeKey !== null;
 
   function openResults(opts: {
     mode: "tests" | "students";
@@ -256,6 +291,19 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
     );
   }
 
+  if (emailScopeKey === "") {
+    return (
+      <Panel>
+        <h3 className="font-display font-bold text-[#031635] text-lg">Coding insights</h3>
+        <p className="mt-2 text-sm text-[#44474e]">
+          {scopeLabel
+            ? `No students enrolled in ${scopeLabel} yet. Coding analytics will appear once students join.`
+            : "No students in this classroom yet. Coding analytics will appear once students join."}
+        </p>
+      </Panel>
+    );
+  }
+
   return (
     <Panel>
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -264,7 +312,9 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
           <p className="mt-1 text-xs text-[#75777f]">
             {focusedStudent && data?.student_name
               ? `Focused on ${data.student_name}`
-              : "Across all your coding tests"}
+              : classroomScoped
+                ? `Students in ${scopeLabel || "this classroom"}`
+                : "Across all your coding tests"}
             {data
               ? focusedStudent
                 ? ` · ${data.participation.assigned} assigned test${data.participation.assigned === 1 ? "" : "s"}`
@@ -284,7 +334,9 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
               }}
               disabled={students.isLoading}
             >
-              <option value="all">All students</option>
+              <option value="all">
+                {classroomScoped ? "All classroom students" : "All students"}
+              </option>
               {(students.data || []).map((s) => (
                 <option key={s.student_id} value={s.student_id}>
                   {s.student_name} ({s.assignment_count} test{s.assignment_count === 1 ? "" : "s"})
@@ -318,10 +370,14 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
         />
       ) : analytics.isLoading || !ready ? (
         <p className="text-sm text-[#75777f]">Loading coding analytics…</p>
-      ) : !data || (!focusedStudent && data.test_count === 0) ? (
+      ) : !data || (!focusedStudent && data.test_count === 0 && data.participation.assigned === 0) ? (
         <EmptyState
           title="No coding tests yet"
-          body="Create and assign a coding test to unlock participation, scores, verdicts, and proctor risk."
+          body={
+            classroomScoped
+              ? "Assign a coding test to students in this classroom to unlock participation, scores, verdicts, and proctor risk."
+              : "Create and assign a coding test to unlock participation, scores, verdicts, and proctor risk."
+          }
         />
       ) : data.participation.assigned === 0 ? (
         <EmptyState
@@ -329,7 +385,9 @@ export function TeacherCodingAnalyticsPanel({ enabled }: { enabled: boolean }) {
           body={
             focusedStudent
               ? "This student has not been assigned any of your coding tests yet."
-              : "Assign a test to a classroom to start collecting analytics."
+              : classroomScoped
+                ? "Assign a test to students in this classroom to start collecting analytics."
+                : "Assign a test to a classroom to start collecting analytics."
           }
         />
       ) : (

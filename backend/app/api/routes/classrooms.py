@@ -1,5 +1,6 @@
 import secrets
 import string
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -65,6 +66,7 @@ def _membership_out(membership: ClassroomStudent, student: User | None = None, c
         status=membership.status,
         is_active=membership.is_active,
         joined_at=membership.joined_at,
+        decided_at=membership.decided_at,
         student_full_name=student.full_name if student else None,
         student_email=student.email if student else None,
         classroom_name=classroom.name if classroom else None,
@@ -359,6 +361,36 @@ def list_my_join_requests(
     return [_membership_out(membership, current_user, classroom) for membership, classroom in rows]
 
 
+@router.get("/my-memberships", response_model=list[ClassroomStudentOut])
+def list_my_memberships(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.STUDENT])),
+):
+    """Student memberships for notifications: pending joins + recent approve/reject decisions."""
+    rows = (
+        db.query(ClassroomStudent, Classroom)
+        .join(Classroom, Classroom.id == ClassroomStudent.classroom_id)
+        .filter(ClassroomStudent.student_id == current_user.id)
+        .order_by(ClassroomStudent.id.desc())
+        .all()
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    out: list[ClassroomStudentOut] = []
+    for membership, classroom in rows:
+        if membership.status == MembershipStatus.PENDING and membership.is_active:
+            out.append(_membership_out(membership, current_user, classroom))
+            continue
+        if membership.status in {MembershipStatus.APPROVED, MembershipStatus.REJECTED}:
+            decided = membership.decided_at or membership.joined_at
+            if decided is None:
+                continue
+            if decided.tzinfo is None:
+                decided = decided.replace(tzinfo=timezone.utc)
+            if decided >= cutoff:
+                out.append(_membership_out(membership, current_user, classroom))
+    return out
+
+
 @router.get("/{classroom_id}", response_model=ClassroomOut)
 def get_classroom(
     classroom_id: int,
@@ -490,6 +522,7 @@ def approve_join_request(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
 
     membership.status = MembershipStatus.APPROVED
+    membership.decided_at = datetime.now(timezone.utc)
     _assign_student_scope(student, classroom)
     db.commit()
     db.refresh(membership)
@@ -522,6 +555,7 @@ def reject_join_request(
     student = db.query(User).filter(User.id == student_id).first()
     membership.status = MembershipStatus.REJECTED
     membership.is_active = False
+    membership.decided_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(membership)
     return _membership_out(membership, student, classroom)
