@@ -94,22 +94,44 @@ def _is_safety_blocked(response) -> bool:
     return False
 
 
+def _chat_models_to_try() -> list[str]:
+    primary = settings.gemini_chat_model.strip() or "gemini-3.6-flash"
+    fallbacks = ("gemini-3.6-flash", "gemini-flash-latest")
+    models = [primary]
+    for model in fallbacks:
+        if model not in models:
+            models.append(model)
+    return models
+
+
 def generate_answer(prompt: str) -> ChatResponse | None:
-    try:
-        response = generate_content_with_pool(
-            model=settings.gemini_chat_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=LlmChatPayload,
-                safety_settings=_SAFETY_SETTINGS,
-            ),
-        )
-    except Exception as exc:
-        message = str(exc).upper()
-        if "SAFETY" in message or "BLOCKED" in message or "PROHIBITED" in message:
-            return _safety_blocked_response()
-        raise
+    last_exc: Exception | None = None
+    response = None
+    models_to_try = _chat_models_to_try()
+    for index, model in enumerate(models_to_try):
+        try:
+            response = generate_content_with_pool(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=LlmChatPayload,
+                    safety_settings=_SAFETY_SETTINGS,
+                ),
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            message = str(exc).upper()
+            if "SAFETY" in message or "BLOCKED" in message or "PROHIBITED" in message:
+                return _safety_blocked_response()
+            if "NOT_FOUND" in message and index < len(models_to_try) - 1:
+                continue
+            raise
+    if response is None:
+        if last_exc is not None:
+            raise last_exc
+        return None
 
     if _is_safety_blocked(response):
         return _safety_blocked_response()

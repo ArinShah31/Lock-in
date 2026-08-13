@@ -4,7 +4,7 @@ import { classroomsApi, codingPlatformApi, institutionsApi, subjectsApi } from "
 import { codingApi, ensureCodingSession } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
 import { BrandLogo } from "../components/BrandLogo";
-import { TeacherCodingAnalyticsPanel } from "../components/TeacherCodingAnalyticsPanel";
+import { TeacherDashboardView } from "./TeacherDashboardView";
 import {
   EmptyState,
   Panel,
@@ -368,133 +368,6 @@ function StudentDashboardView() {
           </div>
         </Panel>
       </div>
-    </div>
-  );
-}
-
-// --- Teacher Dashboard View (Class Teacher & Subject Teacher) ---
-function TeacherDashboardView() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const classrooms = useQuery({ queryKey: ["classrooms"], queryFn: classroomsApi.list });
-  const subjects = useQuery({ queryKey: ["subjects"], queryFn: subjectsApi.list });
-  const codingAccess = useQuery({
-    queryKey: ["coding-access"],
-    queryFn: codingPlatformApi.access,
-    staleTime: 30_000,
-  });
-
-  const activeClassrooms = classrooms.data?.length ?? 0;
-  const activeSubjects = subjects.data?.length ?? 0;
-  const codingEnabled = codingAccess.data?.enabled === true;
-
-  return (
-    <div className="space-y-6">
-      {/* Banner */}
-      <div className="rounded-xl border border-[#e1e3e4] bg-white p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#e8edf5] text-[#031635] text-xs font-semibold mb-2">
-            <span className="material-symbols-outlined text-sm">school</span>
-            <span>Faculty Command Center</span>
-          </div>
-          <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635]">
-            Welcome, Professor {user?.full_name.split(" ")[0]}
-          </h1>
-          <p className="text-sm text-[#44474e] mt-1">
-            Manage your classroom join codes, course materials, student approvals, and assignments.
-          </p>
-        </div>
-
-        <div className="flex gap-3">
-          <PrimaryButton onClick={() => navigate("/classrooms/new")}>
-            + Create Classroom
-          </PrimaryButton>
-        </div>
-      </div>
-
-      {/* Metrics Row */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Panel>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#44474e]">Your Classrooms</span>
-            <span className="material-symbols-outlined text-[#3f5d9b]">school</span>
-          </div>
-          <p className="font-display text-3xl font-extrabold text-[#031635] mt-2">{activeClassrooms}</p>
-          <p className="text-xs text-[#75777f] mt-1">Active learning spaces</p>
-        </Panel>
-
-        <Panel>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#44474e]">Active Subjects</span>
-            <span className="material-symbols-outlined text-[#4f46e5]">menu_book</span>
-          </div>
-          <p className="font-display text-3xl font-extrabold text-[#031635] mt-2">{activeSubjects}</p>
-          <p className="text-xs text-[#75777f] mt-1">Courses & syllabus managed</p>
-        </Panel>
-
-        <Panel>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#44474e]">Role</span>
-            <span className="material-symbols-outlined text-[#3f5d9b]">badge</span>
-          </div>
-          <p className="font-display text-lg font-bold text-[#031635] mt-2">{user?.role.replace("_", " ")}</p>
-          <p className="text-xs text-[#75777f] mt-1">Full management access</p>
-        </Panel>
-      </div>
-
-      <TeacherCodingAnalyticsPanel enabled={codingEnabled} />
-
-      {/* Classrooms List */}
-      <Panel>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display font-bold text-[#031635] text-lg">Your Classrooms & Join Codes</h3>
-          <SecondaryButton onClick={() => navigate("/classrooms/new")}>
-            New Classroom
-          </SecondaryButton>
-        </div>
-
-        {classrooms.isLoading ? (
-          <p className="text-sm text-[#75777f]">Loading classrooms…</p>
-        ) : classrooms.isError ? (
-          <EmptyState
-            title="Could not load classrooms"
-            body={classrooms.error instanceof Error ? classrooms.error.message : "Check that the ASTRA API is running on the Vite proxy port."}
-          />
-        ) : !classrooms.data?.length ? (
-          <EmptyState
-            title="No classrooms created yet"
-            body="Create your first classroom to generate a student join code and start managing syllabus content."
-          />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {classrooms.data.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => navigate(`/classrooms/${c.id}/dashboard`)}
-                className="p-4 rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] hover:border-[#031635] hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-[#44474e] uppercase">
-                      Code: <span className="text-[#031635] font-mono font-bold tracking-widest text-sm bg-white px-2 py-0.5 rounded border border-[#e1e3e4]">{c.join_code}</span>
-                    </span>
-                    <span className="text-[10px] bg-[#e8edf5] text-[#031635] px-2 py-0.5 rounded font-bold">
-                      {c.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                  <h4 className="font-display font-bold text-[#031635] text-base">{c.name}</h4>
-                  <p className="text-xs text-[#75777f] mt-0.5">Code: {c.code}</p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-[#e1e3e4] flex items-center justify-between text-xs text-[#3f5d9b] font-semibold">
-                  <span>Manage Classroom →</span>
-                  <span className="material-symbols-outlined text-sm">chevron_right</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
     </div>
   );
 }

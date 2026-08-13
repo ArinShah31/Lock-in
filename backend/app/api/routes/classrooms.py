@@ -36,6 +36,7 @@ from app.schemas.classroom import (
     SourceAnalyticsSummaryOut,
 )
 from app.schemas.leaderboard import ClassroomLeaderboardOut
+from app.schemas.teacher_overview import TeacherOverviewOut
 from app.services.leaderboard import build_classroom_leaderboard
 
 router = APIRouter(prefix="/classrooms", tags=["classrooms"])
@@ -391,6 +392,16 @@ def list_my_memberships(
             if decided >= cutoff:
                 out.append(_membership_out(membership, current_user, classroom))
     return out
+
+
+@router.get("/teacher-overview", response_model=TeacherOverviewOut)
+def get_teacher_overview(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, *TEACHER_ROLES])),
+):
+    from app.services.teacher_overview import build_teacher_overview
+
+    return TeacherOverviewOut(**build_teacher_overview(db, current_user))
 
 
 @router.get("/{classroom_id}", response_model=ClassroomOut)

@@ -21,6 +21,8 @@ import type {
   StudentAssignmentFeedItem,
   PracticeAttempt,
   PracticeOverview,
+  TeacherOverview,
+  TeacherChatResponse,
   Subject,
   SubjectMaterial,
   User,
@@ -104,6 +106,7 @@ export const classroomsApi = {
       body: JSON.stringify(body),
     }),
   leaderboard: (id: number) => api<ClassroomLeaderboard>(`/classrooms/${id}/leaderboard`),
+  teacherOverview: () => api<TeacherOverview>("/classrooms/teacher-overview"),
 };
 
 export const classroomAnalyticsApi = {
@@ -435,4 +438,13 @@ export const aiApi = {
       // Gemini + document fallback often exceeds the default 15s client timeout.
       timeoutMs: 120_000,
     }),
+  teacherChat: (body: { question: string; classroom_id?: number | null }) =>
+    api<TeacherChatResponse>(
+      "/ai/teacher-chat",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        timeoutMs: 60_000,
+      },
+    ),
 };

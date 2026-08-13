@@ -13,6 +13,11 @@ export class ApiError extends Error {
   }
 }
 
+export type ApiOptions = RequestInit & {
+  /** Override the default 15s fetch timeout (e.g. long AI calls). */
+  timeoutMs?: number;
+};
+
 function withTimeoutSignal(
   signal?: AbortSignal | null,
   timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
@@ -26,6 +31,12 @@ function mapFetchError(err: unknown): never {
   if (err instanceof ApiError) throw err;
   if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
     throw new ApiError(0, "Request timed out. Is the ASTRA backend running?");
+  }
+  if (err instanceof TypeError) {
+    throw new ApiError(
+      0,
+      "Could not reach the ASTRA backend. Check that the server is running and try again.",
+    );
   }
   throw err;
 }
@@ -103,17 +114,13 @@ async function handleUnauthorized(
   return false;
 }
 
-export type ApiOptions = RequestInit & {
-  /** Override the default 15s fetch timeout (e.g. long AI calls). */
-  timeoutMs?: number;
-};
-
 export async function api<T>(
   path: string,
   options: ApiOptions = {},
   auth = true,
 ): Promise<T> {
   const { timeoutMs, signal, ...fetchOptions } = options;
+
   const buildHeaders = () => {
     const headers = new Headers(fetchOptions.headers);
     if (!headers.has("Content-Type") && fetchOptions.body) {
