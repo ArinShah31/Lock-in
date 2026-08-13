@@ -274,7 +274,18 @@ export const courseBuilderApi = {
 };
 
 export const practiceApi = {
-  get: (classroomId: number) => api<PracticeOverview>(`/classrooms/${classroomId}/practice`),
+  get: async (classroomId: number) => {
+    const data = await api<PracticeOverview>(`/classrooms/${classroomId}/practice`);
+    return {
+      ...data,
+      scenarios: data.scenarios ?? [],
+      summary: {
+        ...data.summary,
+        ready_scenarios: data.summary?.ready_scenarios ?? 0,
+        completed_scenarios: data.summary?.completed_scenarios ?? 0,
+      },
+    };
+  },
   extractMockPattern: (classroomId: number, file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -331,6 +342,19 @@ export const practiceApi = {
       method: "POST",
       body: JSON.stringify({ selected_answers }),
     }),
+  submitScenario: (
+    classroomId: number,
+    chapterNumber: number,
+    scenarioId: string,
+    selected_answers: string[],
+  ) =>
+    api<PracticeAttempt>(
+      `/classrooms/${classroomId}/practice/scenarios/${chapterNumber}/${scenarioId}/attempt`,
+      {
+        method: "POST",
+        body: JSON.stringify({ selected_answers }),
+      },
+    ),
   submitAssessment: (
     classroomId: number,
     assessmentKind: string,
@@ -398,6 +422,7 @@ export type ChatResponse = {
   additional_explanation?: string;
   used_document: boolean;
   used_general_knowledge: boolean;
+  blocked?: boolean;
 };
 
 export const aiApi = {

@@ -1,6 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { aiApi } from "../api";
+import {
+  STUDENT_AI_REFUSAL,
+  isBlockedStudentQuestion,
+} from "../lib/studentChatGuardrail";
 import { BrandLogo } from "./BrandLogo";
 import { CourseMarkdown } from "./CourseMarkdown";
 
@@ -9,13 +13,26 @@ type ChatMessage = {
   role: "bot" | "user";
   text: string;
   additionalExplanation?: string;
+  blocked?: boolean;
 };
 
 function formatBotReply(res: {
   document_answer: string;
   additional_explanation?: string;
   used_document: boolean;
+  blocked?: boolean;
 }) {
+  if (
+    res.blocked ||
+    (res.document_answer || "").trim() === STUDENT_AI_REFUSAL
+  ) {
+    return {
+      documentAnswer: STUDENT_AI_REFUSAL,
+      additionalExplanation: "",
+      blocked: true,
+    };
+  }
+
   const doc = (res.document_answer || "").trim();
   const explanation = (res.additional_explanation || "").trim();
 
@@ -25,12 +42,14 @@ function formatBotReply(res: {
         ? "I found related material, but could not form a clear answer. Try rephrasing your question."
         : "I could not find that in your classroom documents yet. Try asking about a topic from the uploaded PDFs.",
       additionalExplanation: "",
+      blocked: false,
     };
   }
 
   return {
     documentAnswer: doc,
     additionalExplanation: explanation,
+    blocked: false,
   };
 }
 
@@ -65,6 +84,20 @@ export function CourseRagChatWidget({ classroomId }: { classroomId: number }) {
       ...prev,
       { id: `u-${Date.now()}`, role: "user", text: question },
     ]);
+
+    if (isBlockedStudentQuestion(question)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `b-${Date.now()}`,
+          role: "bot",
+          text: STUDENT_AI_REFUSAL,
+          blocked: true,
+        },
+      ]);
+      return;
+    }
+
     setPending(true);
 
     try {
@@ -82,6 +115,7 @@ export function CourseRagChatWidget({ classroomId }: { classroomId: number }) {
           role: "bot",
           text: formatted.documentAnswer,
           additionalExplanation: formatted.additionalExplanation,
+          blocked: formatted.blocked,
         },
       ]);
     } catch (err) {
@@ -166,6 +200,8 @@ export function CourseRagChatWidget({ classroomId }: { classroomId: number }) {
                 >
                   {msg.role === "user" ? (
                     msg.text
+                  ) : msg.blocked ? (
+                    <p>{msg.text}</p>
                   ) : (
                     <div className="space-y-4">
                       <div>

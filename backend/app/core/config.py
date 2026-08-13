@@ -93,8 +93,11 @@ class Settings(BaseSettings):
         return keys
 
     def gemini_keys_for_notes_pool(self) -> list[str]:
-        """Gemini keys for parallel lesson-note workers."""
+        """Gemini keys for parallel lesson-note workers and practice generation failover."""
         keys: list[str] = []
+        main = self.gemini_api_key.strip()
+        if main:
+            keys.append(main)
         for key in (
             self.gemini_api_key_notes_1.strip(),
             self.gemini_api_key_notes_2.strip(),
