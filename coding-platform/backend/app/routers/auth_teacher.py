@@ -11,9 +11,9 @@ from app.core.security import create_access_token, get_password_hash, verify_pas
 from app.deps import get_current_user, require_teacher
 from app.models import (
     AssignmentStatus,
+    BloomLevel,
     CodingTest,
     CodingTestQuestion,
-    Difficulty,
     Language,
     Question,
     QuestionType,
@@ -27,15 +27,25 @@ from app.schemas import (
     AuthResponse,
     LoginRequest,
     QuestionCreate,
+    QuestionDraftOut,
+    QuestionGenerateRequest,
     QuestionOut,
     QuestionUpdate,
     RegisterRequest,
+    RubricCriterion,
     TestCreate,
     TestOut,
     TestQuestionOut,
     UserOut,
 )
+from app.services.bloom import (
+    difficulty_from_bloom,
+    normalize_rubric,
+    question_rubric,
+    resolve_bloom,
+)
 from app.services.question_bank import STARTER_QUESTIONS
+from app.services.question_generator import generate_question_draft
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 teacher_router = APIRouter(prefix="/teacher", tags=["teacher"])
@@ -183,6 +193,21 @@ def me(user: User = Depends(get_current_user)):
     return UserOut.model_validate(user)
 
 
+def _question_out(q: Question) -> QuestionOut:
+    return QuestionOut(
+        id=q.id,
+        title=q.title,
+        prompt_markdown=q.prompt_markdown,
+        starter_code=q.starter_code or "",
+        language=q.language,
+        bloom_level=resolve_bloom(q),
+        rubric=[RubricCriterion.model_validate(item) for item in question_rubric(q)],
+        source_prompt=getattr(q, "source_prompt", None),
+        created_by_id=q.created_by_id,
+        is_active=q.is_active,
+    )
+
+
 def _invite_code(db: Session) -> str:
     for _ in range(30):
         code = "".join(secrets.choice(INVITE_ALPHABET) for _ in range(6))
@@ -203,8 +228,8 @@ def _test_out(test: CodingTest) -> TestOut:
         questions=[
             TestQuestionOut(
                 order_index=link.order_index,
-                required_difficulty=link.required_difficulty,
-                question=QuestionOut.model_validate(link.question),
+                bloom_level=resolve_bloom(link.question, getattr(link, "required_difficulty", None)),
+                question=_question_out(link.question),
             )
             for link in links
         ],
@@ -217,20 +242,51 @@ def create_question(
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
+    rubric = normalize_rubric([item.model_dump() for item in payload.rubric])
     q = Question(
         title=payload.title.strip(),
         prompt_markdown=payload.prompt_markdown,
         starter_code=payload.starter_code or "",
         language=payload.language,
-        difficulty=payload.difficulty,
-        question_type=payload.question_type,
+        bloom_level=payload.bloom_level,
+        difficulty=difficulty_from_bloom(payload.bloom_level),
+        question_type=QuestionType.SYLLABUS,
+        rubric_json=rubric,
+        source_prompt=(payload.source_prompt or "").strip() or None,
         created_by_id=teacher.id,
         is_active=True,
     )
     db.add(q)
     db.commit()
     db.refresh(q)
-    return QuestionOut.model_validate(q)
+    return _question_out(q)
+
+
+@teacher_router.post("/questions/generate", response_model=QuestionDraftOut)
+def generate_question(
+    payload: QuestionGenerateRequest,
+    teacher: User = Depends(require_teacher),
+):
+    _ = teacher.id
+    try:
+        draft = generate_question_draft(
+            topic_or_scenario=payload.topic_or_scenario,
+            bloom_level=payload.bloom_level,
+            language=payload.language,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Question generation failed: {exc}") from exc
+    return QuestionDraftOut(
+        title=draft["title"],
+        prompt_markdown=draft["prompt_markdown"],
+        starter_code=draft["starter_code"],
+        bloom_level=draft["bloom_level"],
+        language=draft["language"],
+        rubric=[RubricCriterion.model_validate(item) for item in draft["rubric"]],
+        source_prompt=draft.get("source_prompt"),
+    )
 
 
 @teacher_router.post("/questions/import-all", response_model=list[QuestionOut])
@@ -240,7 +296,7 @@ def import_all_questions(
 ):
     """Copy starter catalog + any other teachers' questions into this teacher's bank."""
     existing_keys = {
-        (q.title.strip().lower(), q.language, q.difficulty)
+        (q.title.strip().lower(), q.language, resolve_bloom(q))
         for q in db.query(Question).filter(Question.created_by_id == teacher.id).all()
     }
 
@@ -252,10 +308,11 @@ def import_all_questions(
         prompt_markdown: str,
         starter_code: str,
         language: Language,
-        difficulty: Difficulty,
-        question_type: QuestionType,
+        bloom_level: BloomLevel,
+        rubric_json: list | None = None,
+        source_prompt: str | None = None,
     ) -> None:
-        key = (title.strip().lower(), language, difficulty)
+        key = (title.strip().lower(), language, bloom_level)
         if key in existing_keys:
             return
         row = Question(
@@ -263,8 +320,11 @@ def import_all_questions(
             prompt_markdown=prompt_markdown,
             starter_code=starter_code or "",
             language=language,
-            difficulty=difficulty,
-            question_type=question_type,
+            bloom_level=bloom_level,
+            difficulty=difficulty_from_bloom(bloom_level),
+            question_type=QuestionType.SYLLABUS,
+            rubric_json=normalize_rubric(rubric_json),
+            source_prompt=source_prompt,
             created_by_id=teacher.id,
             is_active=True,
         )
@@ -272,14 +332,14 @@ def import_all_questions(
         imported.append(row)
         existing_keys.add(key)
 
-    for title, lang, diff, qtype, prompt, starter in STARTER_QUESTIONS:
+    for title, lang, bloom, prompt, starter, rubric in STARTER_QUESTIONS:
         _add(
             title=title,
             prompt_markdown=prompt,
             starter_code=starter,
             language=lang,
-            difficulty=diff,
-            question_type=qtype,
+            bloom_level=bloom,
+            rubric_json=rubric,
         )
 
     # Clone questions created by other teachers on this platform.
@@ -295,14 +355,15 @@ def import_all_questions(
             prompt_markdown=q.prompt_markdown,
             starter_code=q.starter_code,
             language=q.language,
-            difficulty=q.difficulty,
-            question_type=q.question_type,
+            bloom_level=resolve_bloom(q),
+            rubric_json=question_rubric(q),
+            source_prompt=getattr(q, "source_prompt", None),
         )
 
     db.commit()
     for row in imported:
         db.refresh(row)
-    return [QuestionOut.model_validate(row) for row in imported]
+    return [_question_out(row) for row in imported]
 
 
 @teacher_router.get("/questions", response_model=list[QuestionOut])
@@ -316,7 +377,7 @@ def list_questions(
         .order_by(Question.id.desc())
         .all()
     )
-    return [QuestionOut.model_validate(row) for row in rows]
+    return [_question_out(row) for row in rows]
 
 
 @teacher_router.patch("/questions/{question_id}", response_model=QuestionOut)
@@ -334,11 +395,16 @@ def update_question(
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
     data = payload.model_dump(exclude_unset=True)
+    rubric = data.pop("rubric", None)
     for key, value in data.items():
         setattr(q, key, value)
+    if payload.bloom_level is not None:
+        q.difficulty = difficulty_from_bloom(payload.bloom_level)
+    if rubric is not None:
+        q.rubric_json = normalize_rubric(rubric)
     db.commit()
     db.refresh(q)
-    return QuestionOut.model_validate(q)
+    return _question_out(q)
 
 
 @teacher_router.post("/tests", response_model=TestOut)
@@ -347,22 +413,15 @@ def create_test(
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
-    ids = {
-        Difficulty.EASY: payload.easy_question_id,
-        Difficulty.MEDIUM: payload.medium_question_id,
-        Difficulty.HARD: payload.hard_question_id,
-    }
-    questions: dict[Difficulty, Question] = {}
-    for diff, qid in ids.items():
+    ids = payload.question_ids
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=400, detail="Question list must not contain duplicates")
+    questions: list[Question] = []
+    for qid in ids:
         q = db.query(Question).filter(Question.id == qid, Question.created_by_id == teacher.id).first()
         if not q or not q.is_active:
-            raise HTTPException(status_code=400, detail=f"Invalid {diff.value} question")
-        if q.difficulty != diff:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Question {qid} must be {diff.value}, got {q.difficulty.value}",
-            )
-        questions[diff] = q
+            raise HTTPException(status_code=400, detail=f"Invalid question {qid}")
+        questions.append(q)
 
     test = CodingTest(
         title=payload.title.strip(),
@@ -374,14 +433,13 @@ def create_test(
     )
     db.add(test)
     db.flush()
-    order_map = [(1, Difficulty.EASY), (2, Difficulty.MEDIUM), (3, Difficulty.HARD)]
-    for order, diff in order_map:
+    for order, q in enumerate(questions, start=1):
         db.add(
             CodingTestQuestion(
                 coding_test_id=test.id,
-                question_id=questions[diff].id,
+                question_id=q.id,
                 order_index=order,
-                required_difficulty=diff,
+                required_difficulty=difficulty_from_bloom(resolve_bloom(q)),
             )
         )
     db.commit()

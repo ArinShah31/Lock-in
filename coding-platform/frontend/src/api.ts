@@ -41,9 +41,15 @@ export async function api<T>(path: string, options: RequestInit = {}, auth = tru
 }
 
 export type Role = "TEACHER" | "STUDENT";
-export type Difficulty = "EASY" | "MEDIUM" | "HARD";
+export type BloomLevel = "REMEMBER" | "UNDERSTAND" | "APPLY" | "ANALYZE" | "EVALUATE" | "CREATE";
 export type Language = "python" | "java" | "cpp" | "html" | "css" | "javascript";
-export type QuestionType = "SYLLABUS" | "HIRING";
+
+export type RubricCriterion = {
+  name: string;
+  description: string;
+  weight: number;
+  max_points: number;
+};
 
 export type User = {
   id: number;
@@ -58,8 +64,9 @@ export type Question = {
   prompt_markdown: string;
   starter_code: string;
   language: Language;
-  difficulty: Difficulty;
-  question_type: QuestionType;
+  bloom_level: BloomLevel;
+  rubric: RubricCriterion[];
+  source_prompt?: string | null;
   created_by_id: number;
   is_active: boolean;
 };
@@ -73,7 +80,7 @@ export type CodingTest = {
   created_by_id: number;
   questions: {
     order_index: number;
-    required_difficulty: Difficulty;
+    bloom_level: BloomLevel;
     question: Question;
   }[];
 };
@@ -104,7 +111,7 @@ export type Session = {
 
 export type ExamQuestion = {
   order_index: number;
-  difficulty: Difficulty;
+  bloom_level: BloomLevel;
   question_id: number;
   title: string;
   prompt_markdown: string;
