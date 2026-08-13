@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 480
     groq_api_key: str = ""
     groq_model: str = "llama-3.1-8b-instant"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
     violation_block_threshold: int = 5
     coding_sync_secret: str = "change_me_coding_sync_secret"
     astra_sso_secret: str = "change_me_coding_sso_secret"

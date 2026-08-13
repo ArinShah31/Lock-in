@@ -4,7 +4,8 @@ import { classroomsApi, codingPlatformApi, institutionsApi, subjectsApi } from "
 import { codingApi, ensureCodingSession } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
 import { BrandLogo } from "../components/BrandLogo";
-import { TeacherCodingAnalyticsPanel } from "../components/TeacherCodingAnalyticsPanel";
+import ColorBends from "../components/ColorBends";
+import { TeacherDashboardView } from "./TeacherDashboardView";
 import {
   EmptyState,
   Panel,
@@ -227,25 +228,48 @@ function StudentDashboardView() {
     <div className="space-y-6">
       <div className="grid gap-6 xl:grid-cols-[1fr_360px] xl:items-start">
         <div className="space-y-4">
-          <div className="relative overflow-hidden rounded-2xl border border-[#e1e3e4] bg-white p-6 shadow-xs">
-            <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#e8edf5] blur-2xl" />
-            <div className="pointer-events-none absolute bottom-0 left-1/2 h-px w-1/2 bg-gradient-to-r from-transparent via-[#9ebbff] to-transparent" />
-            <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#e8edf5] px-3 py-1 text-xs font-semibold text-[#031635]">
+          <div className="relative min-h-[220px] overflow-hidden rounded-2xl border border-white/10 bg-[#0b1326] p-6 shadow-xs">
+            <div className="absolute inset-0 z-0 overflow-hidden">
+              <ColorBends
+                className="absolute inset-0 h-full w-full"
+                colors={["#0b1326", "#101c34", "#1e2a44", "#2a3f63"]}
+                rotation={45}
+                speed={0.25}
+                scale={1.35}
+                frequency={1}
+                warpStrength={1}
+                mouseInfluence={0.9}
+                noise={0.1}
+                parallax={0.4}
+                iterations={2}
+                intensity={1.6}
+                bandWidth={5}
+                transparent={false}
+              />
+            </div>
+            <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-black/50 via-black/25 to-transparent" />
+            <div className="pointer-events-none relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="max-w-2xl rounded-2xl bg-[#0b1326]/55 p-3 backdrop-blur-[2px] sm:p-4">
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/15">
                   <BrandLogo variant="base" className="h-3.5 w-auto" />
                   <span>ASTRA Student Intelligence</span>
                 </div>
-                <h1 className="font-display text-2xl font-extrabold text-[#031635] md:text-3xl">
+                <h1 className="font-display text-2xl font-extrabold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] md:text-3xl">
                   Welcome back, {user?.full_name.split(" ")[0]}!
                 </h1>
-                <p className="mt-1 max-w-2xl text-sm text-[#44474e]">
+                <p className="mt-1 text-sm text-white/90 drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">
                   Track classrooms, coding work, and upcoming academic checkpoints from one animated workspace.
                 </p>
               </div>
-              <PrimaryButton onClick={() => navigate(nextCoding ? "/coding" : "/classrooms")}>
-                {nextCoding ? "Continue coding" : "Explore classrooms"}
-              </PrimaryButton>
+              <div className="pointer-events-auto shrink-0">
+                <button
+                  type="button"
+                  className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#031635] shadow-lg shadow-black/40 transition hover:bg-white/90"
+                  onClick={() => navigate(nextCoding ? "/coding" : "/classrooms")}
+                >
+                  {nextCoding ? "Continue coding" : "Explore classrooms"}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -368,133 +392,6 @@ function StudentDashboardView() {
           </div>
         </Panel>
       </div>
-    </div>
-  );
-}
-
-// --- Teacher Dashboard View (Class Teacher & Subject Teacher) ---
-function TeacherDashboardView() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const classrooms = useQuery({ queryKey: ["classrooms"], queryFn: classroomsApi.list });
-  const subjects = useQuery({ queryKey: ["subjects"], queryFn: subjectsApi.list });
-  const codingAccess = useQuery({
-    queryKey: ["coding-access"],
-    queryFn: codingPlatformApi.access,
-    staleTime: 30_000,
-  });
-
-  const activeClassrooms = classrooms.data?.length ?? 0;
-  const activeSubjects = subjects.data?.length ?? 0;
-  const codingEnabled = codingAccess.data?.enabled === true;
-
-  return (
-    <div className="space-y-6">
-      {/* Banner */}
-      <div className="rounded-xl border border-[#e1e3e4] bg-white p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#e8edf5] text-[#031635] text-xs font-semibold mb-2">
-            <span className="material-symbols-outlined text-sm">school</span>
-            <span>Faculty Command Center</span>
-          </div>
-          <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635]">
-            Welcome, Professor {user?.full_name.split(" ")[0]}
-          </h1>
-          <p className="text-sm text-[#44474e] mt-1">
-            Manage your classroom join codes, course materials, student approvals, and assignments.
-          </p>
-        </div>
-
-        <div className="flex gap-3">
-          <PrimaryButton onClick={() => navigate("/classrooms/new")}>
-            + Create Classroom
-          </PrimaryButton>
-        </div>
-      </div>
-
-      {/* Metrics Row */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Panel>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#44474e]">Your Classrooms</span>
-            <span className="material-symbols-outlined text-[#3f5d9b]">school</span>
-          </div>
-          <p className="font-display text-3xl font-extrabold text-[#031635] mt-2">{activeClassrooms}</p>
-          <p className="text-xs text-[#75777f] mt-1">Active learning spaces</p>
-        </Panel>
-
-        <Panel>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#44474e]">Active Subjects</span>
-            <span className="material-symbols-outlined text-[#4f46e5]">menu_book</span>
-          </div>
-          <p className="font-display text-3xl font-extrabold text-[#031635] mt-2">{activeSubjects}</p>
-          <p className="text-xs text-[#75777f] mt-1">Courses & syllabus managed</p>
-        </Panel>
-
-        <Panel>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#44474e]">Role</span>
-            <span className="material-symbols-outlined text-[#3f5d9b]">badge</span>
-          </div>
-          <p className="font-display text-lg font-bold text-[#031635] mt-2">{user?.role.replace("_", " ")}</p>
-          <p className="text-xs text-[#75777f] mt-1">Full management access</p>
-        </Panel>
-      </div>
-
-      <TeacherCodingAnalyticsPanel enabled={codingEnabled} />
-
-      {/* Classrooms List */}
-      <Panel>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display font-bold text-[#031635] text-lg">Your Classrooms & Join Codes</h3>
-          <SecondaryButton onClick={() => navigate("/classrooms/new")}>
-            New Classroom
-          </SecondaryButton>
-        </div>
-
-        {classrooms.isLoading ? (
-          <p className="text-sm text-[#75777f]">Loading classrooms…</p>
-        ) : classrooms.isError ? (
-          <EmptyState
-            title="Could not load classrooms"
-            body={classrooms.error instanceof Error ? classrooms.error.message : "Check that the ASTRA API is running on the Vite proxy port."}
-          />
-        ) : !classrooms.data?.length ? (
-          <EmptyState
-            title="No classrooms created yet"
-            body="Create your first classroom to generate a student join code and start managing syllabus content."
-          />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {classrooms.data.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => navigate(`/classrooms/${c.id}/dashboard`)}
-                className="p-4 rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] hover:border-[#031635] hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-[#44474e] uppercase">
-                      Code: <span className="text-[#031635] font-mono font-bold tracking-widest text-sm bg-white px-2 py-0.5 rounded border border-[#e1e3e4]">{c.join_code}</span>
-                    </span>
-                    <span className="text-[10px] bg-[#e8edf5] text-[#031635] px-2 py-0.5 rounded font-bold">
-                      {c.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                  <h4 className="font-display font-bold text-[#031635] text-base">{c.name}</h4>
-                  <p className="text-xs text-[#75777f] mt-0.5">Code: {c.code}</p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-[#e1e3e4] flex items-center justify-between text-xs text-[#3f5d9b] font-semibold">
-                  <span>Manage Classroom →</span>
-                  <span className="material-symbols-outlined text-sm">chevron_right</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
     </div>
   );
 }

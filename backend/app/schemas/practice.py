@@ -19,6 +19,18 @@ class PracticeQuizOut(BaseModel):
     questions: list[PracticeQuestionOut] = Field(default_factory=list)
 
 
+class PracticeScenarioOut(BaseModel):
+    id: str
+    chapter_number: int
+    chapter_title: str
+    title: str
+    situation: str
+    question_count: int = 0
+    latest_score: float | None = None
+    latest_attempted_at: datetime | None = None
+    questions: list[PracticeQuestionOut] = Field(default_factory=list)
+
+
 class PracticeFlashcardOut(BaseModel):
     id: str
     question: str
@@ -55,8 +67,10 @@ class PracticeSummaryOut(BaseModel):
     source_document_count: int = 0
     ready_quizzes: int = 0
     flashcard_decks: int = 0
+    ready_scenarios: int = 0
     locked_assessments: int = 0
     completed_quizzes: int = 0
+    completed_scenarios: int = 0
     completed_assessments: int = 0
 
 
@@ -65,9 +79,13 @@ class PracticeOverviewOut(BaseModel):
     classroom_name: str
     course_title: str | None = None
     source_document_count: int = 0
+    generation_status: str = "idle"
+    generation_error: str | None = None
+    generation_message: str | None = None
     summary: PracticeSummaryOut
     quizzes: list[PracticeQuizOut] = Field(default_factory=list)
     flashcard_decks: list[PracticeFlashcardDeckOut] = Field(default_factory=list)
+    scenarios: list[PracticeScenarioOut] = Field(default_factory=list)
     topic_assessments: list[PracticeAssessmentOut] = Field(default_factory=list)
     subject_assessments: list[PracticeAssessmentOut] = Field(default_factory=list)
 

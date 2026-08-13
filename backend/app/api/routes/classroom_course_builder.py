@@ -380,10 +380,10 @@ def generate_assessments(
     _ensure_class_teacher(current_user, classroom)
     course = _get_or_create_course(db, classroom, current_user)
     chapters = (course.content or {}).get("chapters") or []
-    if not any(groq_course.chapter_lessons(ch) for ch in chapters if isinstance(ch, dict)):
+    if not chapters:
         raise HTTPException(
             status_code=400,
-            detail="Generate course notes first (Generate all or Regenerate content)",
+            detail="Generate course structure first",
         )
     return _create_job(
         db,

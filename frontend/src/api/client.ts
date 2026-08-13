@@ -13,7 +13,15 @@ export class ApiError extends Error {
   }
 }
 
-function withTimeoutSignal(signal?: AbortSignal | null, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS): AbortSignal {
+export type ApiOptions = RequestInit & {
+  /** Override the default 15s fetch timeout (e.g. long AI calls). */
+  timeoutMs?: number;
+};
+
+function withTimeoutSignal(
+  signal?: AbortSignal | null,
+  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+): AbortSignal {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   if (!signal) return timeoutSignal;
   return AbortSignal.any([signal, timeoutSignal]);
@@ -23,6 +31,12 @@ function mapFetchError(err: unknown): never {
   if (err instanceof ApiError) throw err;
   if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
     throw new ApiError(0, "Request timed out. Is the ASTRA backend running?");
+  }
+  if (err instanceof TypeError) {
+    throw new ApiError(
+      0,
+      "Could not reach the ASTRA backend. Check that the server is running and try again.",
+    );
   }
   throw err;
 }
@@ -102,10 +116,10 @@ async function handleUnauthorized(
 
 export async function api<T>(
   path: string,
-  options: RequestInit & { timeoutMs?: number } = {},
+  options: ApiOptions = {},
   auth = true,
 ): Promise<T> {
-  const { timeoutMs, ...fetchOptions } = options;
+  const { timeoutMs, signal, ...fetchOptions } = options;
   const buildHeaders = () => {
     const headers = new Headers(fetchOptions.headers);
     if (!headers.has("Content-Type") && fetchOptions.body) {
@@ -123,7 +137,7 @@ export async function api<T>(
     response = await fetch(`${API_BASE}${path}`, {
       ...fetchOptions,
       headers: buildHeaders(),
-      signal: withTimeoutSignal(fetchOptions.signal, timeoutMs),
+      signal: withTimeoutSignal(signal, timeoutMs),
     });
   } catch (err) {
     mapFetchError(err);
@@ -136,7 +150,7 @@ export async function api<T>(
         response = await fetch(`${API_BASE}${path}`, {
           ...fetchOptions,
           headers: buildHeaders(),
-          signal: withTimeoutSignal(fetchOptions.signal, timeoutMs),
+          signal: withTimeoutSignal(signal, timeoutMs),
         });
       } catch (err) {
         mapFetchError(err);

@@ -5,6 +5,11 @@ import { api, type Assignment, type Session } from "../api";
 import { useAuth } from "../auth";
 import { MagicCard } from "../components/ui/magic-card";
 
+const LMS_DASHBOARD_URL = (import.meta.env.VITE_LMS_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:5173";
+
+function goToLmsDashboard() {
+  window.location.assign(`${LMS_DASHBOARD_URL}/`);
+}
 function statusLabel(assignment: Assignment) {
   if (assignment.status === "SUBMITTED" && assignment.is_published_results) return "Results available";
   if (assignment.status === "SUBMITTED") return "Submitted";
@@ -71,12 +76,21 @@ export function StudentHome() {
           <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-[#031635]">Student workspace</h1>
           <p className="mt-1 text-sm text-[#44474e]">{user?.full_name}</p>
         </div>
-        <button
-          onClick={logout}
-          className="rounded-md border border-[#c5c6cf] bg-white px-3 py-2 text-sm font-semibold text-[#031635] transition hover:border-[#031635]"
-        >
-          Log out
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={goToLmsDashboard}
+            className="rounded-md border border-[#c5c6cf] bg-white px-3 py-2 text-sm font-semibold text-[#031635] transition hover:border-[#031635]"
+          >
+            ← Back to dashboard
+          </button>
+          <button
+            onClick={logout}
+            className="rounded-md border border-[#c5c6cf] bg-white px-3 py-2 text-sm font-semibold text-[#031635] transition hover:border-[#031635]"
+          >
+            Log out
+          </button>
+        </div>
       </header>
 
       <MagicCard className="mb-6 p-0 shadow-sm">
@@ -160,6 +174,14 @@ export function StudentHome() {
   );
 }
 
+function rubricScoreEntries(scores: Record<string, unknown> | null | undefined): { name: string; value: string }[] {
+  if (!scores) return [];
+  const meta = new Set(["teacher_override", "correctness"]);
+  return Object.entries(scores)
+    .filter(([key, val]) => !meta.has(key) && typeof val === "number")
+    .map(([name, value]) => ({ name, value: String(value) }));
+}
+
 function ResultsButton({ assignmentId }: { assignmentId: number }) {
   const [open, setOpen] = useState(false);
   const results = useQuery({
@@ -169,7 +191,13 @@ function ResultsButton({ assignmentId }: { assignmentId: number }) {
         published: boolean;
         message?: string;
         average_score?: number;
-        evals: { question_title: string; total_score: number; verdict: string; feedback: string }[];
+        evals: {
+          question_title: string;
+          total_score: number;
+          verdict: string;
+          feedback: string;
+          scores?: Record<string, unknown>;
+        }[];
       }>(`/student/assignments/${assignmentId}/results`),
     enabled: open,
   });
@@ -188,13 +216,38 @@ function ResultsButton({ assignmentId }: { assignmentId: number }) {
           {results.data.average_score != null ? (
             <p className="font-semibold text-[#031635]">Average: {results.data.average_score}</p>
           ) : null}
-          <ul className="mt-2 space-y-1">
-            {(results.data.evals || []).map((e) => (
-              <li key={e.question_title}>
-                <span className="font-medium text-[#031635]">{e.question_title}</span>: {e.total_score} (
-                {e.verdict}) — {e.feedback}
-              </li>
-            ))}
+          <ul className="mt-2 space-y-3">
+            {(results.data.evals || []).map((e) => {
+              const rubricRows = rubricScoreEntries(e.scores);
+              return (
+                <li key={e.question_title} className="rounded-lg border border-[#e1e3e4] bg-white p-3">
+                  <p className="font-medium text-[#031635]">
+                    {e.question_title}{" "}
+                    <span className="font-normal text-[#44474e]">
+                      · {e.total_score} · {e.verdict}
+                    </span>
+                  </p>
+                  {rubricRows.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {rubricRows.map((row) => (
+                        <span
+                          key={row.name}
+                          className="rounded-md border border-[#e1e3e4] bg-[#f8f9fa] px-2 py-0.5 text-xs"
+                        >
+                          {row.name}: <span className="font-semibold text-[#031635]">{row.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-2">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#75777f]">Feedback</p>
+                    <p className="mt-1 text-[#44474e]">
+                      {e.feedback?.trim() ? e.feedback : "No feedback yet."}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

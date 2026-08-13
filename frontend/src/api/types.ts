@@ -103,6 +103,96 @@ export type SourceAnalyticsSummary = {
   students: LinkedStudentAnalytics[];
 };
 
+export type LeaderboardEntry = {
+  rank: number;
+  student_id: number;
+  full_name: string;
+  initials: string;
+  avatar_url?: string | null;
+  quiz_points: number;
+  exam_points: number;
+  coding_points: number;
+  total_points: number;
+};
+
+export type LeaderboardViewer = {
+  rank: number | null;
+  total_points: number;
+  students_count: number;
+};
+
+export type ClassroomLeaderboard = {
+  entries: LeaderboardEntry[];
+  viewer: LeaderboardViewer | null;
+};
+
+export type TeacherOverviewStats = {
+  students: number;
+  students_joined_this_week: number;
+  documents: number;
+  documents_added_this_week: number;
+  assignments: number;
+  assignments_needing_review: number;
+  classrooms: number;
+};
+
+export type TeacherAttentionItem = {
+  kind: string;
+  label: string;
+  count: number;
+  classroom_id: number | null;
+  classroom_name: string | null;
+  to: string | null;
+};
+
+export type TeacherActivityItem = {
+  kind: string;
+  description: string;
+  classroom_id: number;
+  classroom_name: string;
+  occurred_at: string;
+};
+
+export type TeacherWeeklyActivityDay = {
+  date: string;
+  assignment_submissions: number;
+  practice_attempts: number;
+};
+
+export type TeacherStrugglingTopic = {
+  classroom_id: number;
+  classroom_name: string;
+  topic_label: string;
+  average_score: number;
+  attempt_count: number;
+};
+
+export type TeacherClassroomCard = {
+  classroom_id: number;
+  name: string;
+  code: string;
+  join_code: string;
+  is_active: boolean;
+  student_count: number;
+  document_count: number;
+  assignment_count: number;
+  last_activity_at: string | null;
+};
+
+export type TeacherOverview = {
+  stats: TeacherOverviewStats;
+  attention: TeacherAttentionItem[];
+  recent_activity: TeacherActivityItem[];
+  weekly_activity: TeacherWeeklyActivityDay[];
+  struggling_topics: TeacherStrugglingTopic[];
+  classrooms: TeacherClassroomCard[];
+};
+
+export type TeacherChatResponse = {
+  answer: string;
+  blocked: boolean;
+};
+
 export type ClassroomStudent = {
   id: number;
   classroom_id: number;
@@ -412,6 +502,18 @@ export type PracticeQuiz = {
   questions: PracticeQuestion[];
 };
 
+export type PracticeScenario = {
+  id: string;
+  chapter_number: number;
+  chapter_title: string;
+  title: string;
+  situation: string;
+  question_count: number;
+  latest_score: number | null;
+  latest_attempted_at: string | null;
+  questions: PracticeQuestion[];
+};
+
 export type PracticeFlashcard = {
   id: string;
   question: string;
@@ -448,8 +550,10 @@ export type PracticeSummary = {
   source_document_count: number;
   ready_quizzes: number;
   flashcard_decks: number;
+  ready_scenarios: number;
   locked_assessments: number;
   completed_quizzes: number;
+  completed_scenarios: number;
   completed_assessments: number;
 };
 
@@ -458,9 +562,13 @@ export type PracticeOverview = {
   classroom_name: string;
   course_title: string | null;
   source_document_count: number;
+  generation_status: "idle" | "generating" | "failed" | "ready";
+  generation_error: string | null;
+  generation_message: string | null;
   summary: PracticeSummary;
   quizzes: PracticeQuiz[];
   flashcard_decks: PracticeFlashcardDeck[];
+  scenarios: PracticeScenario[];
   topic_assessments: PracticeAssessment[];
   subject_assessments: PracticeAssessment[];
 };
