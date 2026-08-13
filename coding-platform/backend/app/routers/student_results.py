@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -40,6 +41,7 @@ from app.schemas import (
     AnalyticsTestBreakdownOut,
 )
 from app.services.evaluator import evaluate_submission, event_weight
+from app.services.bloom import resolve_bloom
 
 student_router = APIRouter(prefix="/student", tags=["student"])
 results_router = APIRouter(prefix="/results", tags=["results"])
@@ -338,7 +340,7 @@ def exam_questions(
         out.append(
             ExamQuestionOut(
                 order_index=link.order_index,
-                difficulty=link.required_difficulty,
+                bloom_level=resolve_bloom(link.question, getattr(link, "required_difficulty", None)),
                 question_id=link.question_id,
                 title=link.question.title,
                 prompt_markdown=link.question.prompt_markdown,
@@ -393,7 +395,12 @@ def save_draft(
         draft.updated_at = _utcnow()
 
     # sequential unlock: saving current max unlocked advances to next
-    if link.order_index == session.current_question_order and session.current_question_order < 3:
+    max_order = (
+        db.query(func.max(CodingTestQuestion.order_index))
+        .filter(CodingTestQuestion.coding_test_id == session.assignment.coding_test_id)
+        .scalar()
+    ) or 1
+    if link.order_index == session.current_question_order and session.current_question_order < max_order:
         session.current_question_order += 1
 
     db.commit()
@@ -529,7 +536,7 @@ def _session_evals(db: Session, session: TestSession) -> list[EvalOut]:
                 submission_id=sub.id,
                 question_id=q.id,
                 question_title=q.title,
-                difficulty=q.difficulty,
+                bloom_level=resolve_bloom(q),
                 language=sub.language,
                 code=sub.code,
                 total_score=ev.total_score,
@@ -578,6 +585,7 @@ def teacher_attempts(
                 average_score=avg,
                 test_id=test.id,
                 test_title=test.title,
+                is_published_results=bool(test.is_published_results),
             )
         )
     return out
@@ -852,6 +860,7 @@ def teacher_student_attempts(
                 average_score=avg,
                 test_id=test.id,
                 test_title=test.title,
+                is_published_results=bool(test.is_published_results),
             )
         )
     return out
@@ -876,6 +885,11 @@ def teacher_update_eval(
     test = session.assignment.coding_test
     if test.created_by_id != teacher.id:
         raise HTTPException(status_code=403, detail="Not your test")
+    if test.is_published_results:
+        raise HTTPException(
+            status_code=400,
+            detail="Results are published; grades cannot be changed",
+        )
 
     q = db.query(Question).filter(Question.id == sub.question_id).first()
     if not q:
@@ -903,7 +917,7 @@ def teacher_update_eval(
         submission_id=sub.id,
         question_id=q.id,
         question_title=q.title,
-        difficulty=q.difficulty,
+        bloom_level=resolve_bloom(q),
         language=sub.language,
         code=sub.code,
         total_score=ev.total_score,

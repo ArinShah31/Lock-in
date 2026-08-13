@@ -5,13 +5,7 @@ from openai import OpenAI
 
 from app.core.config import settings
 from app.models import Language, Question
-
-WEIGHTS = {
-    "correctness": 0.55,
-    "efficiency": 0.15,
-    "style": 0.15,
-    "edge_cases": 0.15,
-}
+from app.services.bloom import question_rubric, resolve_bloom
 
 _STUB_PATTERNS = [
     r"^\s*pass\s*$",
@@ -78,9 +72,15 @@ def _client() -> OpenAI:
 
 
 def evaluate_submission(*, question: Question, code: str, language: Language) -> dict:
+    rubric = question_rubric(question)
+    bloom = resolve_bloom(question)
+
     if is_stub_solution(code, language, question.starter_code or ""):
+        scores = {row["name"]: 0.0 for row in rubric}
+        if "Style" in scores:
+            scores["Style"] = 5.0
         return {
-            "scores": {"correctness": 0, "efficiency": 0, "style": 5, "edge_cases": 0},
+            "scores": scores,
             "total_score": 0.75,
             "verdict": "FAIL",
             "feedback": (
@@ -91,18 +91,16 @@ def evaluate_submission(*, question: Question, code: str, language: Language) ->
             "error_message": None,
         }
 
-    web = language in {Language.HTML, Language.CSS, Language.JAVASCRIPT}
-    rubric = (
-        "Grade web markup/styles/scripts for structure, correctness vs prompt, accessibility, and polish."
-        if web
-        else "Grade algorithms/code for correctness, efficiency, style, and edge-case handling."
+    criteria_lines = "\n".join(
+        f"- {row['name']} (weight {row['weight']}%, max {row['max_points']}): {row['description']}"
+        for row in rubric
     )
+    score_schema = ", ".join(f'"{row["name"]}": 0-{int(row["max_points"])}' for row in rubric)
     prompt = f"""
 You are a STRICT coding assessment grader for college exams.
 
 Language: {language.value}
-Difficulty: {question.difficulty.value}
-Question type: {question.question_type.value}
+Bloom's taxonomy level: {bloom.value}
 Title: {question.title}
 
 Problem:
@@ -113,19 +111,21 @@ Student solution:
 {code}
 ```
 
+Grade using this rubric. Score each criterion from 0 to its max_points.
+The Bloom level should shape your judgment (e.g. Apply expects working use of a technique; Create expects original design).
+
+Rubric:
+{criteria_lines}
+
 Rules:
-- If the solution is incomplete, only a stub, uses pass/TODO, or does not solve the problem, correctness must be 0-15 and total quality must FAIL.
-- Do NOT award high style/efficiency points for empty or placeholder code.
-- Only give PASS-level scores when the core problem is actually solved.
-- {rubric}
+- If the solution is incomplete, only a stub, uses pass/TODO, or does not solve the problem, correctness-like criteria must be near 0 and total quality must FAIL.
+- Do NOT award high style points for empty or placeholder code.
+- Only give PASS-level scores when the core problem is actually solved at the intended Bloom level.
 
 Return ONLY JSON:
 {{
-  "correctness": 0-100,
-  "efficiency": 0-100,
-  "style": 0-100,
-  "edge_cases": 0-100,
-  "feedback": "2-4 sentences of actionable feedback"
+  {score_schema},
+  "feedback": "2-4 sentences of actionable feedback aligned to the rubric and Bloom level"
 }}
 """
     try:
@@ -142,7 +142,7 @@ Return ONLY JSON:
         raw = json.loads(raw_text)
     except Exception as exc:  # noqa: BLE001
         return {
-            "scores": {"correctness": 0, "efficiency": 0, "style": 0, "edge_cases": 0},
+            "scores": {row["name"]: 0.0 for row in rubric},
             "total_score": 0.0,
             "verdict": "ERROR",
             "feedback": "Automatic grading failed. A teacher will review manually.",
@@ -150,12 +150,34 @@ Return ONLY JSON:
             "error_message": str(exc),
         }
 
-    scores = {key: float(max(0, min(100, raw.get(key, 0)))) for key in WEIGHTS}
-    if scores["correctness"] < 25:
-        for key in ("efficiency", "style", "edge_cases"):
-            scores[key] = min(scores[key], 20.0)
+    scores: dict[str, float] = {}
+    total = 0.0
+    weight_sum = sum(row["weight"] for row in rubric) or 100.0
+    for row in rubric:
+        name = row["name"]
+        raw_val = raw.get(name, raw.get(name.lower(), 0))
+        try:
+            value = float(raw_val)
+        except (TypeError, ValueError):
+            value = 0.0
+        value = max(0.0, min(float(row["max_points"]), value))
+        scores[name] = value
+        pct = value / float(row["max_points"] or 100) * 100.0
+        total += pct * (row["weight"] / weight_sum)
 
-    total = sum(scores[k] * w for k, w in WEIGHTS.items())
+    correctness_like = next(
+        (scores[row["name"]] / float(row["max_points"] or 100) * 100.0 for row in rubric if "correct" in row["name"].lower()),
+        None,
+    )
+    if correctness_like is not None and correctness_like < 25:
+        for row in rubric:
+            if "correct" not in row["name"].lower():
+                scores[row["name"]] = min(scores[row["name"]], float(row["max_points"]) * 0.2)
+        total = 0.0
+        for row in rubric:
+            pct = scores[row["name"]] / float(row["max_points"] or 100) * 100.0
+            total += pct * (row["weight"] / weight_sum)
+
     if total >= 70:
         verdict = "PASS"
     elif total >= 50:

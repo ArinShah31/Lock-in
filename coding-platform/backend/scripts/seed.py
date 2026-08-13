@@ -1,4 +1,4 @@
-"""Seed demo teacher, student, questions, and a 3-question test."""
+"""Seed demo teacher, student, questions, and a progressive test."""
 
 from __future__ import annotations
 
@@ -11,15 +11,17 @@ sys.path.insert(0, str(ROOT))
 from app.core.database import Base, SessionLocal, engine
 from app.core.security import get_password_hash
 from app.models import (
+    BloomLevel,
     CodingTest,
     CodingTestQuestion,
-    Difficulty,
     Language,
     Question,
+    QuestionType,
     User,
     UserRole,
 )
 from app.routers.auth_teacher import _invite_code
+from app.services.bloom import difficulty_from_bloom, normalize_rubric
 from app.services.question_bank import STARTER_QUESTIONS
 
 DEMO_PASSWORD = "DemoPass123"
@@ -52,27 +54,29 @@ def main() -> None:
             db.flush()
 
         created_ids: dict[tuple, int] = {}
-        for title, lang, diff, qtype, prompt, starter in STARTER_QUESTIONS:
+        for title, lang, bloom, prompt, starter, rubric in STARTER_QUESTIONS:
             existing = (
                 db.query(Question)
                 .filter(Question.created_by_id == teacher.id, Question.title == title)
                 .first()
             )
             if existing:
-                created_ids[(lang, diff)] = existing.id
+                created_ids[(lang, bloom)] = existing.id
                 continue
             q = Question(
                 title=title,
                 prompt_markdown=prompt,
                 starter_code=starter,
                 language=lang,
-                difficulty=diff,
-                question_type=qtype,
+                bloom_level=bloom,
+                difficulty=difficulty_from_bloom(bloom),
+                question_type=QuestionType.SYLLABUS,
+                rubric_json=normalize_rubric(rubric),
                 created_by_id=teacher.id,
             )
             db.add(q)
             db.flush()
-            created_ids[(lang, diff)] = q.id
+            created_ids[(lang, bloom)] = q.id
 
         test = db.query(CodingTest).filter(CodingTest.title == "Python Progressive Demo").first()
         if not test:
@@ -85,13 +89,18 @@ def main() -> None:
             )
             db.add(test)
             db.flush()
-            for order, diff in [(1, Difficulty.EASY), (2, Difficulty.MEDIUM), (3, Difficulty.HARD)]:
+            python_bloom = [
+                BloomLevel.APPLY,
+                BloomLevel.ANALYZE,
+                BloomLevel.CREATE,
+            ]
+            for order, bloom in enumerate(python_bloom, start=1):
                 db.add(
                     CodingTestQuestion(
                         coding_test_id=test.id,
-                        question_id=created_ids[(Language.PYTHON, diff)],
+                        question_id=created_ids[(Language.PYTHON, bloom)],
                         order_index=order,
-                        required_difficulty=diff,
+                        required_difficulty=difficulty_from_bloom(bloom),
                     )
                 )
 

@@ -1,17 +1,29 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type CodingTest, type Difficulty, type Language, type Question, type QuestionType } from "../api";
+import { api, type BloomLevel, type CodingTest, type Language, type Question, type RubricCriterion } from "../api";
 import { useAuth } from "../auth";
 
 const LANGUAGES: Language[] = ["python", "java", "cpp", "html", "css", "javascript"];
-const DIFFS: Difficulty[] = ["EASY", "MEDIUM", "HARD"];
+const BLOOM_LEVELS: BloomLevel[] = [
+  "REMEMBER",
+  "UNDERSTAND",
+  "APPLY",
+  "ANALYZE",
+  "EVALUATE",
+  "CREATE",
+];
+
+function bloomLabel(level: BloomLevel | string | undefined) {
+  if (!level) return "";
+  return level.charAt(0) + level.slice(1).toLowerCase();
+}
 
 type AttemptEval = {
   eval_run_id: number | null;
   submission_id: number | null;
   question_id: number;
   question_title: string;
-  difficulty: Difficulty;
+  bloom_level: BloomLevel;
   language: Language | null;
   code: string | null;
   total_score: number;
@@ -53,15 +65,18 @@ export function TeacherHome() {
     prompt_markdown: "",
     starter_code: "",
     language: "python" as Language,
-    difficulty: "EASY" as Difficulty,
-    question_type: "SYLLABUS" as QuestionType,
+    bloom_level: "APPLY" as BloomLevel,
+    rubric: [
+      { name: "Correctness", description: "Solves the problem", weight: 55, max_points: 100 },
+      { name: "Efficiency", description: "Reasonable complexity", weight: 15, max_points: 100 },
+      { name: "Style", description: "Readable code", weight: 15, max_points: 100 },
+      { name: "Edge cases", description: "Handles edge cases", weight: 15, max_points: 100 },
+    ] as RubricCriterion[],
   });
   const [testForm, setTestForm] = useState({
-    title: "New Progressive Test",
+    title: "New coding test",
     duration_minutes: 45,
-    easy_question_id: 0,
-    medium_question_id: 0,
-    hard_question_id: 0,
+    question_ids: [] as number[],
   });
   const [assignEmail, setAssignEmail] = useState("student@example.com");
   const [selectedTestId, setSelectedTestId] = useState<number | null>(null);
@@ -84,9 +99,15 @@ export function TeacherHome() {
     onError: (e: Error) => setError(e.message),
   });
 
-  const byDiff = useMemo(() => {
-    const map: Record<Difficulty, Question[]> = { EASY: [], MEDIUM: [], HARD: [] };
-    for (const q of questions.data || []) map[q.difficulty].push(q);
+  const byBloom = useMemo(() => {
+    const map = Object.fromEntries(BLOOM_LEVELS.map((level) => [level, [] as Question[]])) as Record<
+      BloomLevel,
+      Question[]
+    >;
+    for (const q of questions.data || []) {
+      const level = (q.bloom_level || "APPLY") as BloomLevel;
+      (map[level] ?? map.APPLY).push(q);
+    }
     return map;
   }, [questions.data]);
 
@@ -208,7 +229,7 @@ export function TeacherHome() {
               value={qForm.starter_code}
               onChange={(e) => setQForm({ ...qForm, starter_code: e.target.value })}
             />
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <select
                 className="rounded-lg border border-slate-600 bg-slate-950 px-2 py-2"
                 value={qForm.language}
@@ -222,22 +243,14 @@ export function TeacherHome() {
               </select>
               <select
                 className="rounded-lg border border-slate-600 bg-slate-950 px-2 py-2"
-                value={qForm.difficulty}
-                onChange={(e) => setQForm({ ...qForm, difficulty: e.target.value as Difficulty })}
+                value={qForm.bloom_level}
+                onChange={(e) => setQForm({ ...qForm, bloom_level: e.target.value as BloomLevel })}
               >
-                {DIFFS.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
+                {BLOOM_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {bloomLabel(level)}
                   </option>
                 ))}
-              </select>
-              <select
-                className="rounded-lg border border-slate-600 bg-slate-950 px-2 py-2"
-                value={qForm.question_type}
-                onChange={(e) => setQForm({ ...qForm, question_type: e.target.value as QuestionType })}
-              >
-                <option value="SYLLABUS">SYLLABUS</option>
-                <option value="HIRING">HIRING</option>
               </select>
             </div>
             <button className="rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-slate-950">Save question</button>
@@ -248,7 +261,7 @@ export function TeacherHome() {
               <div key={q.id} className="rounded-xl border border-slate-700 px-3 py-2 text-sm">
                 <div className="font-medium">{q.title}</div>
                 <div className="text-slate-400">
-                  #{q.id} · {q.language} · {q.difficulty} · {q.question_type}
+                  #{q.id} · {q.language} · {bloomLabel(q.bloom_level)}
                 </div>
               </div>
             ))}
@@ -259,7 +272,7 @@ export function TeacherHome() {
       {tab === "tests" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <form onSubmit={onCreateTest} className="space-y-2 rounded-2xl border border-slate-700 p-4">
-            <h2 className="font-semibold">Create 3-question test (E→M→H)</h2>
+            <h2 className="font-semibold">Create test (1 or more questions)</h2>
             <input
               className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
               value={testForm.title}
@@ -274,36 +287,36 @@ export function TeacherHome() {
               min={10}
               max={300}
             />
-            {(["EASY", "MEDIUM", "HARD"] as Difficulty[]).map((diff) => (
-              <label key={diff} className="block text-sm">
-                <span className="text-slate-400">{diff} question</span>
-                <select
-                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-2 py-2"
-                  value={
-                    diff === "EASY"
-                      ? testForm.easy_question_id
-                      : diff === "MEDIUM"
-                        ? testForm.medium_question_id
-                        : testForm.hard_question_id
-                  }
-                  onChange={(e) => {
-                    const id = Number(e.target.value);
-                    if (diff === "EASY") setTestForm({ ...testForm, easy_question_id: id });
-                    else if (diff === "MEDIUM") setTestForm({ ...testForm, medium_question_id: id });
-                    else setTestForm({ ...testForm, hard_question_id: id });
-                  }}
-                  required
-                >
-                  <option value={0}>Select…</option>
-                  {byDiff[diff].map((q) => (
-                    <option key={q.id} value={q.id}>
-                      #{q.id} {q.title} ({q.language})
-                    </option>
-                  ))}
-                </select>
-              </label>
+            {BLOOM_LEVELS.map((level) => (
+              <div key={level} className="text-sm">
+                <span className="text-slate-400">{bloomLabel(level)}</span>
+                <div className="mt-1 space-y-1">
+                  {byBloom[level].map((q) => {
+                    const selected = testForm.question_ids.includes(q.id);
+                    return (
+                      <label key={q.id} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() =>
+                            setTestForm((prev) => ({
+                              ...prev,
+                              question_ids: selected
+                                ? prev.question_ids.filter((id) => id !== q.id)
+                                : [...prev.question_ids, q.id],
+                            }))
+                          }
+                        />
+                        #{q.id} {q.title} ({q.language})
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
-            <button className="rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-slate-950">Create test</button>
+            <button className="rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-slate-950" disabled={createTest.isPending || testForm.question_ids.length < 1}>
+              Create test
+            </button>
           </form>
           <div className="space-y-3 rounded-2xl border border-slate-700 p-4">
             <h2 className="font-semibold">Your tests</h2>
@@ -380,7 +393,7 @@ export function TeacherHome() {
                           <div className="font-medium text-slate-100">
                             {ev.question_title}{" "}
                             <span className="text-xs font-normal text-slate-400">
-                              ({ev.difficulty}
+                              ({bloomLabel(ev.bloom_level)}
                               {ev.language ? ` · ${ev.language}` : ""})
                             </span>
                           </div>

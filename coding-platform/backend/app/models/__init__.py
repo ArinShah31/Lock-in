@@ -29,6 +29,15 @@ class Difficulty(str, Enum):
     HARD = "HARD"
 
 
+class BloomLevel(str, Enum):
+    REMEMBER = "REMEMBER"
+    UNDERSTAND = "UNDERSTAND"
+    APPLY = "APPLY"
+    ANALYZE = "ANALYZE"
+    EVALUATE = "EVALUATE"
+    CREATE = "CREATE"
+
+
 class QuestionType(str, Enum):
     SYLLABUS = "SYLLABUS"
     HIRING = "HIRING"
@@ -85,6 +94,11 @@ class Question(Base):
     question_type: Mapped[QuestionType] = mapped_column(
         SqlEnum(QuestionType), nullable=False, default=QuestionType.SYLLABUS, index=True
     )
+    bloom_level: Mapped[BloomLevel] = mapped_column(
+        SqlEnum(BloomLevel), nullable=False, default=BloomLevel.APPLY, index=True
+    )
+    rubric_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    source_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -121,7 +135,7 @@ class CodingTestQuestion(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     coding_test_id: Mapped[int] = mapped_column(ForeignKey("coding_tests.id"), nullable=False, index=True)
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id"), nullable=False, index=True)
-    order_index: Mapped[int] = mapped_column(Integer, nullable=False)  # 1,2,3
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False)  # 1..N
     required_difficulty: Mapped[Difficulty] = mapped_column(SqlEnum(Difficulty), nullable=False)
 
     coding_test = relationship("CodingTest", back_populates="questions")

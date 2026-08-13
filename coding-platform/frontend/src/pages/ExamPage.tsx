@@ -105,23 +105,22 @@ export function ExamPage() {
           · Violations {session.data?.violation_score?.toFixed(1) ?? 0}/5
         </div>
         <div className="flex flex-wrap gap-2">
-          {[1, 2, 3].map((order) => {
-            const q = questions.data?.find((item) => item.order_index === order);
-            const locked = !q?.unlocked;
+          {(questions.data ?? []).map((q) => {
+            const locked = !q.unlocked;
             return (
               <button
-                key={order}
+                key={q.order_index}
                 disabled={locked}
-                onClick={() => setActiveOrder(order)}
+                onClick={() => setActiveOrder(q.order_index)}
                 className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-                  activeOrder === order
+                  activeOrder === q.order_index
                     ? "bg-[#031635] text-white"
                     : locked
                       ? "cursor-not-allowed bg-[#f1f3f5] text-[#a0a4ab]"
                       : "border border-[#e1e3e4] bg-white text-[#031635] hover:border-[#031635]"
                 }`}
               >
-                Q{order} {q?.difficulty}
+                Q{q.order_index} {q.bloom_level}
               </button>
             );
           })}

@@ -4,9 +4,8 @@ from pydantic import BaseModel, Field
 
 from app.models import (
     AssignmentStatus,
-    Difficulty,
+    BloomLevel,
     Language,
-    QuestionType,
     SessionStatus,
     UserRole,
 )
@@ -39,13 +38,37 @@ class AuthResponse(BaseModel):
     user: UserOut
 
 
+class RubricCriterion(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    weight: float = Field(ge=0, le=100)
+    max_points: float = Field(default=100, ge=1, le=100)
+
+
+class QuestionGenerateRequest(BaseModel):
+    topic_or_scenario: str = Field(min_length=8, max_length=4000)
+    bloom_level: BloomLevel
+    language: Language
+
+
+class QuestionDraftOut(BaseModel):
+    title: str
+    prompt_markdown: str
+    starter_code: str
+    bloom_level: BloomLevel
+    language: Language
+    rubric: list[RubricCriterion]
+    source_prompt: str | None = None
+
+
 class QuestionCreate(BaseModel):
     title: str = Field(min_length=2, max_length=200)
     prompt_markdown: str = Field(min_length=10)
     starter_code: str = ""
     language: Language
-    difficulty: Difficulty
-    question_type: QuestionType = QuestionType.SYLLABUS
+    bloom_level: BloomLevel
+    rubric: list[RubricCriterion] = []
+    source_prompt: str | None = None
 
 
 class QuestionUpdate(BaseModel):
@@ -53,8 +76,9 @@ class QuestionUpdate(BaseModel):
     prompt_markdown: str | None = None
     starter_code: str | None = None
     language: Language | None = None
-    difficulty: Difficulty | None = None
-    question_type: QuestionType | None = None
+    bloom_level: BloomLevel | None = None
+    rubric: list[RubricCriterion] | None = None
+    source_prompt: str | None = None
     is_active: bool | None = None
 
 
@@ -64,8 +88,9 @@ class QuestionOut(BaseModel):
     prompt_markdown: str
     starter_code: str
     language: Language
-    difficulty: Difficulty
-    question_type: QuestionType
+    bloom_level: BloomLevel
+    rubric: list[RubricCriterion] = []
+    source_prompt: str | None = None
     created_by_id: int
     is_active: bool
 
@@ -75,14 +100,12 @@ class QuestionOut(BaseModel):
 class TestCreate(BaseModel):
     title: str = Field(min_length=2, max_length=200)
     duration_minutes: int = Field(default=60, ge=10, le=300)
-    easy_question_id: int
-    medium_question_id: int
-    hard_question_id: int
+    question_ids: list[int] = Field(min_length=1, max_length=20)
 
 
 class TestQuestionOut(BaseModel):
     order_index: int
-    required_difficulty: Difficulty
+    bloom_level: BloomLevel
     question: QuestionOut
 
 
@@ -134,7 +157,7 @@ class SessionOut(BaseModel):
 
 class ExamQuestionOut(BaseModel):
     order_index: int
-    difficulty: Difficulty
+    bloom_level: BloomLevel
     question_id: int
     title: str
     prompt_markdown: str
@@ -166,7 +189,7 @@ class EvalOut(BaseModel):
     submission_id: int | None = None
     question_id: int
     question_title: str
-    difficulty: Difficulty
+    bloom_level: BloomLevel
     language: Language | None = None
     code: str | None = None
     total_score: float
@@ -193,6 +216,7 @@ class AttemptResultOut(BaseModel):
     average_score: float | None = None
     test_id: int | None = None
     test_title: str | None = None
+    is_published_results: bool = False
 
 
 class StudentResultSummaryOut(BaseModel):
