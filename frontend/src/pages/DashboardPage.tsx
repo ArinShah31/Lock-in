@@ -4,6 +4,7 @@ import { classroomsApi, codingPlatformApi, institutionsApi, subjectsApi } from "
 import { codingApi, ensureCodingSession } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
 import { BrandLogo } from "../components/BrandLogo";
+import ColorBends from "../components/ColorBends";
 import { TeacherDashboardView } from "./TeacherDashboardView";
 import {
   EmptyState,
@@ -227,25 +228,48 @@ function StudentDashboardView() {
     <div className="space-y-6">
       <div className="grid gap-6 xl:grid-cols-[1fr_360px] xl:items-start">
         <div className="space-y-4">
-          <div className="relative overflow-hidden rounded-2xl border border-[#e1e3e4] bg-white p-6 shadow-xs">
-            <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#e8edf5] blur-2xl" />
-            <div className="pointer-events-none absolute bottom-0 left-1/2 h-px w-1/2 bg-gradient-to-r from-transparent via-[#9ebbff] to-transparent" />
-            <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#e8edf5] px-3 py-1 text-xs font-semibold text-[#031635]">
+          <div className="relative min-h-[220px] overflow-hidden rounded-2xl border border-white/10 bg-[#0b1326] p-6 shadow-xs">
+            <div className="absolute inset-0 z-0 overflow-hidden">
+              <ColorBends
+                className="absolute inset-0 h-full w-full"
+                colors={["#0b1326", "#101c34", "#1e2a44", "#2a3f63"]}
+                rotation={45}
+                speed={0.25}
+                scale={1.35}
+                frequency={1}
+                warpStrength={1}
+                mouseInfluence={0.9}
+                noise={0.1}
+                parallax={0.4}
+                iterations={2}
+                intensity={1.6}
+                bandWidth={5}
+                transparent={false}
+              />
+            </div>
+            <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-black/50 via-black/25 to-transparent" />
+            <div className="pointer-events-none relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="max-w-2xl rounded-2xl bg-[#0b1326]/55 p-3 backdrop-blur-[2px] sm:p-4">
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/15">
                   <BrandLogo variant="base" className="h-3.5 w-auto" />
                   <span>ASTRA Student Intelligence</span>
                 </div>
-                <h1 className="font-display text-2xl font-extrabold text-[#031635] md:text-3xl">
+                <h1 className="font-display text-2xl font-extrabold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] md:text-3xl">
                   Welcome back, {user?.full_name.split(" ")[0]}!
                 </h1>
-                <p className="mt-1 max-w-2xl text-sm text-[#44474e]">
+                <p className="mt-1 text-sm text-white/90 drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">
                   Track classrooms, coding work, and upcoming academic checkpoints from one animated workspace.
                 </p>
               </div>
-              <PrimaryButton onClick={() => navigate(nextCoding ? "/coding" : "/classrooms")}>
-                {nextCoding ? "Continue coding" : "Explore classrooms"}
-              </PrimaryButton>
+              <div className="pointer-events-auto shrink-0">
+                <button
+                  type="button"
+                  className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#031635] shadow-lg shadow-black/40 transition hover:bg-white/90"
+                  onClick={() => navigate(nextCoding ? "/coding" : "/classrooms")}
+                >
+                  {nextCoding ? "Continue coding" : "Explore classrooms"}
+                </button>
+              </div>
             </div>
           </div>
 
