@@ -7,6 +7,7 @@ import type {
   AuthResponse,
   Classroom,
   ClassroomAnnouncement,
+  ClassroomLeaderboard,
   ClassroomCourse,
   ClassroomStudent,
   Content,
@@ -102,6 +103,7 @@ export const classroomsApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  leaderboard: (id: number) => api<ClassroomLeaderboard>(`/classrooms/${id}/leaderboard`),
 };
 
 export const classroomAnalyticsApi = {

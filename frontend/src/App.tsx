@@ -11,6 +11,7 @@ import { ClassroomDashboardTab } from "./pages/ClassroomDashboardTab";
 import { ClassroomDetailsTab } from "./pages/ClassroomDetailsTab";
 import { ClassroomDocumentsTab } from "./pages/ClassroomDocumentsTab";
 import { ClassroomLayout } from "./pages/ClassroomLayout";
+import { ClassroomLeaderboardTab } from "./pages/ClassroomLeaderboardTab";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
 import { CodingPage } from "./pages/CodingPage";
 import { CreateClassroomPage } from "./pages/CreateClassroomPage";
@@ -53,6 +54,7 @@ export default function App() {
                   <Route path="course-builder" element={<ClassroomCourseBuilderTab />} />
                   <Route path="documents" element={<ClassroomDocumentsTab />} />
                   <Route path="assignments" element={<ClassroomAssignmentsTab />} />
+                  <Route path="leaderboard" element={<ClassroomLeaderboardTab />} />
                   <Route path="analytics" element={<ClassroomAnalyticsTab />} />
                 </Route>
                 <Route path="/classrooms" element={<ClassroomsPage />} />

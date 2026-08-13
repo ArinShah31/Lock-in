@@ -103,6 +103,27 @@ export type SourceAnalyticsSummary = {
   students: LinkedStudentAnalytics[];
 };
 
+export type LeaderboardEntry = {
+  rank: number;
+  student_id: number;
+  full_name: string;
+  initials: string;
+  quiz_points: number;
+  exam_points: number;
+  total_points: number;
+};
+
+export type LeaderboardViewer = {
+  rank: number | null;
+  total_points: number;
+  students_count: number;
+};
+
+export type ClassroomLeaderboard = {
+  entries: LeaderboardEntry[];
+  viewer: LeaderboardViewer | null;
+};
+
 export type ClassroomStudent = {
   id: number;
   classroom_id: number;
