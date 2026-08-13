@@ -1,4 +1,4 @@
-import { api, apiForm, apiBlob, clearTokens, setTokens, API_BASE } from "./client";
+import { api, apiForm, apiBlob, clearTokens, setTokens, API_BASE, getAccessToken } from "./client";
 import type {
   AnalyticsGrant,
   AnalyticsShareCode,
@@ -423,7 +423,7 @@ export const presentationsApi = {
       `/classrooms/${classroomId}/presentations`,
       fd,
       "POST",
-      180_000,
+      300_000,
     );
   },
   patchSlide: (classroomId: number, presentationId: number, slideId: number, script: string) =>
@@ -441,7 +441,7 @@ export const presentationsApi = {
   generateVideo: (classroomId: number, presentationId: number) =>
     api<ClassroomPresentationDetail>(
       `/classrooms/${classroomId}/presentations/${presentationId}/video`,
-      { method: "POST", timeoutMs: 600_000 },
+      { method: "POST", timeoutMs: 30_000 },
     ),
   remove: (classroomId: number, presentationId: number) =>
     api<void>(`/classrooms/${classroomId}/presentations/${presentationId}`, { method: "DELETE" }),
@@ -461,4 +461,8 @@ export const presentationsApi = {
   videoUrl: (classroomId: number, presentationId: number) =>
     `/classrooms/${classroomId}/presentations/${presentationId}/video`,
   fetchBlob: (path: string, timeoutMs = 120_000) => apiBlob(path, timeoutMs),
+  mediaSrc: (path: string) => {
+    const token = getAccessToken() ?? "";
+    return `${API_BASE}${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+  },
 };

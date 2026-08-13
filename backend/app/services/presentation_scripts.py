@@ -4,10 +4,54 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
+
+from openai import OpenAI
 
 from app.core.config import settings
+from app.services.presentation_parse import slide_looks_like_diagram
 
 _BATCH = 8
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+_QUOTA_MARKERS = (
+    "429",
+    "resource_exhausted",
+    "quota",
+    "rate_limit",
+    "rate limit",
+    "insufficient_quota",
+)
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _QUOTA_MARKERS)
+
+
+def gemini_failover_keys() -> list[str]:
+    keys: list[str] = []
+    for key in (settings.gemini_api_key, *settings.gemini_keys_for_notes_pool()):
+        cleaned = (key or "").strip()
+        if cleaned and cleaned not in keys:
+            keys.append(cleaned)
+    return keys
+
+
+def groq_failover_keys() -> list[str]:
+    return settings.groq_keys_for_stage("CHAPTER_CONTENT")
+
+
+def _chat_models() -> list[str]:
+    models: list[str] = []
+    for name in (
+        (settings.gemini_chat_model or "").strip(),
+        (settings.gemini_model or "").strip(),
+        "gemini-3.6-flash",
+        "gemini-2.0-flash",
+    ):
+        if name and name not in models:
+            models.append(name)
+    return models
 
 
 def needs_script_expansion(script: str, extracted_text: str) -> bool:
@@ -28,6 +72,14 @@ def needs_script_expansion(script: str, extracted_text: str) -> bool:
 
 
 def _local_expand(extracted: str, index: int, shapes: list[dict] | None = None) -> str:
+    if slide_looks_like_diagram(shapes, extracted):
+        extra = (extracted or "").strip()
+        body = f" {extra}" if extra else ""
+        return (
+            f"This slide has a diagram. Start at the first box and follow the arrows "
+            f"through each step as they appear on screen.{body} "
+            "Keep that flow in mind as we continue."
+        )
     bullets = [ln.strip(" \t-•*") for ln in (extracted or "").splitlines() if ln.strip()]
     if not bullets and shapes:
         bullets = [str(s.get("text") or "").strip() for s in shapes if str(s.get("text") or "").strip()]
@@ -66,13 +118,7 @@ def _parse_scripts(raw: str) -> dict[int, str]:
     return out
 
 
-def _generate_batch(slides: list[dict], title: str) -> dict[int, str]:
-    api_key = (settings.gemini_api_key or "").strip()
-    if not api_key:
-        return {}
-
-    from google import genai
-
+def _batch_payload(slides: list[dict]) -> list[dict]:
     payload = []
     for slide in slides:
         payload.append(
@@ -86,7 +132,11 @@ def _generate_batch(slides: list[dict], title: str) -> dict[int, str]:
                 ],
             }
         )
-    prompt = (
+    return payload
+
+
+def _script_prompt(title: str, payload: list[dict]) -> str:
+    return (
         "You write spoken lecture narration for a classroom video.\n"
         f"Presentation title: {title or 'Lecture'}\n\n"
         "For each slide, write 4 to 8 spoken sentences that EXPLAIN the content. "
@@ -96,36 +146,122 @@ def _generate_batch(slides: list[dict], title: str) -> dict[int, str]:
         "Return JSON: {\"slides\": [{\"index\": 0, \"script\": \"...\"}]}\n\n"
         f"Slides:\n{json.dumps(payload, ensure_ascii=False)}"
     )
-    client = genai.Client(api_key=api_key)
-    models = [
-        (settings.gemini_chat_model or "").strip(),
-        (settings.gemini_model or "").strip(),
-        "gemini-3.6-flash",
-        "gemini-2.0-flash",
-    ]
-    seen: set[str] = set()
+
+
+def _generate_batch_gemini(slides: list[dict], title: str) -> dict[int, str]:
+    from google import genai
+
+    prompt = _script_prompt(title, _batch_payload(slides))
     last_error: Exception | None = None
-    for model in models:
-        if not model or model in seen:
-            continue
-        seen.add(model)
+    for key in gemini_failover_keys():
+        client = genai.Client(api_key=key)
+        for model in _chat_models():
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config={"response_mime_type": "application/json"},
+                )
+                raw = (getattr(response, "text", None) or "").strip()
+                parsed = _parse_scripts(raw)
+                if parsed:
+                    print(f"[presentations] generated {len(parsed)} narration script(s) via {model}")
+                    return parsed
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                print(f"[presentations] Gemini script {model} failed: {exc}")
+                if _is_quota_error(exc):
+                    break
+    if last_error:
+        print(f"[presentations] Gemini script generation unavailable: {last_error}")
+    return {}
+
+
+def _generate_batch_groq(slides: list[dict], title: str) -> dict[int, str]:
+    prompt = _script_prompt(title, _batch_payload(slides))
+    last_error: Exception | None = None
+    for key in groq_failover_keys():
         try:
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config={"response_mime_type": "application/json"},
+            client = OpenAI(api_key=key, base_url=GROQ_BASE_URL, timeout=90.0)
+            response = client.chat.completions.create(
+                model=settings.groq_model or "llama-3.1-8b-instant",
+                temperature=0.4,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return only valid JSON for classroom narration scripts.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
             )
-            raw = (getattr(response, "text", None) or "").strip()
+            raw = response.choices[0].message.content or ""
             parsed = _parse_scripts(raw)
             if parsed:
-                print(f"[presentations] generated {len(parsed)} narration script(s) via {model}")
+                print(f"[presentations] generated {len(parsed)} narration script(s) via Groq")
                 return parsed
         except Exception as exc:  # noqa: BLE001
             last_error = exc
-            print(f"[presentations] script generation via {model} failed: {exc}")
+            print(f"[presentations] Groq script generation failed: {exc}")
+            if not _is_quota_error(exc):
+                continue
     if last_error:
-        print(f"[presentations] script generation unavailable: {last_error}")
+        print(f"[presentations] Groq script fallback unavailable: {last_error}")
     return {}
+
+
+def _generate_batch(slides: list[dict], title: str) -> dict[int, str]:
+    generated = _generate_batch_gemini(slides, title)
+    if generated:
+        return generated
+    return _generate_batch_groq(slides, title)
+
+
+def _generate_diagram_script(slide: dict, image_path: str, title: str) -> str | None:
+    png = Path(image_path)
+    if not png.exists():
+        return None
+    try:
+        data = png.read_bytes()
+    except Exception:
+        return None
+    if len(data) < 80:
+        return None
+
+    from google import genai
+    from google.genai import types
+
+    prompt = (
+        "You write spoken lecture narration for a classroom video. "
+        f"Presentation title: {title or 'Lecture'}. "
+        "This slide contains a diagram, flowchart, or visual. "
+        "Walk through it in a natural teaching order (start, each step, result). "
+        "4 to 8 sentences. Do not say 'this slide shows'. No markdown."
+    )
+    last_error: Exception | None = None
+    for key in gemini_failover_keys():
+        client = genai.Client(api_key=key)
+        for model in _chat_models()[:2]:
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Part.from_bytes(data=data, mime_type="image/png"),
+                        prompt,
+                    ],
+                )
+                text = (getattr(response, "text", None) or "").strip()
+                if text:
+                    print(f"[presentations] diagram narration via {model} for slide {slide.get('index')}")
+                    return text[:8000]
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                print(f"[presentations] diagram vision {model} failed: {exc}")
+                if _is_quota_error(exc):
+                    break
+    if last_error:
+        print(f"[presentations] diagram vision skipped: {last_error}")
+    return None
 
 
 def expand_slide_scripts(slides: list[dict], title: str = "") -> list[str]:
@@ -139,6 +275,12 @@ def expand_slide_scripts(slides: list[dict], title: str = "") -> list[str]:
         if not needs_script_expansion(existing, extracted):
             scripts[i] = existing.strip()
             continue
+        image_path = str(slide.get("image_path") or "")
+        if image_path and slide_looks_like_diagram(slide.get("shapes") or [], extracted):
+            vision = _generate_diagram_script({**slide, "index": i}, image_path, title)
+            if vision:
+                scripts[i] = vision
+                continue
         pending.append({**slide, "index": i})
         pending_pos.append(i)
 

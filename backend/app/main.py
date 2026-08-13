@@ -77,6 +77,11 @@ def on_startup():
     cleared = fail_orphaned_jobs()
     if cleared:
         print(f"[course-builder] marked {cleared} orphaned job(s) as FAILED")
+    from app.services.presentation_jobs import fail_orphaned_video_jobs
+
+    video_cleared = fail_orphaned_video_jobs()
+    if video_cleared:
+        print(f"[presentations] marked {video_cleared} orphaned video job(s) as FAILED")
 
     try:
         from app.ai.vectorstore.service import create_collection
@@ -132,6 +137,13 @@ def _ensure_sqlite_columns():
                 conn.execute(
                     text(
                         "ALTER TABLE classroom_presentations ADD COLUMN video_path VARCHAR(500)"
+                    )
+                )
+        if "progress_message" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE classroom_presentations ADD COLUMN progress_message VARCHAR(255)"
                     )
                 )
     _backfill_analytics_share_codes()

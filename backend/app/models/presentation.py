@@ -19,8 +19,10 @@ from app.core.database import Base
 
 class PresentationStatus(str, Enum):
     UPLOADED = "UPLOADED"
+    PREPARING = "PREPARING"
     SCRIPTS_READY = "SCRIPTS_READY"
     AUDIO_READY = "AUDIO_READY"
+    GENERATING = "GENERATING"
     VIDEO_READY = "VIDEO_READY"
     FAILED = "FAILED"
 
@@ -43,6 +45,7 @@ class ClassroomPresentation(Base):
         nullable=False,
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progress_message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

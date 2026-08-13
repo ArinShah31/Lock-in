@@ -11,6 +11,8 @@ type OutletCtx = { classroom: Classroom };
 const TEACHER_ROLES = new Set(["CLASS_TEACHER", "SUBJECT_TEACHER", "SUPER_ADMIN"]);
 
 function statusLabel(status: ClassroomPresentation["status"]) {
+  if (status === "PREPARING") return "Preparing slides";
+  if (status === "GENERATING") return "Generating video";
   if (status === "VIDEO_READY") return "Video ready";
   if (status === "AUDIO_READY") return "Voiceover ready";
   if (status === "SCRIPTS_READY") return "Scripts ready";
@@ -35,6 +37,10 @@ export function ClassroomPresentationsTab() {
     queryKey: ["presentations", id],
     queryFn: () => presentationsApi.list(id),
     enabled: !Number.isNaN(id),
+    refetchInterval: (query) =>
+      query.state.data?.some((item) => item.status === "GENERATING" || item.status === "PREPARING")
+        ? 3000
+        : false,
   });
 
   const upload = useMutation({
@@ -73,7 +79,7 @@ export function ClassroomPresentationsTab() {
         <h2 className="font-display text-xl font-extrabold text-[#031635]">Presentations</h2>
         <p className="mt-1 text-sm text-[#75777f]">
           {canManage
-            ? "Upload a PowerPoint. ASTRA writes an explanatory narration, then converts the original slides into a video with AI voiceover and spotlight highlights."
+            ? "Upload a PowerPoint. ASTRA renders the original slides and writes teaching narration, then you can generate the video."
             : "Open a presentation to watch the narrated video, or download the original PowerPoint."}
         </p>
       </div>
@@ -131,9 +137,16 @@ export function ClassroomPresentationsTab() {
                 <p className="font-semibold text-[#031635]">{item.title}</p>
                 <p className="text-xs text-[#75777f]">
                   {item.file_name} · {item.slide_count} slide{item.slide_count === 1 ? "" : "s"} ·{" "}
-                  {item.has_video ? "Video ready" : statusLabel(item.status)}
+                  {item.has_video && item.status !== "GENERATING" && item.status !== "PREPARING"
+                    ? "Video ready"
+                    : statusLabel(item.status)}
+                  {item.status === "GENERATING" || item.status === "PREPARING"
+                    ? item.progress_message
+                      ? ` · ${item.progress_message}`
+                      : ""
+                    : ""}
                 </p>
-                {item.error_message ? (
+                {item.status === "FAILED" && item.error_message ? (
                   <p className="mt-1 text-xs text-[#a03a3a]">{item.error_message}</p>
                 ) : null}
               </div>

@@ -12,6 +12,7 @@ class SlideShapeOut(BaseModel):
     y: float
     w: float
     h: float
+    kind: str = "text"
 
 
 class SlideCueOut(BaseModel):
@@ -44,6 +45,7 @@ class PresentationOut(BaseModel):
     file_name: str
     status: PresentationStatus
     error_message: str | None = None
+    progress_message: str | None = None
     slide_count: int = 0
     has_video: bool = False
     created_at: datetime
@@ -52,8 +54,15 @@ class PresentationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CaptionCueOut(BaseModel):
+    start_ms: float
+    end_ms: float
+    text: str
+
+
 class PresentationDetailOut(PresentationOut):
     slides: list[PresentationSlideOut] = Field(default_factory=list)
+    caption_cues: list[CaptionCueOut] = Field(default_factory=list)
 
 
 class SlideScriptPatch(BaseModel):

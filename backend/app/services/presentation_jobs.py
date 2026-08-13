@@ -1,0 +1,268 @@
+"""Background PPT-to-video generation so the HTTP request does not carry the whole job."""
+
+from __future__ import annotations
+
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+
+from sqlalchemy.orm import Session
+
+from app.core.database import SessionLocal
+from app.models.presentation import ClassroomPresentation, PresentationStatus
+from app.services.presentation_media import build_cues, export_slide_images
+from app.services.presentation_parse import extract_slides
+from app.services.presentation_scripts import expand_slide_scripts, needs_script_expansion
+from app.services.presentation_tts import probe_audio_duration_ms, synthesize_slide
+from app.services.presentation_video import build_narrated_video
+
+UPLOAD_ROOT = Path("uploads/presentations")
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _run_with_com(fn, presentation_id: int, *, crash_label: str) -> None:
+    com_inited = False
+    try:
+        import pythoncom
+
+        pythoncom.CoInitialize()
+        com_inited = True
+    except Exception:
+        try:
+            import comtypes
+
+            comtypes.CoInitialize()
+            com_inited = True
+        except Exception:
+            pass
+
+    db = SessionLocal()
+    try:
+        fn(db, presentation_id)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[presentations] {crash_label} crashed: {exc}")
+        try:
+            row = db.query(ClassroomPresentation).filter(ClassroomPresentation.id == presentation_id).first()
+            if row:
+                row.status = PresentationStatus.FAILED
+                row.error_message = str(exc)[:2000]
+                row.progress_message = None
+                row.updated_at = _now()
+                db.commit()
+        except Exception:
+            db.rollback()
+    finally:
+        db.close()
+        if com_inited:
+            try:
+                import pythoncom
+
+                pythoncom.CoUninitialize()
+            except Exception:
+                try:
+                    import comtypes
+
+                    comtypes.CoUninitialize()
+                except Exception:
+                    pass
+
+
+def start_prepare_job(presentation_id: int) -> None:
+    thread = threading.Thread(
+        target=_run_with_com,
+        args=(_execute_prepare_job, presentation_id),
+        kwargs={"crash_label": "prepare job"},
+        daemon=True,
+    )
+    thread.start()
+
+
+def start_video_job(presentation_id: int) -> None:
+    thread = threading.Thread(
+        target=_run_with_com,
+        args=(_execute_video_job, presentation_id),
+        kwargs={"crash_label": "background video job"},
+        daemon=True,
+    )
+    thread.start()
+
+
+def fail_orphaned_video_jobs(
+    *,
+    reason: str = "Interrupted — server restarted. Open the presentation again.",
+) -> int:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(ClassroomPresentation)
+            .filter(
+                ClassroomPresentation.status.in_(
+                    (PresentationStatus.GENERATING, PresentationStatus.PREPARING)
+                )
+            )
+            .all()
+        )
+        if not rows:
+            return 0
+        for row in rows:
+            row.status = PresentationStatus.FAILED
+            row.error_message = reason[:2000]
+            row.progress_message = "Interrupted"
+            row.updated_at = _now()
+        db.commit()
+        return len(rows)
+    finally:
+        db.close()
+
+
+def _set_progress(db: Session, row: ClassroomPresentation, message: str) -> None:
+    row.progress_message = message
+    row.updated_at = _now()
+    db.commit()
+
+
+def _refresh_shapes(db: Session, row: ClassroomPresentation, slides: list) -> None:
+    try:
+        fresh = extract_slides(row.file_path)
+        by_index = {int(item["index"]): item for item in fresh}
+        for slide in slides:
+            item = by_index.get(slide.index)
+            if item:
+                slide.shapes = item.get("shapes") or slide.shapes or []
+        db.commit()
+    except Exception as parse_exc:  # noqa: BLE001
+        print(f"[presentations] re-parse skipped: {parse_exc}")
+
+
+def _render_slide_images(db: Session, row: ClassroomPresentation, slides: list) -> None:
+    folder = UPLOAD_ROOT / str(row.classroom_id)
+    pngs = export_slide_images(
+        row.file_path,
+        str(folder / f"{row.id}-slides"),
+        expected_count=len(slides),
+    )
+    if len(pngs) < len(slides):
+        raise RuntimeError(
+            f"Rendered {len(pngs)} slide image(s) but the deck has {len(slides)} slides"
+        )
+    for slide, png in zip(slides, pngs):
+        slide.image_path = png
+    db.commit()
+
+
+def _expand_scripts(db: Session, row: ClassroomPresentation, slides: list) -> None:
+    expanded = expand_slide_scripts(
+        [
+            {
+                "index": s.index,
+                "extracted_text": s.extracted_text or "",
+                "script": s.script or "",
+                "shapes": s.shapes or [],
+                "image_path": s.image_path or "",
+            }
+            for s in slides
+        ],
+        title=row.title,
+    )
+    for slide, script in zip(slides, expanded):
+        if needs_script_expansion(slide.script or "", slide.extracted_text or ""):
+            slide.script = script
+            slide.audio_path = None
+    db.commit()
+
+
+def _execute_prepare_job(db: Session, presentation_id: int) -> None:
+    row = db.query(ClassroomPresentation).filter(ClassroomPresentation.id == presentation_id).first()
+    if not row or not row.is_active:
+        return
+    slides = sorted(row.slides, key=lambda s: s.index)
+    if not slides:
+        raise RuntimeError("This presentation has no slides")
+
+    _set_progress(db, row, "Reading slide layout…")
+    _refresh_shapes(db, row, slides)
+
+    _set_progress(db, row, f"Rendering {len(slides)} original slides…")
+    try:
+        _render_slide_images(db, row, slides)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[presentations] slide render failed: {exc}")
+        row.error_message = str(exc)[:2000]
+
+    _set_progress(db, row, "Writing explanatory narration…")
+    _expand_scripts(db, row, slides)
+
+    row.status = PresentationStatus.SCRIPTS_READY
+    row.progress_message = None
+    row.updated_at = _now()
+    db.commit()
+    print(f"[presentations] prepared presentation {presentation_id}")
+
+
+def _execute_video_job(db: Session, presentation_id: int) -> None:
+    row = db.query(ClassroomPresentation).filter(ClassroomPresentation.id == presentation_id).first()
+    if not row or not row.is_active:
+        return
+    folder = UPLOAD_ROOT / str(row.classroom_id)
+    audio_dir = folder / f"{row.id}-audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    slides = sorted(row.slides, key=lambda s: s.index)
+    if not slides:
+        raise RuntimeError("This presentation has no slides")
+
+    _set_progress(db, row, "Reading slide layout…")
+    _refresh_shapes(db, row, slides)
+
+    _set_progress(db, row, f"Rendering {len(slides)} original slides…")
+    _render_slide_images(db, row, slides)
+
+    _set_progress(db, row, "Writing explanatory narration…")
+    _expand_scripts(db, row, slides)
+
+    total = len(slides)
+    for i, slide in enumerate(slides, start=1):
+        _set_progress(db, row, f"Voiceover {i}/{total}…")
+        existing = Path(slide.audio_path) if slide.audio_path else None
+        if existing and existing.exists() and slide.duration_ms > 0:
+            probed = probe_audio_duration_ms(str(existing))
+            if probed > slide.duration_ms:
+                slide.duration_ms = probed
+            slide.cues = build_cues(slide.script, slide.shapes or [], slide.duration_ms)
+            db.commit()
+            continue
+        dest = audio_dir / f"slide-{slide.index}.wav"
+        duration, audio_path = synthesize_slide(slide.script, str(dest))
+        probed = probe_audio_duration_ms(audio_path)
+        if probed > duration:
+            duration = probed
+        slide.audio_path = audio_path
+        slide.duration_ms = duration
+        slide.cues = build_cues(slide.script, slide.shapes or [], duration)
+        db.commit()
+
+    _set_progress(db, row, "Encoding video with highlights…")
+    video_path = folder / f"{row.id}-narrated.mp4"
+    build_narrated_video(
+        [
+            {
+                "image_path": s.image_path or "",
+                "audio_path": s.audio_path or "",
+                "duration_ms": s.duration_ms,
+                "shapes": s.shapes or [],
+                "cues": s.cues or [],
+            }
+            for s in slides
+        ],
+        str(video_path),
+    )
+    row.video_path = str(video_path)
+    row.status = PresentationStatus.VIDEO_READY
+    row.error_message = None
+    row.progress_message = "Done"
+    row.updated_at = _now()
+    db.commit()
+    print(f"[presentations] background video ready for presentation {presentation_id}")

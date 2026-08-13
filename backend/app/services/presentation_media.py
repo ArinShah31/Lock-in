@@ -182,8 +182,16 @@ def build_cues(script: str, shapes: list[dict], duration_ms: float) -> list[dict
             if score > best_score:
                 best_score = score
                 best_idx = int(shape.get("index", 0))
-        if best_score == 0 and shapes:
-            best_idx = int(shapes[min(i, len(shapes) - 1)].get("index", i))
+        if best_score == 0:
+            visuals = [
+                shape
+                for shape in (shapes or [])
+                if str(shape.get("kind") or "") in {"picture", "chart", "group"}
+            ]
+            if visuals:
+                best_idx = int(visuals[min(i, len(visuals) - 1)].get("index", i))
+            else:
+                best_idx = None
         cues.append(
             {
                 "start_ms": round(start, 1),

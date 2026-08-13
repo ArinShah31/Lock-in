@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import re
 import subprocess
-import time
 import wave
 from pathlib import Path
 
@@ -73,25 +72,28 @@ def _extract_pcm(response) -> bytes | None:
 
 
 def _gemini_tts(text: str, wav_path: Path) -> float | None:
-    api_key = settings.gemini_api_key
-    if not api_key:
+    keys: list[str] = []
+    for key in (settings.gemini_api_key, *settings.gemini_keys_for_notes_pool()):
+        cleaned = (key or "").strip()
+        if cleaned and cleaned not in keys:
+            keys.append(cleaned)
+    if not keys:
         return None
 
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=api_key)
     models: list[str] = []
     primary = (settings.gemini_tts_model or "").strip()
     if primary:
         models.append(primary)
-    for name in _GEMINI_TTS_MODELS:
-        if name not in models:
-            models.append(name)
+    else:
+        models.append(_GEMINI_TTS_MODELS[0])
 
     last_error: Exception | None = None
-    for model in models:
-        for attempt in range(2):
+    for key in keys:
+        client = genai.Client(api_key=key)
+        for model in models:
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -114,8 +116,8 @@ def _gemini_tts(text: str, wav_path: Path) -> float | None:
                 return _pcm_to_wav(pcm, wav_path)
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
-                print(f"[presentations] Gemini TTS {model} attempt {attempt + 1} failed: {exc}")
-                time.sleep(0.6 * (attempt + 1))
+                print(f"[presentations] Gemini TTS {model} failed: {exc}")
+                break
     if last_error:
         print(f"[presentations] Gemini TTS unavailable, using Edge fallback: {last_error}")
     return None

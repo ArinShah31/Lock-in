@@ -27,7 +27,7 @@ function mapFetchError(err: unknown): never {
   throw err;
 }
 
-function getAccessToken() {
+export function getAccessToken() {
   return localStorage.getItem("astra_access_token");
 }
 

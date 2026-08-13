@@ -476,8 +476,10 @@ export type PracticeAttempt = {
 
 export type PresentationStatus =
   | "UPLOADED"
+  | "PREPARING"
   | "SCRIPTS_READY"
   | "AUDIO_READY"
+  | "GENERATING"
   | "VIDEO_READY"
   | "FAILED";
 
@@ -488,6 +490,7 @@ export type PresentationShape = {
   y: number;
   w: number;
   h: number;
+  kind?: string;
 };
 
 export type PresentationCue = {
@@ -518,6 +521,7 @@ export type ClassroomPresentation = {
   file_name: string;
   status: PresentationStatus;
   error_message?: string | null;
+  progress_message?: string | null;
   slide_count: number;
   has_video?: boolean;
   created_at: string;
@@ -526,4 +530,5 @@ export type ClassroomPresentation = {
 
 export type ClassroomPresentationDetail = ClassroomPresentation & {
   slides: PresentationSlide[];
+  caption_cues?: PresentationCue[];
 };

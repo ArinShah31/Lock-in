@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_media_user
 from app.api.routes.classrooms import (
     _ensure_view_access,
     _get_classroom_or_404,
@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.models.presentation import ClassroomPresentation, PresentationSlide, PresentationStatus
 from app.models.user import User, UserRole
 from app.schemas.presentation import (
+    CaptionCueOut,
     PresentationDetailOut,
     PresentationOut,
     PresentationSlideOut,
@@ -23,14 +24,12 @@ from app.schemas.presentation import (
     SlideScriptPatch,
     SlideShapeOut,
 )
-from app.services.presentation_media import (
-    build_cues,
-    export_slide_images,
-)
+from app.services.presentation_media import build_cues
+from app.services.presentation_jobs import start_prepare_job, start_video_job
 from app.services.presentation_parse import extract_slides
-from app.services.presentation_scripts import expand_slide_scripts, needs_script_expansion
-from app.services.presentation_tts import probe_audio_duration_ms, synthesize_slide
-from app.services.presentation_video import build_narrated_video
+from app.services.presentation_scripts import needs_script_expansion
+from app.services.presentation_tts import synthesize_slide
+from app.services.presentation_video import flatten_caption_cues
 
 router = APIRouter(prefix="/classrooms/{classroom_id}/presentations", tags=["presentations"])
 
@@ -77,6 +76,7 @@ def _shape_out(raw: list) -> list[SlideShapeOut]:
                 y=float(item.get("y") or 0),
                 w=float(item.get("w") or 0),
                 h=float(item.get("h") or 0),
+                kind=str(item.get("kind") or "text"),
             )
         )
     return out
@@ -123,6 +123,7 @@ def _summary(row: ClassroomPresentation) -> PresentationOut:
         file_name=row.file_name,
         status=row.status,
         error_message=row.error_message,
+        progress_message=getattr(row, "progress_message", None),
         slide_count=len(row.slides or []),
         has_video=bool(row.video_path),
         created_at=row.created_at,
@@ -130,11 +131,22 @@ def _summary(row: ClassroomPresentation) -> PresentationOut:
     )
 
 
+def _caption_cues(row: ClassroomPresentation) -> list[CaptionCueOut]:
+    raw = flatten_caption_cues(
+        [
+            {"duration_ms": s.duration_ms, "cues": s.cues or []}
+            for s in sorted(row.slides or [], key=lambda x: x.index)
+        ]
+    )
+    return [CaptionCueOut(**item) for item in raw]
+
+
 def _detail(row: ClassroomPresentation) -> PresentationDetailOut:
     base = _summary(row)
     return PresentationDetailOut(
         **base.model_dump(),
         slides=[_slide_out(s) for s in sorted(row.slides, key=lambda x: x.index)],
+        caption_cues=_caption_cues(row),
     )
 
 
@@ -199,32 +211,25 @@ async def upload_presentation(
 
     try:
         parsed = extract_slides(str(dest))
-        scripts = expand_slide_scripts(parsed, title=row.title)
-        for item, script in zip(parsed, scripts):
+        for item in parsed:
             db.add(
                 PresentationSlide(
                     presentation_id=row.id,
                     index=int(item["index"]),
                     extracted_text=item.get("extracted_text") or "",
-                    script=script or item.get("extracted_text") or "",
+                    script=item.get("extracted_text") or item.get("script") or "",
                     shapes=item.get("shapes") or [],
                     cues=[],
                 )
             )
-        try:
-            pngs = export_slide_images(str(dest), str(folder / f"{row.id}-slides"))
-            slides = (
-                db.query(PresentationSlide)
-                .filter(PresentationSlide.presentation_id == row.id)
-                .order_by(PresentationSlide.index)
-                .all()
-            )
-            for slide, png in zip(slides, pngs):
-                slide.image_path = png
-        except Exception as render_exc:  # noqa: BLE001
-            print(f"[presentations] slide render skipped on upload: {render_exc}")
-        row.status = PresentationStatus.SCRIPTS_READY
+        row.status = PresentationStatus.PREPARING
+        row.progress_message = "Queued…"
         row.error_message = None
+        _touch(row)
+        db.commit()
+        db.refresh(row)
+        start_prepare_job(row.id)
+        return _detail(row)
     except Exception as exc:  # noqa: BLE001
         row.status = PresentationStatus.FAILED
         row.error_message = str(exc)
@@ -232,6 +237,26 @@ async def upload_presentation(
     db.commit()
     db.refresh(row)
     return _detail(row)
+
+
+def _maybe_start_prepare(db: Session, row: ClassroomPresentation) -> None:
+    if row.status == PresentationStatus.PREPARING:
+        return
+    if row.status not in {PresentationStatus.UPLOADED, PresentationStatus.SCRIPTS_READY}:
+        return
+    if not row.slides:
+        return
+    missing_images = not any(s.image_path for s in row.slides)
+    needs_ai = any(
+        needs_script_expansion(s.script or "", s.extracted_text or "") for s in row.slides
+    )
+    if not missing_images and not needs_ai:
+        return
+    row.status = PresentationStatus.PREPARING
+    row.progress_message = "Queued…"
+    _touch(row)
+    db.commit()
+    start_prepare_job(row.id)
 
 
 @router.get("/{presentation_id}", response_model=PresentationDetailOut)
@@ -243,7 +268,10 @@ def get_presentation(
 ):
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_view_access(db, current_user, classroom)
-    return _detail(_get_presentation_or_404(db, classroom_id, presentation_id))
+    row = _get_presentation_or_404(db, classroom_id, presentation_id)
+    _maybe_start_prepare(db, row)
+    db.refresh(row)
+    return _detail(row)
 
 
 @router.patch("/{presentation_id}/slides/{slide_id}", response_model=PresentationSlideOut)
@@ -330,76 +358,19 @@ def generate_video(
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_teacher_access(db, current_user, classroom)
     row = _get_presentation_or_404(db, classroom_id, presentation_id)
-    folder = UPLOAD_ROOT / str(classroom_id)
-    audio_dir = folder / f"{row.id}-audio"
-    audio_dir.mkdir(parents=True, exist_ok=True)
+    if row.status in {PresentationStatus.GENERATING, PresentationStatus.PREPARING}:
+        return _detail(row)
+    if not row.slides:
+        raise HTTPException(status_code=400, detail="This presentation has no slides")
 
-    try:
-        slides = sorted(row.slides, key=lambda s: s.index)
-        if not slides:
-            raise RuntimeError("This presentation has no slides")
-        expanded = expand_slide_scripts(
-            [
-                {
-                    "index": s.index,
-                    "extracted_text": s.extracted_text or "",
-                    "script": s.script or "",
-                    "shapes": s.shapes or [],
-                }
-                for s in slides
-            ],
-            title=row.title,
-        )
-        for slide, script in zip(slides, expanded):
-            if needs_script_expansion(slide.script or "", slide.extracted_text or ""):
-                slide.script = script
-        pngs = export_slide_images(
-            row.file_path,
-            str(folder / f"{row.id}-slides"),
-            expected_count=len(slides),
-        )
-        if len(pngs) < len(slides):
-            raise RuntimeError(
-                f"Rendered {len(pngs)} slide image(s) but the deck has {len(slides)} slides"
-            )
-        for slide, png in zip(slides, pngs):
-            slide.image_path = png
-            dest = audio_dir / f"slide-{slide.index}.wav"
-            duration, audio_path = synthesize_slide(slide.script, str(dest))
-            probed = probe_audio_duration_ms(audio_path)
-            if probed > duration:
-                duration = probed
-            slide.audio_path = audio_path
-            slide.duration_ms = duration
-            slide.cues = build_cues(slide.script, slide.shapes or [], duration)
-
-        video_path = folder / f"{row.id}-narrated.mp4"
-        build_narrated_video(
-            [
-                {
-                    "image_path": s.image_path or "",
-                    "audio_path": s.audio_path or "",
-                    "duration_ms": s.duration_ms,
-                    "shapes": s.shapes or [],
-                    "cues": s.cues or [],
-                }
-                for s in slides
-            ],
-            str(video_path),
-        )
-        row.video_path = str(video_path)
-        row.status = PresentationStatus.VIDEO_READY
-        row.error_message = None
-    except Exception as exc:  # noqa: BLE001
-        row.status = PresentationStatus.FAILED
-        row.error_message = str(exc)
-        _touch(row)
-        db.commit()
-        raise HTTPException(status_code=502, detail=f"Video generation failed: {exc}") from exc
-
+    row.status = PresentationStatus.GENERATING
+    row.progress_message = "Queued…"
+    row.error_message = None
+    row.video_path = None
     _touch(row)
     db.commit()
     db.refresh(row)
+    start_video_job(row.id)
     return _detail(row)
 
 
@@ -444,7 +415,7 @@ def stream_video(
     classroom_id: int,
     presentation_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_media_user),
 ):
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_view_access(db, current_user, classroom)
@@ -484,7 +455,7 @@ def stream_image(
     presentation_id: int,
     slide_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_media_user),
 ):
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_view_access(db, current_user, classroom)
