@@ -93,9 +93,5 @@ def fallback_context_chunks(
         return []
 
     scored.sort(key=lambda item: item[0], reverse=True)
-    # Prefer matched chunks; if nothing overlaps, still give the first few blocks
-    # so the model can answer from real uploaded text instead of inventing.
     matched = [text for score, text in scored if score > 0]
-    if matched:
-        return matched[:limit]
-    return [text for _, text in scored[:limit]]
+    return matched[:limit]

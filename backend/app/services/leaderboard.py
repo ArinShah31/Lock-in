@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.classroom import ClassroomStudent, MembershipStatus
 from app.models.classroom_course import CourseChapterAttempt, MockExam, MockExamAttempt
 from app.models.user import User
+from app.services.coding_leaderboard import fetch_coding_leaderboard_scores
 
 
 def _initials(full_name: str) -> str:
@@ -46,12 +47,15 @@ def _latest_practice_scores(
 class _StudentPoints:
     student_id: int
     full_name: str
+    email: str
+    avatar_url: str | None = None
     quiz_points: int = 0
     exam_points: int = 0
+    coding_points: int = 0
 
     @property
     def total_points(self) -> int:
-        return self.quiz_points + self.exam_points
+        return self.quiz_points + self.exam_points + self.coding_points
 
 
 def build_classroom_leaderboard(
@@ -73,7 +77,12 @@ def build_classroom_leaderboard(
     )
 
     student_rows: dict[int, _StudentPoints] = {
-        student.id: _StudentPoints(student_id=student.id, full_name=student.full_name)
+        student.id: _StudentPoints(
+            student_id=student.id,
+            full_name=student.full_name,
+            email=student.email,
+            avatar_url=student.avatar_url,
+        )
         for _, student in memberships
     }
 
@@ -138,6 +147,10 @@ def build_classroom_leaderboard(
             if total_marks > 0 and attempt.total_score is not None:
                 row.exam_points += round((attempt.total_score / total_marks) * 100)
 
+    coding_by_email = fetch_coding_leaderboard_scores([row.email for row in student_rows.values()])
+    for row in student_rows.values():
+        row.coding_points = coding_by_email.get(row.email.strip().lower(), 0)
+
     ranked = sorted(
         student_rows.values(),
         key=lambda row: (-row.total_points, row.full_name.lower()),
@@ -156,8 +169,10 @@ def build_classroom_leaderboard(
                 "student_id": row.student_id,
                 "full_name": row.full_name,
                 "initials": _initials(row.full_name),
+                "avatar_url": row.avatar_url,
                 "quiz_points": row.quiz_points,
                 "exam_points": row.exam_points,
+                "coding_points": row.coding_points,
                 "total_points": row.total_points,
             }
         )

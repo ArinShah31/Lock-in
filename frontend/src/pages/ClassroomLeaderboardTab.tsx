@@ -4,14 +4,16 @@ import { useQuery } from "@tanstack/react-query";
 import { classroomsApi } from "../api";
 import type { Classroom, ClassroomLeaderboard, LeaderboardEntry } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import ProfileCard from "../components/ProfileCard";
 import { ErrorText } from "../components/ui";
 
 type OutletCtx = { classroom: Classroom };
-type LeaderboardFilter = "overall" | "practice" | "exams";
+type LeaderboardFilter = "overall" | "practice" | "exams" | "coding";
 
 function sortValue(entry: LeaderboardEntry, filter: LeaderboardFilter): number {
   if (filter === "practice") return entry.quiz_points;
   if (filter === "exams") return entry.exam_points;
+  if (filter === "coding") return entry.coding_points;
   return entry.total_points;
 }
 
@@ -50,6 +52,12 @@ function rankBadge(rank: number): string {
   return `#${String(rank).padStart(3, "0")}`;
 }
 
+function initialsAvatarDataUrl(initials: string): string {
+  const safe = initials.replace(/[<>&'"]/g, "");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#3b82f6"/></linearGradient></defs><rect width="400" height="400" fill="url(#g)"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="140" font-family="system-ui,sans-serif" font-weight="700">${safe}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 function Avatar({
   initials,
   size = "md",
@@ -78,7 +86,13 @@ function Avatar({
   );
 }
 
-function PodiumCard({
+const PODIUM_TITLES = {
+  1: "Champion",
+  2: "Silver",
+  3: "Bronze",
+} as const;
+
+function PodiumProfileCard({
   entry,
   place,
   points,
@@ -87,43 +101,37 @@ function PodiumCard({
   place: 1 | 2 | 3;
   points: number;
 }) {
-  const heights = { 1: "h-44", 2: "h-32", 3: "h-28" } as const;
   const order = { 1: "order-2", 2: "order-1", 3: "order-3" } as const;
-  const podiumGradients = {
-    1: "from-amber-300/90 via-yellow-400/70 to-orange-500/60",
-    2: "from-slate-200/80 via-slate-300/60 to-slate-400/50",
-    3: "from-orange-300/70 via-amber-500/50 to-amber-700/50",
-  } as const;
 
   if (!entry) {
     return (
       <div className={`flex flex-1 flex-col items-center justify-end ${order[place]}`}>
-        <div
-          className={`w-full max-w-[10rem] rounded-t-3xl border border-dashed border-white/20 bg-white/5 ${heights[place]}`}
-        />
+        <div className="h-[280px] w-full max-w-[11rem] rounded-3xl border border-dashed border-white/20 bg-white/5 sm:h-[320px]" />
       </div>
     );
   }
 
+  const avatarUrl = entry.avatar_url || initialsAvatarDataUrl(entry.initials);
+
   return (
     <div className={`flex flex-1 flex-col items-center justify-end ${order[place]}`}>
-      <div className="mb-4 flex flex-col items-center text-center">
-        <Avatar initials={entry.initials} size={place === 1 ? "lg" : "md"} glow={place === 1} />
-        <p className="mt-3 max-w-[10rem] truncate text-sm font-bold text-white">{entry.full_name}</p>
-        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
-          {points.toLocaleString()} XP
-        </p>
-      </div>
-      <div
-        className={`relative flex w-full max-w-[10rem] flex-col items-center justify-end rounded-t-3xl border border-white/20 bg-gradient-to-t ${podiumGradients[place]} px-3 pb-4 pt-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)] ${heights[place]}`}
-      >
-        <span className="text-3xl drop-shadow-lg" aria-hidden>
-          {rankBadge(entry.rank)}
-        </span>
-        <span className="mt-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/90">
-          Rank {entry.rank}
-        </span>
-      </div>
+      <ProfileCard
+        className={`pc-leaderboard ${place === 1 ? "pc-leaderboard-first" : ""}`}
+        name={entry.full_name}
+        title={`${PODIUM_TITLES[place]} · ${points.toLocaleString()} XP`}
+        handle={entry.initials}
+        status={`${points.toLocaleString()} XP`}
+        avatarUrl={avatarUrl}
+        miniAvatarUrl={avatarUrl}
+        contactText={`Rank #${entry.rank}`}
+        showUserInfo
+        enableTilt
+        enableMobileTilt={false}
+        behindGlowEnabled
+        behindGlowColor="rgba(34, 211, 238, 0.55)"
+        innerGradient="linear-gradient(145deg, rgba(8, 40, 73, 0.85) 0%, rgba(96, 73, 110, 0.55) 100%)"
+        onContactClick={() => undefined}
+      />
     </div>
   );
 }
@@ -201,8 +209,8 @@ export function ClassroomLeaderboardTab() {
               Class Leaderboard
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-violet-200/85">
-              Climb the ranks with practice quizzes, scenarios, assessments, and mock exams. XP is earned from
-              your best attempt on each activity — more practice, higher rank.
+              Climb the ranks with practice quizzes, scenarios, assessments, mock exams, and coding tests.
+              XP is earned from your best attempt on each activity — more practice, higher rank.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -227,6 +235,13 @@ export function ClassroomLeaderboardTab() {
             >
               Mock Exams
             </button>
+            <button
+              type="button"
+              className={filterPillClass(filter === "coding")}
+              onClick={() => setFilter("coding")}
+            >
+              Coding
+            </button>
           </div>
         </div>
 
@@ -238,7 +253,7 @@ export function ClassroomLeaderboardTab() {
         ) : !hasAnyPoints ? (
           <GameEmptyState
             title="Arena awaits its first champion"
-            body="Complete quizzes, scenarios, assessments, or mock exams to claim your spot on the board."
+            body="Complete quizzes, scenarios, assessments, mock exams, or coding tests to claim your spot on the board."
           />
         ) : (
           <>
@@ -246,18 +261,18 @@ export function ClassroomLeaderboardTab() {
               <p className="mb-6 text-center text-xs font-bold uppercase tracking-[0.24em] text-violet-200/70">
                 Top Champions
               </p>
-              <div className="mx-auto flex max-w-4xl items-end justify-center gap-4 sm:gap-8">
-                <PodiumCard
+              <div className="mx-auto flex max-w-5xl items-end justify-center gap-3 sm:gap-6">
+                <PodiumProfileCard
                   entry={podium.second}
                   place={2}
                   points={podium.second ? sortValue(podium.second, filter) : 0}
                 />
-                <PodiumCard
+                <PodiumProfileCard
                   entry={podium.first}
                   place={1}
                   points={podium.first ? sortValue(podium.first, filter) : 0}
                 />
-                <PodiumCard
+                <PodiumProfileCard
                   entry={podium.third}
                   place={3}
                   points={podium.third ? sortValue(podium.third, filter) : 0}
@@ -267,13 +282,14 @@ export function ClassroomLeaderboardTab() {
 
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20 backdrop-blur-sm">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[32rem] text-left text-sm">
+                <table className="w-full min-w-[40rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/5 text-xs uppercase tracking-[0.16em] text-violet-200/70">
                       <th className="px-4 py-3 font-bold">Rank</th>
                       <th className="px-4 py-3 font-bold">Player</th>
                       <th className="px-4 py-3 font-bold">Practice XP</th>
                       <th className="px-4 py-3 font-bold">Exam XP</th>
+                      <th className="px-4 py-3 font-bold">Coding XP</th>
                       <th className="px-4 py-3 font-bold">Total XP</th>
                     </tr>
                   </thead>
@@ -282,6 +298,7 @@ export function ClassroomLeaderboardTab() {
                       const isTopThree = entry.rank <= 3;
                       const highlightPractice = filter === "practice";
                       const highlightExams = filter === "exams";
+                      const highlightCoding = filter === "coding";
                       const highlightTotal = filter === "overall";
                       return (
                         <tr
@@ -318,6 +335,11 @@ export function ClassroomLeaderboardTab() {
                             className={`px-4 py-4 ${highlightExams ? "font-bold text-cyan-300" : "text-violet-200/80"}`}
                           >
                             {entry.exam_points.toLocaleString()}
+                          </td>
+                          <td
+                            className={`px-4 py-4 ${highlightCoding ? "font-bold text-cyan-300" : "text-violet-200/80"}`}
+                          >
+                            {entry.coding_points.toLocaleString()}
                           </td>
                           <td
                             className={`px-4 py-4 ${highlightTotal ? "font-bold text-white" : "text-violet-200/80"}`}

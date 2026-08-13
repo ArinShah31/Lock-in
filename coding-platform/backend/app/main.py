@@ -7,6 +7,7 @@ from app.core.database import Base, SessionLocal, engine
 from app.models import *  # noqa: F401,F403
 from app.routers.auth_teacher import router as auth_router
 from app.routers.auth_teacher import teacher_router
+from app.routers.internal import router as internal_router
 from app.routers.student_results import results_router, student_router
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
@@ -76,5 +77,6 @@ def health():
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(teacher_router, prefix="/api/v1")
+app.include_router(internal_router, prefix="/api/v1")
 app.include_router(student_router, prefix="/api/v1")
 app.include_router(results_router, prefix="/api/v1")

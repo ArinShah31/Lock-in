@@ -4,12 +4,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from app.ai.guardrails.policies import STUDENT_REFUSAL
 from app.ai.guardrails.terms import PHRASE_CATEGORIES, WORD_CATEGORIES
-
-STUDENT_REFUSAL = (
-    "ASTRA AI is only for schoolwork. I can’t help with that. "
-    "Please ask a question about your classroom documents or syllabus."
-)
 
 _ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff\u2060"), None)
 _LEET = str.maketrans(
@@ -44,6 +40,14 @@ def normalize_question(text: str) -> str:
     return _WHITESPACE.sub(" ", folded).strip()
 
 
+def _match_phrases(normalized: str, categories: tuple[str, ...]) -> GuardrailResult | None:
+    for category in categories:
+        for phrase in PHRASE_CATEGORIES.get(category, ()):
+            if re.search(rf"\b{re.escape(phrase)}\b", normalized):
+                return GuardrailResult(blocked=True, category=category)
+    return None
+
+
 def check_student_question(question: str) -> GuardrailResult:
     normalized = normalize_question(question)
     if not normalized:
@@ -54,9 +58,30 @@ def check_student_question(question: str) -> GuardrailResult:
         if tokens & words:
             return GuardrailResult(blocked=True, category=category)
 
-    for category, phrases in PHRASE_CATEGORIES.items():
-        for phrase in phrases:
-            if re.search(rf"\b{re.escape(phrase)}\b", normalized):
-                return GuardrailResult(blocked=True, category=category)
+    matched = _match_phrases(
+        normalized,
+        ("self_harm", "violence", "drugs", "jailbreak"),
+    )
+    if matched:
+        return matched
 
     return GuardrailResult(blocked=False)
+
+
+def check_injection_request(question: str) -> GuardrailResult:
+    normalized = normalize_question(question)
+    if not normalized:
+        return GuardrailResult(blocked=False)
+    matched = _match_phrases(normalized, ("injection", "jailbreak"))
+    if matched:
+        return matched
+    return GuardrailResult(blocked=False)
+
+
+__all__ = [
+    "STUDENT_REFUSAL",
+    "GuardrailResult",
+    "check_student_question",
+    "check_injection_request",
+    "normalize_question",
+]

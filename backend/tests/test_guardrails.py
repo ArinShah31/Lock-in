@@ -3,6 +3,7 @@ import unittest
 from app.ai.chat.service import answer_classroom_question
 from app.ai.guardrails import STUDENT_REFUSAL, check_student_question, normalize_question
 from app.ai.guardrails.checker import GuardrailResult
+from app.ai.guardrails.scope import check_student_scope
 
 
 class NormalizeQuestionTests(unittest.TestCase):
@@ -66,6 +67,11 @@ class GuardrailBlockTests(unittest.TestCase):
 
     def test_ass_does_not_match_class(self):
         self.assertFalse(check_student_question("What happens in class tomorrow?").blocked)
+
+
+class StudentScopeTests(unittest.TestCase):
+    def test_off_topic_student_refused(self):
+        self.assertTrue(check_student_scope("tell me a joke").blocked)
 
 
 class ChatServiceGuardrailTests(unittest.TestCase):
