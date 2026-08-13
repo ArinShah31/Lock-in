@@ -412,6 +412,18 @@ export type PracticeQuiz = {
   questions: PracticeQuestion[];
 };
 
+export type PracticeScenario = {
+  id: string;
+  chapter_number: number;
+  chapter_title: string;
+  title: string;
+  situation: string;
+  question_count: number;
+  latest_score: number | null;
+  latest_attempted_at: string | null;
+  questions: PracticeQuestion[];
+};
+
 export type PracticeFlashcard = {
   id: string;
   question: string;
@@ -448,8 +460,10 @@ export type PracticeSummary = {
   source_document_count: number;
   ready_quizzes: number;
   flashcard_decks: number;
+  ready_scenarios: number;
   locked_assessments: number;
   completed_quizzes: number;
+  completed_scenarios: number;
   completed_assessments: number;
 };
 
@@ -458,9 +472,13 @@ export type PracticeOverview = {
   classroom_name: string;
   course_title: string | null;
   source_document_count: number;
+  generation_status: "idle" | "generating" | "failed" | "ready";
+  generation_error: string | null;
+  generation_message: string | null;
   summary: PracticeSummary;
   quizzes: PracticeQuiz[];
   flashcard_decks: PracticeFlashcardDeck[];
+  scenarios: PracticeScenario[];
   topic_assessments: PracticeAssessment[];
   subject_assessments: PracticeAssessment[];
 };

@@ -14,6 +14,7 @@ import type {
   PracticeOverview,
   PracticeQuestion,
   PracticeQuiz,
+  PracticeScenario,
 } from "../api/types";
 import {
   EmptyState,
@@ -26,7 +27,7 @@ import {
   SecondaryButton,
 } from "../components/ui";
 
-type PracticeSection = "quizzes" | "flashcards" | "assessments";
+type PracticeSection = "quizzes" | "flashcards" | "scenarios" | "assessments";
 type AssessmentSection = "topic" | "subject";
 
 type PracticeSectionOption = {
@@ -55,6 +56,12 @@ const practiceSections: PracticeSectionOption[] = [
     label: "FlashCards",
     description: "Fast recall decks for revision right before practice or class.",
     icon: "style",
+  },
+  {
+    key: "scenarios",
+    label: "Scenarios",
+    description: "Apply classroom concepts to realistic case situations with guided MCQs.",
+    icon: "psychology",
   },
   {
     key: "assessments",
@@ -320,6 +327,7 @@ function FlashcardsExperience({
   flippedIds,
   onToggleCard,
   onResetDeck,
+  emptyBody,
 }: {
   decks: PracticeFlashcardDeck[];
   selectedDeckId: string;
@@ -327,12 +335,13 @@ function FlashcardsExperience({
   flippedIds: Set<string>;
   onToggleCard: (cardId: string) => void;
   onResetDeck: () => void;
+  emptyBody?: string;
 }) {
   if (!decks.length) {
     return (
       <EmptyState
         title="Flashcards will show up here"
-        body="Generate chapter assessments from classroom documents and syllabus to unlock revision decks."
+        body={emptyBody ?? "Generate chapter assessments from classroom documents and syllabus to unlock revision decks."}
       />
     );
   }
@@ -473,15 +482,20 @@ function FlashcardsExperience({
 function QuizGrid({
   items,
   onOpen,
+  emptyBody,
 }: {
   items: PracticeQuiz[];
   onOpen: (quiz: PracticeQuiz) => void;
+  emptyBody?: string;
 }) {
   if (!items.length) {
     return (
       <EmptyState
         title="Quizzes will appear here"
-        body="Once classroom material is generated from syllabus and uploaded documents, quick quizzes will light up here automatically."
+        body={
+          emptyBody ??
+          "Once classroom material is generated from syllabus and uploaded documents, quick quizzes will light up here automatically."
+        }
       />
     );
   }
@@ -524,6 +538,121 @@ function QuizGrid({
           </Panel>
         );
       })}
+    </div>
+  );
+}
+
+function ScenarioGrid({
+  items,
+  onOpen,
+  emptyBody,
+}: {
+  items: PracticeScenario[];
+  onOpen: (scenario: PracticeScenario) => void;
+  emptyBody?: string;
+}) {
+  if (!items.length) {
+    return (
+      <EmptyState
+        title="Scenarios will appear here"
+        body={
+          emptyBody ??
+          "Once classroom material is generated, realistic case studies with five MCQs each will appear here automatically."
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((item) => {
+        const status = activityStatus(item.latest_score);
+        const preview =
+          item.situation.length > 160 ? `${item.situation.slice(0, 160).trim()}…` : item.situation;
+        return (
+          <Panel key={item.id} className="flex h-full flex-col justify-between gap-4 p-0">
+            <div className="space-y-3 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
+                    {item.chapter_title} · {item.question_count} questions
+                  </p>
+                  <h3 className="mt-2 font-display text-lg font-bold text-[#031635]">{item.title}</h3>
+                </div>
+                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${status.className}`}>
+                  {status.label}
+                </span>
+              </div>
+              <p className="text-sm leading-6 text-[#44474e]">{preview}</p>
+            </div>
+
+            <div className="space-y-3 border-t border-[#e1e3e4] px-5 py-4">
+              <div className="flex items-center justify-between text-sm text-[#5d6167]">
+                <span>{formatAttemptLabel(item.latest_attempted_at)}</span>
+                <span className="font-semibold text-[#031635]">{formatScore(item.latest_score)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpen(item)}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#031635] transition hover:text-[#3f5d9b]"
+              >
+                <span>{item.latest_score == null ? "Start scenario" : "Retake scenario"}</span>
+                <span className="material-symbols-outlined text-base">arrow_forward</span>
+              </button>
+            </div>
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScenarioRunner({
+  scenario,
+  buttonText,
+  isSubmitting,
+  onSubmit,
+  onClose,
+  lastScore,
+}: {
+  scenario: PracticeScenario;
+  buttonText: string;
+  isSubmitting: boolean;
+  onSubmit: (answers: string[]) => Promise<void> | void;
+  onClose: () => void;
+  lastScore: number | null;
+}) {
+  return (
+    <div className="space-y-5">
+      <Panel className="space-y-4 border-[#d6e3ff] bg-[linear-gradient(135deg,#ffffff_0%,#f7fbff_100%)]">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#3f5d9b]">Case situation</p>
+            <h3 className="mt-2 font-display text-2xl font-extrabold text-[#031635]">{scenario.title}</h3>
+            <p className="mt-1 text-sm font-semibold text-[#5d6167]">{scenario.chapter_title}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[#d6e3ff] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
+              {scenario.question_count} questions
+            </span>
+            <span className="rounded-full border border-[#e1e3e4] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#5d6167]">
+              {formatScore(lastScore)}
+            </span>
+          </div>
+        </div>
+        <p className="text-sm leading-7 text-[#44474e]">{scenario.situation}</p>
+      </Panel>
+
+      <QuestionRunner
+        title="Answer from the case"
+        subtitle="Use the situation above to choose the best option for each question."
+        questions={scenario.questions}
+        buttonText={buttonText}
+        isSubmitting={isSubmitting}
+        onSubmit={onSubmit}
+        onClose={onClose}
+        lastScore={lastScore}
+      />
     </div>
   );
 }
@@ -1056,12 +1185,14 @@ export function PracticePage() {
   const [selectedFlashcardDeckId, setSelectedFlashcardDeckId] = useState("");
   const [flippedFlashcards, setFlippedFlashcards] = useState<Set<string>>(new Set());
   const [activeQuizChapter, setActiveQuizChapter] = useState<number | null>(null);
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [activeAssessment, setActiveAssessment] = useState<{ kind: string; targetKey: string } | null>(null);
   const [activeMockExamId, setActiveMockExamId] = useState<number | null>(null);
   const [mockExamResult, setMockExamResult] = useState<MockExamAttempt | null>(null);
-  const [submitState, setSubmitState] = useState<{ kind: "quiz" | "assessment" | "mock"; loading: boolean } | null>(
-    null,
-  );
+  const [submitState, setSubmitState] = useState<{
+    kind: "quiz" | "scenario" | "assessment" | "mock";
+    loading: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -1136,6 +1267,7 @@ export function PracticePage() {
       setLoading(true);
       setError(null);
       setActiveQuizChapter(null);
+      setActiveScenarioId(null);
       setActiveAssessment(null);
       setActiveMockExamId(null);
       setMockExamResult(null);
@@ -1187,6 +1319,31 @@ export function PracticePage() {
   }, [authLoading, user?.role, classroomId, classrooms]);
 
   useEffect(() => {
+    if (practice?.generation_status !== "generating" || classroomId == null) return;
+
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const overview = await practiceApi.get(classroomId);
+          if (cancelled) return;
+          setPractice(overview);
+          if (!overview.flashcard_decks.some((deck) => deck.id === selectedFlashcardDeckId)) {
+            setSelectedFlashcardDeckId(overview.flashcard_decks[0]?.id ?? "");
+          }
+        } catch {
+          // Ignore transient polling errors; the user can refresh manually.
+        }
+      })();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [practice?.generation_status, classroomId, selectedFlashcardDeckId]);
+
+  useEffect(() => {
     setFlippedFlashcards(new Set());
   }, [selectedFlashcardDeckId]);
 
@@ -1197,6 +1354,10 @@ export function PracticePage() {
   const activeQuiz = useMemo(
     () => practice?.quizzes.find((quiz) => quiz.chapter_number === activeQuizChapter) ?? null,
     [practice?.quizzes, activeQuizChapter],
+  );
+  const activeScenario = useMemo(
+    () => practice?.scenarios?.find((scenario) => scenario.id === activeScenarioId) ?? null,
+    [practice?.scenarios, activeScenarioId],
   );
   const assessmentItems = assessmentSection === "topic" ? practice?.topic_assessments ?? [] : practice?.subject_assessments ?? [];
   const activeAssessmentItem = useMemo(
@@ -1272,6 +1433,25 @@ export function PracticePage() {
     }
   }
 
+  async function handleScenarioSubmit(selectedAnswers: string[]) {
+    if (!classroom || !activeScenario) return;
+    setSubmitState({ kind: "scenario", loading: true });
+    try {
+      await practiceApi.submitScenario(
+        classroom.id,
+        activeScenario.chapter_number,
+        activeScenario.id,
+        selectedAnswers,
+      );
+      await refreshPractice();
+      setActiveScenarioId(activeScenario.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit scenario");
+    } finally {
+      setSubmitState(null);
+    }
+  }
+
   async function handleAssessmentSubmit(selectedAnswers: string[]) {
     if (!classroom || !activeAssessmentItem) return;
     setSubmitState({ kind: "assessment", loading: true });
@@ -1333,6 +1513,7 @@ export function PracticePage() {
   }
 
   const summary = practice?.summary;
+  const practiceEmptyBody = practice?.generation_message ?? undefined;
 
   return (
     <div className="space-y-6">
@@ -1365,6 +1546,9 @@ export function PracticePage() {
                 } else if (practice?.quizzes.length) {
                   setSection("quizzes");
                   setActiveQuizChapter(practice.quizzes[0].chapter_number);
+                } else if ((practice?.scenarios?.length ?? 0) > 0) {
+                  setSection("scenarios");
+                  setActiveScenarioId(practice?.scenarios?.[0]?.id ?? null);
                 } else if (practice?.flashcard_decks.length) {
                   setSection("flashcards");
                   setSelectedFlashcardDeckId(practice.flashcard_decks[0].id);
@@ -1380,6 +1564,19 @@ export function PracticePage() {
       />
 
       <ErrorText message={error} />
+
+      {practice?.generation_status === "generating" ? (
+        <Panel className="border-[#bfd2f3] bg-[#eef4ff] px-4 py-3 text-sm text-[#3f5d9b]">
+          {practice.generation_message ??
+            "Practice content is being generated from your classroom material. Refresh in a moment."}
+        </Panel>
+      ) : null}
+
+      {practice?.generation_status === "failed" && practice.generation_error ? (
+        <Panel className="border-[#f2c9c9] bg-[#fff5f5] px-4 py-3 text-sm text-[#8b2f2f]">
+          {practice.generation_error}
+        </Panel>
+      ) : null}
 
       <Panel className="overflow-hidden bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_55%,#eef4ff_100%)]">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -1397,7 +1594,7 @@ export function PracticePage() {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl border border-[#e1e3e4] bg-white/90 px-4 py-3">
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#75777f]">Ready now</p>
               <p className="mt-2 font-display text-2xl font-extrabold text-[#031635]">{summary?.ready_quizzes ?? 0}</p>
@@ -1407,6 +1604,10 @@ export function PracticePage() {
               <p className="mt-2 font-display text-2xl font-extrabold text-[#031635]">{summary?.flashcard_decks ?? 0}</p>
             </div>
             <div className="rounded-xl border border-[#e1e3e4] bg-white/90 px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#75777f]">Scenarios</p>
+              <p className="mt-2 font-display text-2xl font-extrabold text-[#031635]">{summary?.ready_scenarios ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-[#e1e3e4] bg-white/90 px-4 py-3">
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#75777f]">Locked assessments</p>
               <p className="mt-2 font-display text-2xl font-extrabold text-[#031635]">{summary?.locked_assessments ?? 0}</p>
             </div>
@@ -1414,7 +1615,7 @@ export function PracticePage() {
         </div>
       </Panel>
 
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
         {practiceSections.map((item) => {
           const active = section === item.key;
           return (
@@ -1517,8 +1718,10 @@ export function PracticePage() {
           <AnimatedSwitchContent motionKey="practice-quizzes">
             <QuizGrid
               items={practice?.quizzes ?? []}
+              emptyBody={practiceEmptyBody}
               onOpen={(quiz) => {
                 setActiveQuizChapter(quiz.chapter_number);
+                setActiveScenarioId(null);
                 setActiveAssessment(null);
               }}
             />
@@ -1533,6 +1736,34 @@ export function PracticePage() {
               onSubmit={handleQuizSubmit}
               onClose={() => setActiveQuizChapter(null)}
               lastScore={practice?.quizzes.find((item) => item.chapter_number === activeQuiz.chapter_number)?.latest_score ?? null}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {section === "scenarios" ? (
+        <div className="space-y-6">
+          <AnimatedSwitchContent motionKey="practice-scenarios">
+            <ScenarioGrid
+              items={practice?.scenarios ?? []}
+              emptyBody={practiceEmptyBody}
+              onOpen={(scenario) => {
+                setActiveScenarioId(scenario.id);
+                setActiveQuizChapter(null);
+                setActiveAssessment(null);
+              }}
+            />
+          </AnimatedSwitchContent>
+          {activeScenario ? (
+            <ScenarioRunner
+              scenario={activeScenario}
+              buttonText="Submit scenario"
+              isSubmitting={submitState?.kind === "scenario" && submitState.loading}
+              onSubmit={handleScenarioSubmit}
+              onClose={() => setActiveScenarioId(null)}
+              lastScore={
+                practice?.scenarios?.find((item) => item.id === activeScenario.id)?.latest_score ?? null
+              }
             />
           ) : null}
         </div>
@@ -1553,6 +1784,7 @@ export function PracticePage() {
             })
           }
           onResetDeck={() => setFlippedFlashcards(new Set())}
+          emptyBody={practiceEmptyBody}
         />
       ) : null}
 

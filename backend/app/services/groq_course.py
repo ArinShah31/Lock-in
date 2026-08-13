@@ -116,7 +116,14 @@ def _extract_json(text: str) -> Any:
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(cleaned[start : end + 1])
+        raise
 
 
 class GroqStageClient:
@@ -134,6 +141,44 @@ class GroqStageClient:
                 "Set GROQ_API_KEY_STRUCTURE / NOTES / QUIZ in backend/.env"
             )
 
+    def _chat_json_loose(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        json_system = (
+            f"{system}\n\nReturn ONLY one valid JSON object. "
+            "No markdown fences, no prose before or after the JSON."
+        )
+        last_error: Exception | None = None
+        for key in self.keys:
+            client = OpenAI(api_key=key, base_url=GROQ_BASE_URL, timeout=180.0)
+            for attempt in range(2):
+                try:
+                    response = client.chat.completions.create(
+                        model=self.model,
+                        temperature=0.2,
+                        messages=[
+                            {"role": "system", "content": json_system},
+                            {"role": "user", "content": user},
+                        ],
+                        max_tokens=max_tokens or 4096,
+                    )
+                    content = response.choices[0].message.content or "{}"
+                    data = _extract_json(content)
+                    if not isinstance(data, dict):
+                        raise ValueError("Model returned non-object JSON")
+                    return data
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    if _is_transient(exc):
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    break
+        raise RuntimeError(f"Groq {self.stage} loose JSON parse failed: {last_error}")
+
     def chat_json(
         self,
         *,
@@ -142,6 +187,7 @@ class GroqStageClient:
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         last_error: Exception | None = None
+        saw_json_validate = False
         for key in self.keys:
             client = OpenAI(api_key=key, base_url=GROQ_BASE_URL, timeout=180.0)
             for attempt in range(3):
@@ -165,10 +211,17 @@ class GroqStageClient:
                     return data
                 except Exception as exc:  # noqa: BLE001
                     last_error = exc
+                    if _is_json_validate_failed(exc):
+                        saw_json_validate = True
                     if _is_transient(exc) or _is_json_validate_failed(exc):
                         time.sleep(1.5 * (attempt + 1))
                         continue
                     break
+        if saw_json_validate:
+            try:
+                return self._chat_json_loose(system=system, user=user, max_tokens=max_tokens)
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
         raise RuntimeError(f"Groq {self.stage} failed after key failover: {last_error}")
 
     def chat_text(
@@ -291,24 +344,7 @@ class GeminiNotesClient:
         raise RuntimeError(f"Gemini notes text failed after key failover: {last_error}")
 
 
-def generate_structure(*, classroom_name: str, source_text: str) -> list[dict[str, Any]]:
-    client = GroqStageClient("STRUCTURE")
-    data = client.chat_json(
-        system=(
-            "You are ASTRA's AI course builder. Return ONLY valid JSON. "
-            "Build a clear chapter outline from the provided materials. "
-            "Order chapters so later chapters build on earlier prerequisites."
-        ),
-        user=(
-            f"Classroom: {classroom_name}\n\n"
-            "Source materials (topic scope):\n"
-            f"{source_text[:12000]}\n\n"
-            "Return JSON:\n"
-            '{"chapters":[{"chapter":1,"title":"","summary":"","timeline":"",'
-            '"objectives":[],"topics":[]}]}'
-            "\nCreate 3 to 10 ordered chapters."
-        ),
-    )
+def _structure_chapters_from_data(data: dict[str, Any]) -> list[dict[str, Any]]:
     chapters = data.get("chapters") or []
     if not chapters:
         raise ValueError("No chapters returned from structure generation")
@@ -330,6 +366,71 @@ def generate_structure(*, classroom_name: str, source_text: str) -> list[dict[st
             }
         )
     return sorted(result, key=lambda c: c["chapter"])
+
+
+def _generate_structure_gemini(*, classroom_name: str, source_text: str) -> dict[str, Any]:
+    from google import genai
+    from pydantic import BaseModel, Field
+
+    class ChapterOutline(BaseModel):
+        chapter: int
+        title: str
+        summary: str = ""
+        timeline: str = ""
+        objectives: list[str] = Field(default_factory=list)
+        topics: list[str] = Field(default_factory=list)
+
+    class StructurePayload(BaseModel):
+        chapters: list[ChapterOutline] = Field(default_factory=list)
+
+    api_key = settings.gemini_api_key.strip()
+    if not api_key:
+        raise RuntimeError("Gemini API key is not configured for structure fallback")
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=settings.gemini_chat_model,
+        contents=(
+            "You are ASTRA's AI course builder. Build a clear chapter outline from the materials.\n\n"
+            f"Classroom: {classroom_name}\n\n"
+            "Source materials (topic scope):\n"
+            f"{source_text[:12000]}\n\n"
+            "Create 3 to 10 ordered chapters. Each chapter needs title, summary, timeline, "
+            "objectives, and topics."
+        ),
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": StructurePayload,
+        },
+    )
+    payload = response.parsed
+    if payload is None:
+        raise ValueError("Gemini structure generation returned empty payload")
+    return payload.model_dump()
+
+
+def generate_structure(*, classroom_name: str, source_text: str) -> list[dict[str, Any]]:
+    prompt_user = (
+        f"Classroom: {classroom_name}\n\n"
+        "Source materials (topic scope):\n"
+        f"{source_text[:10000]}\n\n"
+        "Return JSON:\n"
+        '{"chapters":[{"chapter":1,"title":"","summary":"","timeline":"",'
+        '"objectives":[],"topics":[]}]}'
+        "\nCreate 3 to 8 ordered chapters. Keep summaries short (1-2 sentences)."
+    )
+    prompt_system = (
+        "You are ASTRA's AI course builder. Return ONLY valid JSON. "
+        "Build a clear chapter outline from the provided materials. "
+        "Order chapters so later chapters build on earlier prerequisites."
+    )
+    try:
+        client = GroqStageClient("STRUCTURE")
+        data = client.chat_json(system=prompt_system, user=prompt_user, max_tokens=4096)
+        return _structure_chapters_from_data(data)
+    except RuntimeError:
+        data = _generate_structure_gemini(classroom_name=classroom_name, source_text=source_text)
+        return _structure_chapters_from_data(data)
 
 
 def _lesson_outline(
@@ -710,20 +811,22 @@ def _notes_excerpts(chapter: dict[str, Any], *, per_lesson: int = 1200, total_ca
 
 
 def _parse_quiz(data: dict[str, Any]) -> list[dict[str, Any]]:
+    from app.services.practice_gemini import valid_mcq_options
+
     quiz = []
     for q in data.get("quiz") or []:
-        options = [str(o) for o in (q.get("options") or [])]
-        if len(options) < 2:
+        options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
+        if not valid_mcq_options(options):
             continue
-        correct = str(q.get("correct_answer") or options[0])
+        correct = str(q.get("correct_answer") or "").strip()
         if correct not in options:
             correct = options[0]
         quiz.append(
             {
-                "question": str(q.get("question") or ""),
+                "question": str(q.get("question") or "").strip(),
                 "options": options,
                 "correct_answer": correct,
-                "explanation": str(q.get("explanation") or ""),
+                "explanation": str(q.get("explanation") or "").strip(),
             }
         )
     return [q for q in quiz if q["question"]]
@@ -745,6 +848,12 @@ def _parse_flashcards(data: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return flashcards
+
+
+def _parse_scenarios(data: dict[str, Any], *, chapter_number: int) -> list[dict[str, Any]]:
+    from app.services.practice_gemini import parse_scenarios
+
+    return parse_scenarios(data.get("scenarios") or [], chapter_number=chapter_number)
 
 
 def generate_chapter_quiz(
@@ -773,34 +882,60 @@ def generate_chapter_assessments(
     flashcard_schema = (
         ',"flashcards":[{"question":"","answer":"","topic":""}]' if include_flashcards else ""
     )
+    scenario_schema = (
+        ',"scenarios":[{"title":"","situation":"","questions":[{"question":"","options":'
+        '["First complete answer","Second complete answer","Third complete answer","Fourth complete answer"],'
+        '"correct_answer":"Second complete answer","explanation":""}]}]'
+    )
     flashcard_instruction = (
         "\nAlso provide 6 to 12 flashcards that check understanding of taught concepts."
         if include_flashcards
         else ""
     )
-    data = client.chat_json(
-        system=(
-            "You are ASTRA's assessment writer. Return ONLY valid JSON. "
-            "Write quizzes from the taught lesson notes — test understanding and reasoning, "
-            "not trivia memorization of the syllabus."
-        ),
-        user=(
-            f"Classroom: {classroom_name}\n"
-            f"Chapter {chapter.get('chapter')}: {chapter.get('title')}\n"
-            f"Summary: {chapter.get('summary')}\n"
-            f"Lessons: {lesson_titles}\n"
-            f"Topics: {chapter.get('topics')}\n\n"
-            f"Taught notes (excerpts):\n{notes or '(no notes yet — use chapter summary/topics)'}\n\n"
-            "Return JSON:\n"
-            '{"quiz":[{"question":"","options":["A","B","C","D"],'
-            '"correct_answer":"","explanation":""}]'
-            f"{flashcard_schema}"
-            "}\n"
-            "Provide 4 to 8 multiple-choice questions. correct_answer must exactly match one option."
-            f"{flashcard_instruction}"
-        ),
-    )
+    chapter_number = int(chapter.get("chapter") or 0)
+    last_data: dict[str, Any] = {}
+    scenarios: list[dict[str, Any]] = []
+    for attempt in range(2):
+        retry_note = ""
+        if attempt:
+            retry_note = (
+                "\n\nIMPORTANT: Your previous response used placeholder options like A, B, C, D. "
+                "Every option must be a complete answer phrase. correct_answer must match one option exactly."
+            )
+        last_data = client.chat_json(
+            system=(
+                "You are ASTRA's assessment writer. Return ONLY valid JSON. "
+                "Write quizzes from the taught lesson notes — test understanding and reasoning, "
+                "not trivia memorization of the syllabus."
+            ),
+            user=(
+                f"Classroom: {classroom_name}\n"
+                f"Chapter {chapter.get('chapter')}: {chapter.get('title')}\n"
+                f"Summary: {chapter.get('summary')}\n"
+                f"Lessons: {lesson_titles}\n"
+                f"Topics: {chapter.get('topics')}\n\n"
+                f"Taught notes (excerpts):\n{notes or '(no notes yet — use chapter summary/topics)'}\n\n"
+                "Return JSON:\n"
+                '{"quiz":[{"question":"","options":["First complete answer","Second complete answer",'
+                '"Third complete answer","Fourth complete answer"],"correct_answer":"Second complete answer",'
+                '"explanation":""}]'
+                f"{flashcard_schema}"
+                f"{scenario_schema}"
+                "}\n"
+                "Provide 4 to 8 multiple-choice quiz questions.\n"
+                "Each option must be a full answer sentence or phrase — never use bare letters like A, B, C, or D.\n"
+                "correct_answer must exactly match one option string."
+                f"{flashcard_instruction}\n"
+                "Also provide 5 to 6 scenario case studies. Each scenario has a title, one concise situation "
+                "paragraph, and exactly 5 MCQs with 4 full-text options each. Scenario questions must apply the situation."
+                f"{retry_note}"
+            ),
+        )
+        scenarios = _parse_scenarios(last_data, chapter_number=chapter_number)
+        if scenarios:
+            break
     return {
-        "quiz": _parse_quiz(data),
-        "flashcards": _parse_flashcards(data) if include_flashcards else [],
+        "quiz": _parse_quiz(last_data),
+        "flashcards": _parse_flashcards(last_data) if include_flashcards else [],
+        "scenarios": scenarios,
     }

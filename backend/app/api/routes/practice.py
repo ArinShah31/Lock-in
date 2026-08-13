@@ -1,15 +1,18 @@
 from math import ceil
+import copy
 import logging
 import shutil
+import threading
+import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.routes.classrooms import _ensure_view_access, _get_classroom_or_404
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.models.classroom import Classroom, ClassroomStudent, MembershipStatus
 from app.models.classroom_course import (
     ClassroomCourse,
@@ -20,8 +23,9 @@ from app.models.classroom_course import (
 )
 from app.models.content import ClassroomContent
 from app.models.user import User, UserRole
+from app.services import groq_course
 from app.services.mock_exam_gemini import extract_mock_exam_pattern, generate_mock_exam_paper
-from app.services.practice_gemini import generate_practice_chapters
+from app.services.practice_gemini import generate_chapter_scenarios, generate_practice_chapters, valid_mcq_options
 from app.schemas.practice import (
     MockExamAttemptOut,
     MockExamAttemptRequest,
@@ -39,6 +43,7 @@ from app.schemas.practice import (
     PracticeOverviewOut,
     PracticeQuestionOut,
     PracticeQuizOut,
+    PracticeScenarioOut,
     PracticeSummaryOut,
 )
 
@@ -51,6 +56,22 @@ ASSESSMENT_KIND_TOPIC = "TOPIC"
 ASSESSMENT_KIND_SUBJECT = "SUBJECT"
 SUBJECT_TARGET_KEY = "overall"
 MOCK_EXAM_UPLOAD_DIR = Path("uploads/mock_exams")
+
+_practice_generation_lock = threading.Lock()
+_practice_generation_in_flight: set[int] = set()
+
+
+def _try_start_practice_generation(classroom_id: int) -> bool:
+    with _practice_generation_lock:
+        if classroom_id in _practice_generation_in_flight:
+            return False
+        _practice_generation_in_flight.add(classroom_id)
+        return True
+
+
+def _finish_practice_generation(classroom_id: int) -> None:
+    with _practice_generation_lock:
+        _practice_generation_in_flight.discard(classroom_id)
 
 
 def _ensure_class_teacher(user: User, classroom: Classroom) -> None:
@@ -164,7 +185,7 @@ def _active_documents(db: Session, classroom_id: int) -> list[ClassroomContent]:
 
 
 def _save_chapters(db: Session, course: ClassroomCourse, chapters: list[dict]) -> None:
-    course.content = {"chapters": chapters}
+    course.content = {"chapters": copy.deepcopy(chapters)}
     db.commit()
     db.refresh(course)
 
@@ -182,15 +203,329 @@ def _needs_practice_regeneration(chapters: list[dict], *, source_changed: bool) 
     return False
 
 
+def _chapter_needs_assessments(chapter: dict) -> bool:
+    if not isinstance(chapter, dict):
+        return False
+    return not chapter.get("quiz") or not chapter.get("flashcards")
+
+
+def _chapter_needs_scenarios(chapter: dict) -> bool:
+    if not isinstance(chapter, dict):
+        return False
+    if "scenarios" not in chapter:
+        return True
+    scenarios = chapter.get("scenarios") or []
+    if not scenarios:
+        return True
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            return True
+        questions = scenario.get("questions") or []
+        if not questions:
+            return True
+        for question in questions:
+            if not isinstance(question, dict) or not valid_mcq_options(question.get("options") or []):
+                return True
+    return False
+
+
+def _needs_scenario_fill_in(chapters: list[dict]) -> bool:
+    if not chapters:
+        return False
+    for chapter in chapters:
+        if _chapter_needs_scenarios(chapter):
+            return True
+    return False
+
+
+def _fill_missing_assessments_groq(
+    *,
+    classroom_name: str,
+    chapters: list[dict],
+    max_chapters: int = 1,
+) -> int:
+    processed = 0
+    for chapter in chapters:
+        if processed >= max_chapters:
+            break
+        if not _chapter_needs_assessments(chapter):
+            continue
+        assessments = groq_course.generate_chapter_assessments(
+            classroom_name=classroom_name,
+            chapter=chapter,
+            include_flashcards=True,
+        )
+        if assessments.get("quiz"):
+            chapter["quiz"] = assessments["quiz"]
+        if assessments.get("flashcards"):
+            chapter["flashcards"] = assessments["flashcards"]
+        if "scenarios" not in chapter:
+            chapter["scenarios"] = assessments.get("scenarios") or []
+        processed += 1
+    return processed
+
+
+def _bootstrap_practice_background(classroom_id: int) -> None:
+    try:
+        db = SessionLocal()
+        try:
+            classroom = db.query(Classroom).filter(Classroom.id == classroom_id).first()
+            if not classroom:
+                return
+            course = _get_course(db, classroom_id)
+            if not course:
+                return
+            classroom_name = classroom.name
+            documents = _active_documents(db, classroom_id)
+            syllabus_text = course.syllabus_text
+            syllabus_path = course.syllabus_file_path
+            syllabus_name = course.syllabus_file_name
+            chapters = list((course.content or {}).get("chapters") or [])
+        finally:
+            db.close()
+
+        if not chapters:
+            try:
+                generated = generate_practice_chapters(
+                    classroom_name=classroom_name,
+                    syllabus_text=syllabus_text,
+                    syllabus_path=syllabus_path,
+                    syllabus_name=syllabus_name,
+                    documents=documents,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Background practice generation skipped for classroom %s: %s",
+                    classroom_id,
+                    exc,
+                )
+                return
+            if not generated:
+                return
+            db = SessionLocal()
+            try:
+                course = _get_course(db, classroom_id)
+                if not course:
+                    return
+                _save_chapters(db, course, generated)
+            finally:
+                db.close()
+
+        for _ in range(8):
+            db = SessionLocal()
+            try:
+                course = _get_course(db, classroom_id)
+                if not course:
+                    return
+                chapters = list((course.content or {}).get("chapters") or [])
+                if not any(_chapter_needs_assessments(chapter) for chapter in chapters if isinstance(chapter, dict)):
+                    break
+                target = next(
+                    (chapter for chapter in chapters if isinstance(chapter, dict) and _chapter_needs_assessments(chapter)),
+                    None,
+                )
+                if not target:
+                    break
+                chapter_number = int(target.get("chapter") or 0)
+            finally:
+                db.close()
+
+            try:
+                assessments = groq_course.generate_chapter_assessments(
+                    classroom_name=classroom_name,
+                    chapter=target,
+                    include_flashcards=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Groq practice fill skipped for classroom %s chapter %s: %s",
+                    classroom_id,
+                    chapter_number,
+                    exc,
+                )
+                break
+
+            if not assessments.get("quiz") and not assessments.get("flashcards"):
+                break
+
+            if assessments.get("quiz"):
+                target["quiz"] = assessments["quiz"]
+            if assessments.get("flashcards"):
+                target["flashcards"] = assessments["flashcards"]
+            scenario_items = assessments.get("scenarios") or []
+            if _chapter_needs_scenarios(target):
+                target["scenarios"] = scenario_items
+            elif "scenarios" not in target:
+                target["scenarios"] = scenario_items
+
+            db = SessionLocal()
+            try:
+                course = _get_course(db, classroom_id)
+                if not course:
+                    return
+                chapters = list((course.content or {}).get("chapters") or [])
+                for index, chapter in enumerate(chapters):
+                    if isinstance(chapter, dict) and int(chapter.get("chapter") or 0) == chapter_number:
+                        chapters[index] = target
+                        break
+                _save_chapters(db, course, chapters)
+            finally:
+                db.close()
+            time.sleep(0.5)
+
+        for _ in range(8):
+            db = SessionLocal()
+            try:
+                classroom = db.query(Classroom).filter(Classroom.id == classroom_id).first()
+                course = _get_course(db, classroom_id)
+                if not classroom or not course:
+                    return
+                chapters = list((course.content or {}).get("chapters") or [])
+                if not _needs_scenario_fill_in(chapters):
+                    return
+                target = next(
+                    (
+                        chapter
+                        for chapter in chapters
+                        if isinstance(chapter, dict) and _chapter_needs_scenarios(chapter)
+                    ),
+                    None,
+                )
+                if not target:
+                    return
+                chapter_number = int(target.get("chapter") or 0)
+                documents = _active_documents(db, classroom_id)
+                syllabus_text = course.syllabus_text
+                syllabus_path = course.syllabus_file_path
+                syllabus_name = course.syllabus_file_name
+            finally:
+                db.close()
+
+            scenarios: list[dict] = []
+            try:
+                assessments = groq_course.generate_chapter_assessments(
+                    classroom_name=classroom_name,
+                    chapter=target,
+                    include_flashcards=False,
+                )
+                scenarios = assessments.get("scenarios") or []
+            except Exception as exc:
+                logger.warning(
+                    "Groq scenario generation skipped for classroom %s chapter %s: %s",
+                    classroom_id,
+                    chapter_number,
+                    exc,
+                )
+            if not scenarios:
+                try:
+                    scenarios = generate_chapter_scenarios(
+                        classroom_name=classroom_name,
+                        chapter=target,
+                        syllabus_text=syllabus_text,
+                        syllabus_path=syllabus_path,
+                        syllabus_name=syllabus_name,
+                        documents=documents,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Scenario generation skipped for classroom %s chapter %s: %s",
+                        classroom_id,
+                        chapter_number,
+                        exc,
+                    )
+                    scenarios = []
+
+            db = SessionLocal()
+            try:
+                course = _get_course(db, classroom_id)
+                if not course:
+                    return
+                chapters = list((course.content or {}).get("chapters") or [])
+                for index, chapter in enumerate(chapters):
+                    if isinstance(chapter, dict) and int(chapter.get("chapter") or 0) == chapter_number:
+                        chapters[index]["scenarios"] = scenarios
+                        break
+                _save_chapters(db, course, chapters)
+            finally:
+                db.close()
+            time.sleep(0.5)
+    finally:
+        _finish_practice_generation(classroom_id)
+
+
+def _fill_missing_scenarios(
+    db: Session,
+    *,
+    classroom: Classroom,
+    course: ClassroomCourse,
+    documents: list[ClassroomContent],
+    max_chapters: int = 1,
+) -> None:
+    chapters = list((course.content or {}).get("chapters") or [])
+    changed = False
+    processed = 0
+    for chapter in chapters:
+        if processed >= max_chapters:
+            break
+        if not isinstance(chapter, dict) or "scenarios" in chapter:
+            continue
+        processed += 1
+        scenarios: list[dict] = []
+        try:
+            scenarios = generate_chapter_scenarios(
+                classroom_name=classroom.name,
+                chapter=chapter,
+                syllabus_text=course.syllabus_text,
+                syllabus_path=course.syllabus_file_path,
+                syllabus_name=course.syllabus_file_name,
+                documents=documents,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Scenario generation skipped for classroom %s chapter %s: %s",
+                classroom.id,
+                chapter.get("chapter"),
+                exc,
+            )
+        chapter["scenarios"] = scenarios
+        changed = True
+    if changed:
+        _save_chapters(db, course, chapters)
+
+
+def _fill_missing_scenarios_background(classroom_id: int) -> None:
+    db = SessionLocal()
+    try:
+        classroom = db.query(Classroom).filter(Classroom.id == classroom_id).first()
+        if not classroom:
+            return
+        course = _get_course(db, classroom_id)
+        if not course:
+            return
+        chapters = list((course.content or {}).get("chapters") or [])
+        if not _needs_scenario_fill_in(chapters):
+            return
+        documents = _active_documents(db, classroom_id)
+        _fill_missing_scenarios(
+            db,
+            classroom=classroom,
+            course=course,
+            documents=documents,
+            max_chapters=1,
+        )
+    finally:
+        db.close()
+
+
 def _bootstrap_practice_content(
     db: Session,
     *,
     classroom: Classroom,
     course: ClassroomCourse,
-) -> ClassroomCourse:
+) -> tuple[ClassroomCourse, bool]:
     documents = _active_documents(db, classroom.id)
     if not documents and not course.syllabus_text and not course.syllabus_file_path:
-        return course
+        return course, False
 
     document_ids = [document.id for document in documents]
     source_changed = document_ids != list(course.source_content_ids or [])
@@ -200,19 +535,10 @@ def _bootstrap_practice_content(
         db.refresh(course)
 
     chapters = list((course.content or {}).get("chapters") or [])
-    if _needs_practice_regeneration(chapters, source_changed=source_changed):
-        try:
-            chapters = generate_practice_chapters(
-                classroom_name=classroom.name,
-                syllabus_text=course.syllabus_text,
-                syllabus_path=course.syllabus_file_path,
-                syllabus_name=course.syllabus_file_name,
-                documents=documents,
-            )
-            _save_chapters(db, course, chapters)
-        except Exception as exc:
-            logger.warning("Practice generation skipped for classroom %s: %s", classroom.id, exc)
-    return course
+    if not _needs_practice_regeneration(chapters, source_changed=source_changed):
+        return course, False
+
+    return course, True
 
 
 def _estimate_minutes(question_count: int, *, seconds_per_question: int) -> int:
@@ -259,6 +585,8 @@ def _latest_attempt_map(
     for row in rows:
         if attempt_type == "QUIZ":
             key = str(row.chapter_number)
+        elif attempt_type == "SCENARIO":
+            key = str(row.payload.get("scenario_id") or "")
         else:
             key = str(row.payload.get("target_key") or row.chapter_number)
         latest.setdefault(key, row)
@@ -280,6 +608,7 @@ def _overview_payload(
     classroom: Classroom,
     course: ClassroomCourse | None,
     viewer: User,
+    generation_pending: bool = False,
 ) -> PracticeOverviewOut:
     source_document_count = (
         db.query(ClassroomContent)
@@ -295,9 +624,11 @@ def _overview_payload(
             classroom_name=classroom.name,
             course_title=None,
             source_document_count=source_document_count,
+            generation_status="idle",
             summary=PracticeSummaryOut(source_document_count=source_document_count),
             quizzes=[],
             flashcard_decks=[],
+            scenarios=[],
             topic_assessments=[],
             subject_assessments=[],
         )
@@ -307,6 +638,12 @@ def _overview_payload(
         classroom_id=classroom.id,
         user_id=viewer.id,
         attempt_type="QUIZ",
+    )
+    scenario_attempts = _latest_attempt_map(
+        db,
+        classroom_id=classroom.id,
+        user_id=viewer.id,
+        attempt_type="SCENARIO",
     )
     topic_assessment_attempts = _latest_attempt_map(
         db,
@@ -324,6 +661,7 @@ def _overview_payload(
 
     quizzes: list[PracticeQuizOut] = []
     flashcard_decks: list[PracticeFlashcardDeckOut] = []
+    scenarios: list[PracticeScenarioOut] = []
     topic_assessments: list[PracticeAssessmentOut] = []
     all_subject_questions: list[PracticeQuestionOut] = []
     total_subject_question_count = 0
@@ -385,6 +723,35 @@ def _overview_payload(
                 )
             )
 
+        scenarios_raw = [item for item in (chapter.get("scenarios") or []) if isinstance(item, dict)]
+        for scenario_index, scenario in enumerate(scenarios_raw, start=1):
+            scenario_id = str(scenario.get("id") or f"chapter-{chapter_number}-scenario-{scenario_index}").strip()
+            scenario_title = str(scenario.get("title") or f"Scenario {scenario_index}").strip()
+            situation = str(scenario.get("situation") or "").strip()
+            scenario_questions = _question_out_list(
+                [
+                    item
+                    for item in (scenario.get("questions") or [])
+                    if isinstance(item, dict) and valid_mcq_options(item.get("options") or [])
+                ]
+            )
+            if not scenario_id or not scenario_title or not situation or not scenario_questions:
+                continue
+            latest_scenario_attempt = scenario_attempts.get(scenario_id)
+            scenarios.append(
+                PracticeScenarioOut(
+                    id=scenario_id,
+                    chapter_number=chapter_number,
+                    chapter_title=chapter_title,
+                    title=scenario_title,
+                    situation=situation,
+                    question_count=len(scenario_questions),
+                    latest_score=latest_scenario_attempt.score if latest_scenario_attempt else None,
+                    latest_attempted_at=latest_scenario_attempt.created_at if latest_scenario_attempt else None,
+                    questions=scenario_questions,
+                )
+            )
+
         topic_attempt = topic_assessment_attempts.get(str(chapter_number))
         is_topic_locked = not lock_map.get((ASSESSMENT_KIND_TOPIC, str(chapter_number)), False)
         if chapter_quiz:
@@ -428,23 +795,64 @@ def _overview_payload(
         source_document_count=source_document_count,
         ready_quizzes=len(quizzes),
         flashcard_decks=len(flashcard_decks),
+        ready_scenarios=len(scenarios),
         locked_assessments=sum(1 for item in [*topic_assessments, *subject_assessments] if item.is_locked),
         completed_quizzes=sum(1 for item in quizzes if item.latest_score is not None),
+        completed_scenarios=sum(1 for item in scenarios if item.latest_score is not None),
         completed_assessments=sum(
             1 for item in [*topic_assessments, *subject_assessments] if item.latest_score is not None
         ),
     )
+    has_practice_content = bool(quizzes or flashcard_decks or scenarios)
+    if generation_pending and not has_practice_content:
+        generation_status = "generating"
+        generation_message = (
+            "Practice content is being generated from your classroom material. "
+            "This page will refresh automatically."
+        )
+    elif generation_pending:
+        generation_status = "generating"
+        generation_message = "More practice content is still being generated. Refresh to load new chapters."
+    elif has_practice_content:
+        generation_status = "ready"
+        generation_message = None
+    else:
+        generation_status = "idle"
+        generation_message = None
+
     return PracticeOverviewOut(
         classroom_id=classroom.id,
         classroom_name=classroom.name,
         course_title=course.title,
         source_document_count=source_document_count,
+        generation_status=generation_status,
+        generation_message=generation_message,
         summary=summary,
         quizzes=quizzes,
         flashcard_decks=flashcard_decks,
+        scenarios=scenarios,
         topic_assessments=topic_assessments,
         subject_assessments=subject_assessments,
     )
+
+
+def _find_chapter_scenario(
+    course: ClassroomCourse,
+    chapter_number: int,
+    scenario_id: str,
+) -> list[dict]:
+    chapters = list((course.content or {}).get("chapters") or [])
+    target = next((chapter for chapter in chapters if int(chapter.get("chapter") or 0) == chapter_number), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    scenarios = [item for item in (target.get("scenarios") or []) if isinstance(item, dict)]
+    scenario = next((item for item in scenarios if str(item.get("id") or "") == scenario_id), None)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    questions = [item for item in (scenario.get("questions") or []) if isinstance(item, dict)]
+    if not questions:
+        raise HTTPException(status_code=400, detail="Scenario is not ready yet")
+    return questions
 
 
 def _find_chapter_quiz(course: ClassroomCourse, chapter_number: int) -> list[dict]:
@@ -489,14 +897,27 @@ def _find_assessment_questions(
 @router.get("/classrooms/{classroom_id}/practice", response_model=PracticeOverviewOut)
 def get_practice_overview(
     classroom_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_view_access(db, current_user, classroom)
     course = _get_or_create_course(db, classroom, current_user)
-    course = _bootstrap_practice_content(db, classroom=classroom, course=course)
-    return _overview_payload(db, classroom=classroom, course=course, viewer=current_user)
+    course, generation_pending = _bootstrap_practice_content(db, classroom=classroom, course=course)
+    chapters = list((course.content or {}).get("chapters") or [])
+    needs_background = generation_pending or _needs_scenario_fill_in(chapters)
+    if needs_background and _try_start_practice_generation(classroom_id):
+        background_tasks.add_task(_bootstrap_practice_background, classroom_id)
+    elif needs_background:
+        generation_pending = True
+    return _overview_payload(
+        db,
+        classroom=classroom,
+        course=course,
+        viewer=current_user,
+        generation_pending=generation_pending,
+    )
 
 
 @router.post("/classrooms/{classroom_id}/practice/mock-exams/pattern", response_model=MockExamPatternOut)
@@ -842,6 +1263,56 @@ def submit_practice_quiz_attempt(
             "selected_answers": payload.selected_answers,
             "correct": correct,
             "total": len(quiz),
+        },
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return attempt
+
+
+@router.post(
+    "/classrooms/{classroom_id}/practice/scenarios/{chapter_number}/{scenario_id}/attempt",
+    response_model=PracticeAttemptOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_practice_scenario_attempt(
+    classroom_id: int,
+    chapter_number: int,
+    scenario_id: str,
+    payload: PracticeAttemptRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can submit scenario attempts")
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _require_student_membership(db, classroom_id, current_user)
+
+    course = _get_course(db, classroom_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Practice content not generated yet")
+    questions = _find_chapter_scenario(course, chapter_number, scenario_id)
+
+    correct = 0
+    for index, question in enumerate(questions):
+        selected = payload.selected_answers[index] if index < len(payload.selected_answers) else None
+        if selected and selected == question.get("correct_answer"):
+            correct += 1
+    score = (correct / len(questions) * 100.0) if questions else 0.0
+
+    attempt = CourseChapterAttempt(
+        classroom_id=classroom_id,
+        chapter_number=chapter_number,
+        user_id=current_user.id,
+        attempt_type="SCENARIO",
+        score=score,
+        payload={
+            "scenario_id": scenario_id,
+            "selected_answers": payload.selected_answers,
+            "correct": correct,
+            "total": len(questions),
         },
     )
     db.add(attempt)

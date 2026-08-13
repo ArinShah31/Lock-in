@@ -506,6 +506,8 @@ function BuildPanel({
   activeJob,
   recentJobs,
   onGenerateAll,
+  onGenerateAssessments,
+  canGenerateAssessments,
   onRegenerateStructure,
   onTogglePublish,
 }: {
@@ -516,10 +518,13 @@ function BuildPanel({
   activeJob: CourseBuildJob | null;
   recentJobs: CourseBuildJob[];
   onGenerateAll: () => void;
+  onGenerateAssessments: () => void;
+  canGenerateAssessments: boolean;
   onRegenerateStructure: () => void;
   onTogglePublish: () => void;
 }) {
   const generateDisabled = isGenerating || !hasSources || unsavedSources;
+  const assessmentsDisabled = isGenerating || !canGenerateAssessments;
   return (
     <div className="sticky top-3 z-10 space-y-3 rounded-2xl border border-line bg-white/95 p-4 shadow-xs backdrop-blur">
       <div className="flex items-start gap-3">
@@ -539,6 +544,9 @@ function BuildPanel({
         <PrimaryButton disabled={generateDisabled} onClick={onGenerateAll}>
           {isGenerating ? "Generating…" : "Generate all"}
         </PrimaryButton>
+        <GhostButton disabled={assessmentsDisabled} onClick={onGenerateAssessments}>
+          Generate assessments
+        </GhostButton>
         <GhostButton disabled={generateDisabled} onClick={onRegenerateStructure}>
           Regenerate structure
         </GhostButton>
@@ -550,6 +558,10 @@ function BuildPanel({
         <p className="text-xs text-mist">Add a syllabus or select documents before generating.</p>
       ) : unsavedSources ? (
         <p className="text-xs font-medium text-warn">Save your source selection above before generating.</p>
+      ) : !canGenerateAssessments ? (
+        <p className="text-xs text-mist">
+          Generate structure first, then run Generate assessments for quizzes and flashcards.
+        </p>
       ) : null}
       <GenerationProgressPanel id="course-builder-progress" job={activeJob} recent={recentJobs} />
     </div>
@@ -1023,6 +1035,7 @@ export function ClassroomCourseBuilderTab() {
   }
 
   const data = course.data as ClassroomCourse;
+  const canGenerateAssessments = data.chapters.length > 0;
 
   // Student study UI lives in StudentCourseView — teacher builder below stays unchanged.
   // Revert: restore this early-return block + delete StudentCourseView.tsx, or
@@ -1099,6 +1112,8 @@ export function ClassroomCourseBuilderTab() {
             activeJob={activeJob}
             recentJobs={jobs.data ?? []}
             onGenerateAll={() => void runJob(() => courseBuilderApi.generateAll(id))}
+            onGenerateAssessments={() => void runJob(() => courseBuilderApi.generateAssessments(id))}
+            canGenerateAssessments={canGenerateAssessments}
             onRegenerateStructure={() => void runJob(() => courseBuilderApi.generateStructure(id))}
             onTogglePublish={() =>
               void (async () => {

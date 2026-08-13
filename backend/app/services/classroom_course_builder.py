@@ -226,13 +226,15 @@ def _run_chapter_quiz(
     )
     target["quiz"] = assessments["quiz"]
     target["flashcards"] = assessments["flashcards"]
+    target["scenarios"] = assessments.get("scenarios") or []
     _save_chapters(db, course, chapters)
     _complete(
         db,
         job,
         (
             f"Chapter {job.chapter_number} assessments ready "
-            f"({len(assessments['quiz'])} quiz, {len(assessments['flashcards'])} flashcards)"
+            f"({len(assessments['quiz'])} quiz, {len(assessments['flashcards'])} flashcards, "
+            f"{len(target['scenarios'])} scenarios)"
         ),
     )
 
@@ -247,12 +249,8 @@ def _run_generate_assessments(
     if not chapters:
         _fail(db, job, "No chapters — generate the course first")
         return
-    ready = [c for c in chapters if groq_course.chapter_lessons(c)]
-    if not ready:
-        _fail(db, job, "No lesson notes yet — run Generate all or regenerate content first")
-        return
-    total = len(ready)
-    for i, ch in enumerate(ready, start=1):
+    total = len(chapters)
+    for i, ch in enumerate(chapters, start=1):
         num = int(ch["chapter"])
         _set_progress(db, job, f"Assessments {i}/{total} (ch {num})…")
         _run_child_and_wait(db, job, stage="CHAPTER_QUIZ", chapter_number=num)
