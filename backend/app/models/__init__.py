@@ -17,6 +17,7 @@ from app.models.classroom_course import (
     PracticeAssessmentLock,
 )
 from app.models.content import ClassroomContent, ContentType
+from app.models.presentation import ClassroomPresentation, PresentationSlide, PresentationStatus
 from app.models.institution import Department, Institution
 from app.models.subject import Subject, SubjectMaterial
 from app.models.user import User
@@ -44,4 +45,7 @@ __all__ = [
     "PracticeAssessmentLock",
     "MockExam",
     "MockExamAttempt",
+    "ClassroomPresentation",
+    "PresentationSlide",
+    "PresentationStatus",
 ]

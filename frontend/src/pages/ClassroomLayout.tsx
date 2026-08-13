@@ -83,6 +83,10 @@ export function ClassroomLayout() {
           Documents
         </NavLink>
 
+        <NavLink to={`/classrooms/${id}/presentations`} className={tabClass}>
+          Presentations
+        </NavLink>
+
         <NavLink to={`/classrooms/${id}/assignments`} className={tabClass}>
           Assignments
         </NavLink>

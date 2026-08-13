@@ -1,4 +1,4 @@
-import { api, apiForm, clearTokens, setTokens, API_BASE } from "./client";
+import { api, apiForm, apiBlob, clearTokens, setTokens, API_BASE } from "./client";
 import type {
   AnalyticsGrant,
   AnalyticsShareCode,
@@ -8,6 +8,8 @@ import type {
   Classroom,
   ClassroomAnnouncement,
   ClassroomCourse,
+  ClassroomPresentation,
+  ClassroomPresentationDetail,
   ClassroomStudent,
   Content,
   CourseBuildJob,
@@ -406,4 +408,57 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+};
+
+export const presentationsApi = {
+  list: (classroomId: number) =>
+    api<ClassroomPresentation[]>(`/classrooms/${classroomId}/presentations`),
+  get: (classroomId: number, presentationId: number) =>
+    api<ClassroomPresentationDetail>(`/classrooms/${classroomId}/presentations/${presentationId}`),
+  upload: (classroomId: number, title: string, file: File) => {
+    const fd = new FormData();
+    fd.append("title", title);
+    fd.append("file", file);
+    return apiForm<ClassroomPresentationDetail>(
+      `/classrooms/${classroomId}/presentations`,
+      fd,
+      "POST",
+      180_000,
+    );
+  },
+  patchSlide: (classroomId: number, presentationId: number, slideId: number, script: string) =>
+    api<ClassroomPresentationDetail["slides"][number]>(
+      `/classrooms/${classroomId}/presentations/${presentationId}/slides/${slideId}`,
+      { method: "PATCH", body: JSON.stringify({ script }) },
+    ),
+  generateVoiceover: (classroomId: number, presentationId: number, slideId?: number) =>
+    api<ClassroomPresentationDetail>(
+      `/classrooms/${classroomId}/presentations/${presentationId}/voiceover${
+        slideId ? `?slide_id=${slideId}` : ""
+      }`,
+      { method: "POST", timeoutMs: 180_000 },
+    ),
+  generateVideo: (classroomId: number, presentationId: number) =>
+    api<ClassroomPresentationDetail>(
+      `/classrooms/${classroomId}/presentations/${presentationId}/video`,
+      { method: "POST", timeoutMs: 600_000 },
+    ),
+  remove: (classroomId: number, presentationId: number) =>
+    api<void>(`/classrooms/${classroomId}/presentations/${presentationId}`, { method: "DELETE" }),
+  download: async (classroomId: number, presentationId: number, fileName: string) => {
+    const blob = await apiBlob(`/classrooms/${classroomId}/presentations/${presentationId}/download`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  audioUrl: (classroomId: number, presentationId: number, slideId: number) =>
+    `/classrooms/${classroomId}/presentations/${presentationId}/slides/${slideId}/audio`,
+  imageUrl: (classroomId: number, presentationId: number, slideId: number) =>
+    `/classrooms/${classroomId}/presentations/${presentationId}/slides/${slideId}/image`,
+  videoUrl: (classroomId: number, presentationId: number) =>
+    `/classrooms/${classroomId}/presentations/${presentationId}/video`,
+  fetchBlob: (path: string, timeoutMs = 120_000) => apiBlob(path, timeoutMs),
 };

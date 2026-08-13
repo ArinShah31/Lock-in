@@ -21,3 +21,6 @@ httpx
 tenacity
 openai
 pypdf
+edge-tts
+imageio-ffmpeg
+pillow

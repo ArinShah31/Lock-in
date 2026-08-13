@@ -13,8 +13,8 @@ export class ApiError extends Error {
   }
 }
 
-function withTimeoutSignal(signal?: AbortSignal | null): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS);
+function withTimeoutSignal(signal?: AbortSignal | null, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   if (!signal) return timeoutSignal;
   return AbortSignal.any([signal, timeoutSignal]);
 }
@@ -102,12 +102,13 @@ async function handleUnauthorized(
 
 export async function api<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { timeoutMs?: number } = {},
   auth = true,
 ): Promise<T> {
+  const { timeoutMs, ...fetchOptions } = options;
   const buildHeaders = () => {
-    const headers = new Headers(options.headers);
-    if (!headers.has("Content-Type") && options.body) {
+    const headers = new Headers(fetchOptions.headers);
+    if (!headers.has("Content-Type") && fetchOptions.body) {
       headers.set("Content-Type", "application/json");
     }
     if (auth) {
@@ -120,9 +121,9 @@ export async function api<T>(
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers: buildHeaders(),
-      signal: withTimeoutSignal(options.signal),
+      signal: withTimeoutSignal(fetchOptions.signal, timeoutMs),
     });
   } catch (err) {
     mapFetchError(err);
@@ -133,9 +134,9 @@ export async function api<T>(
     if (await handleUnauthorized(path, auth, error)) {
       try {
         response = await fetch(`${API_BASE}${path}`, {
-          ...options,
+          ...fetchOptions,
           headers: buildHeaders(),
-          signal: withTimeoutSignal(options.signal),
+          signal: withTimeoutSignal(fetchOptions.signal, timeoutMs),
         });
       } catch (err) {
         mapFetchError(err);
@@ -154,6 +155,7 @@ export async function apiForm<T>(
   path: string,
   formData: FormData,
   method: "POST" | "PATCH" = "POST",
+  timeoutMs = 60_000,
 ): Promise<T> {
   const buildHeaders = () => {
     const headers = new Headers();
@@ -168,7 +170,7 @@ export async function apiForm<T>(
       method,
       headers: buildHeaders(),
       body: formData,
-      signal: withTimeoutSignal(),
+      signal: withTimeoutSignal(undefined, timeoutMs),
     });
   } catch (err) {
     mapFetchError(err);
@@ -182,7 +184,7 @@ export async function apiForm<T>(
           method,
           headers: buildHeaders(),
           body: formData,
-          signal: withTimeoutSignal(),
+          signal: withTimeoutSignal(undefined, timeoutMs),
         });
       } catch (err) {
         mapFetchError(err);
@@ -195,4 +197,42 @@ export async function apiForm<T>(
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export async function apiBlob(path: string, timeoutMs = 60_000): Promise<Blob> {
+  const buildHeaders = () => {
+    const headers = new Headers();
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    return headers;
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: buildHeaders(),
+      signal: withTimeoutSignal(undefined, timeoutMs),
+    });
+  } catch (err) {
+    mapFetchError(err);
+  }
+
+  if (!response.ok) {
+    const error = await toApiError(response);
+    if (await handleUnauthorized(path, true, error)) {
+      try {
+        response = await fetch(`${API_BASE}${path}`, {
+          headers: buildHeaders(),
+          signal: withTimeoutSignal(undefined, timeoutMs),
+        });
+      } catch (err) {
+        mapFetchError(err);
+      }
+      if (!response.ok) throw await toApiError(response);
+    } else {
+      throw error;
+    }
+  }
+
+  return response.blob();
 }
