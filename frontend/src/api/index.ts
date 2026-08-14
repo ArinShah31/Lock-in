@@ -29,6 +29,7 @@ import type {
   Subject,
   SubjectMaterial,
   User,
+  UserProfile,
   UserRole,
 } from "./types";
 
@@ -49,6 +50,16 @@ export const authApi = {
     api<AuthResponse>("/auth/google", { method: "POST", body: JSON.stringify(body) }, false),
 
   me: () => api<User>("/auth/me"),
+  profile: () => api<UserProfile>("/auth/me/profile"),
+  updateMe: (body: { full_name: string }) =>
+    api<User>("/auth/me", { method: "PATCH", body: JSON.stringify(body) }),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiForm<User>("/auth/me/avatar", formData);
+  },
+  changePassword: (body: { current_password: string; new_password: string }) =>
+    api<void>("/auth/change-password", { method: "POST", body: JSON.stringify(body) }),
 };
 
 export function persistSession(data: AuthResponse) {

@@ -24,6 +24,10 @@ import { PracticePage } from "./pages/PracticePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SubjectsPage } from "./pages/SubjectsPage";
 import { TeamPage } from "./pages/TeamPage";
+import { ProfilePage } from "./pages/ProfilePage";
+import { AccountSettingsPage } from "./pages/AccountSettingsPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
+import { HelpPage } from "./pages/HelpPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,6 +70,10 @@ export default function App() {
                 <Route path="/team" element={<TeamPage />} />
                 <Route path="/practice" element={<PracticePage />} />
                 <Route path="/coding" element={<CodingPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/settings" element={<AccountSettingsPage />} />
+                <Route path="/notifications" element={<NotificationsPage />} />
+                <Route path="/help" element={<HelpPage />} />
               </Route>
             </Route>
 
