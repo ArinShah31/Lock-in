@@ -21,6 +21,7 @@ import type {
   MockExamPattern,
   SourceAnalyticsSummary,
   StudentAssignmentFeedItem,
+  StudentStreak,
   PracticeAttempt,
   PracticeOverview,
   TeacherOverview,
@@ -207,6 +208,10 @@ export const assignmentsApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+};
+
+export const streakApi = {
+  me: () => api<StudentStreak>("/me/streak"),
 };
 
 export const courseBuilderApi = {

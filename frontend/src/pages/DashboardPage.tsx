@@ -5,6 +5,9 @@ import { codingApi, ensureCodingSession } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
 import { BrandLogo } from "../components/BrandLogo";
 import ColorBends from "../components/ColorBends";
+import { StudentStreaksCard } from "../components/StudentStreaksCard";
+import { useStudentWorkProgress } from "../hooks/useStudentWorkProgress";
+import { useStudentOnTimeStreak } from "../hooks/useStudentOnTimeStreak";
 import { TeacherDashboardView } from "./TeacherDashboardView";
 import {
   EmptyState,
@@ -60,14 +63,14 @@ function StudentStatCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[#75777f]">{label}</p>
-          <p className="mt-1 font-display text-3xl font-extrabold text-[#031635]">{value}</p>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-[#75777f]">{label}</p>
+          <p className="mt-1 font-display text-2xl font-extrabold text-[#031635] xl:text-3xl">{value}</p>
         </div>
         <span className={`material-symbols-outlined rounded-xl p-2 text-[20px] ${toneClass}`}>
           {icon}
         </span>
       </div>
-      <p className="mt-3 text-xs text-[#44474e]">{caption}</p>
+      <p className="mt-2 text-sm text-[#44474e]">{caption}</p>
     </div>
   );
 }
@@ -84,21 +87,21 @@ function CompletionCurve({ percent, scorePercent }: { percent: number; scorePerc
       : `M 12 92 C 58 ${92 - safeScore * 0.22}, 82 ${95 - safeScore * 0.5}, 124 ${90 - safeScore * 0.57} S 198 ${scoreEndY}, 246 ${scoreEndY}`;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-[#e1e3e4] bg-[#031635] p-5 text-white shadow-xs">
+    <div className="relative overflow-hidden rounded-2xl border border-[#e1e3e4] bg-[#031635] p-4 text-white shadow-xs">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(158,187,255,0.35),transparent_30%),radial-gradient(circle_at_85%_15%,rgba(255,255,255,0.16),transparent_26%)]" />
       <div className="relative z-10 flex items-start justify-between gap-4">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9ebbff]">
             Coding momentum
           </p>
-          <p className="mt-1 font-display text-4xl font-extrabold">{safe}%</p>
+          <p className="mt-1 font-display text-3xl font-extrabold">{safe}%</p>
           <p className="mt-1 text-xs text-[#d7e2ff]">Submitted tests out of assigned coding work.</p>
         </div>
         <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
           Live
         </span>
       </div>
-      <svg className="relative z-10 mt-5 h-28 w-full" viewBox="0 0 260 110" role="img" aria-label="Coding completion curve">
+      <svg className="relative z-10 mt-4 h-24 w-full" viewBox="0 0 260 110" role="img" aria-label="Coding completion curve">
         <defs>
           <linearGradient id="studentCurveFill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#9ebbff" stopOpacity="0.42" />
@@ -119,7 +122,7 @@ function CompletionCurve({ percent, scorePercent }: { percent: number; scorePerc
         <circle className="student-curve-dot" cx="246" cy={endY} r="5" fill="#ffffff" />
         {safeScore == null ? null : <circle cx="246" cy={scoreEndY} r="4" fill="#6ee7b7" />}
       </svg>
-      <div className="relative z-10 mt-2 flex flex-wrap items-center gap-3 text-[11px] font-semibold text-[#d7e2ff]">
+      <div className="relative z-10 mt-1.5 flex flex-wrap items-center gap-3 text-[11px] font-semibold text-[#d7e2ff]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-5 rounded-full bg-[#9ebbff]" />
           Completion
@@ -129,37 +132,6 @@ function CompletionCurve({ percent, scorePercent }: { percent: number; scorePerc
           Score {safeScore == null ? "publishes later" : `${safeScore}% avg`}
         </span>
       </div>
-    </div>
-  );
-}
-
-function TimelineItem({
-  title,
-  body,
-  badge,
-  tone = "neutral",
-}: {
-  title: string;
-  body: string;
-  badge: string;
-  tone?: "neutral" | "blue" | "red" | "green";
-}) {
-  const badgeClass = {
-    neutral: "bg-[#f8f9fa] border border-[#e1e3e4] text-[#44474e]",
-    blue: "bg-[#e8edf5] text-[#3f5d9b]",
-    red: "bg-[#ffdad6] text-[#ba1a1a]",
-    green: "bg-[#e7f3ec] text-[#2f6b4f]",
-  }[tone];
-
-  return (
-    <div className="timeline-node pl-8">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-[#031635]">{title}</p>
-        <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold ${badgeClass}`}>
-          {badge}
-        </span>
-      </div>
-      <p className="mt-0.5 text-xs text-[#44474e]">{body}</p>
     </div>
   );
 }
@@ -223,12 +195,14 @@ function StudentDashboardView() {
   const nextCoding = codingItems.find((a) => a.status === "IN_PROGRESS") ?? codingItems.find((a) => a.status === "ASSIGNED");
   const codingLoading = codingAccess.data?.enabled === true && codingAssignments.isLoading;
   const codingError = codingAccess.data?.enabled === true && codingAssignments.isError;
+  const workProgress = useStudentWorkProgress();
+  const onTimeStreak = useStudentOnTimeStreak();
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-[1fr_360px] xl:items-start">
-        <div className="space-y-4">
-          <div className="relative min-h-[220px] overflow-hidden rounded-2xl border border-white/10 bg-[#0b1326] p-6 shadow-xs">
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[1fr_360px] xl:items-stretch xl:gap-5">
+        <div className="flex flex-col space-y-4">
+          <div className="relative min-h-[170px] overflow-hidden rounded-2xl border border-white/10 bg-[#0b1326] p-5 shadow-xs xl:min-h-[180px]">
             <div className="absolute inset-0 z-0 overflow-hidden">
               <ColorBends
                 className="absolute inset-0 h-full w-full"
@@ -249,7 +223,7 @@ function StudentDashboardView() {
             </div>
             <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-black/50 via-black/25 to-transparent" />
             <div className="pointer-events-none relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="max-w-2xl rounded-2xl bg-[#0b1326]/55 p-3 backdrop-blur-[2px] sm:p-4">
+              <div className="max-w-2xl rounded-2xl bg-[#0b1326]/55 p-3 backdrop-blur-[2px] sm:p-3.5">
                 <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/15">
                   <BrandLogo variant="base" className="h-3.5 w-auto" />
                   <span>ASTRA Student Intelligence</span>
@@ -315,15 +289,15 @@ function StudentDashboardView() {
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+          <div className="grid flex-1 gap-4 lg:grid-cols-[1fr_280px]">
             <CompletionCurve percent={completionPct} scorePercent={averagePublishedScore} />
-            <div className="rounded-2xl border border-[#e1e3e4] bg-white p-5 shadow-xs">
+            <div className="rounded-2xl border border-[#e1e3e4] bg-white p-4 shadow-xs">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-[#75777f]">
                     Published results
                   </p>
-                  <p className="mt-1 font-display text-3xl font-extrabold text-[#031635]">
+                  <p className="mt-1 font-display text-2xl font-extrabold text-[#031635] xl:text-3xl">
                     {publishedResults}
                   </p>
                 </div>
@@ -331,66 +305,35 @@ function StudentDashboardView() {
                   monitoring
                 </span>
               </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e8edf5]">
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e8edf5]">
                 <div
                   className="h-full rounded-full bg-[#3f5d9b] transition-[width] duration-700"
                   style={{ width: `${codingAssigned ? (publishedResults / codingAssigned) * 100 : 0}%` }}
                 />
               </div>
-              <p className="mt-3 text-xs text-[#44474e]">
+              <p className="mt-2 text-xs text-[#44474e]">
                 Published teacher feedback appears inside the coding workspace.
               </p>
             </div>
           </div>
         </div>
 
-        <Panel className="h-fit animate-rise-delay">
-          <div className="mb-4 flex items-center justify-between border-b border-[#e1e3e4] pb-2">
-            <h3 className="font-display flex items-center gap-2 text-base font-bold text-[#031635]">
-              <span className="material-symbols-outlined text-[#3f5d9b]">timeline</span>
-              Student timeline
-            </h3>
-            <span className="text-xs font-medium text-[#44474e]">Live view</span>
-          </div>
-
-          <div className="space-y-4">
-            {nextCoding ? (
-              <TimelineItem
-                title={`${nextCoding.status === "IN_PROGRESS" ? "Resume" : "Start"} coding test`}
-                body={nextCoding.test_title || "A coding assessment is waiting in your workspace."}
-                badge={nextCoding.status === "IN_PROGRESS" ? "Resume" : "Due"}
-                tone={nextCoding.status === "IN_PROGRESS" ? "blue" : "red"}
-              />
-            ) : (
-              <TimelineItem
-                title="Coding clear"
-                body={
-                  codingAccess.data?.enabled
-                    ? "No open coding tests right now."
-                    : "Coding unlock depends on enabled teachers in your classroom."
-                }
-                badge="Clear"
-                tone="green"
-              />
-            )}
-            <TimelineItem
-              title="Classroom sync"
-              body={`${enrolledCount} active classroom${enrolledCount === 1 ? "" : "s"} connected to your dashboard.`}
-              badge="Today"
-              tone="blue"
-            />
-            <TimelineItem
-              title="Assignment check"
-              body="Review classroom assignments and published materials before the next session."
-              badge="Upcoming"
-            />
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <SecondaryButton onClick={() => navigate("/classrooms")}>Classrooms</SecondaryButton>
-            <PrimaryButton onClick={() => navigate("/coding")}>Coding</PrimaryButton>
-          </div>
-        </Panel>
+        <div className="flex min-h-0 flex-col xl:h-full">
+          <StudentStreaksCard
+            completionPct={workProgress.completionPct}
+            completed={workProgress.completed}
+            total={workProgress.total}
+            segments={workProgress.segments}
+            todoItems={workProgress.todoItems}
+            isLoading={workProgress.isLoading}
+            isError={workProgress.isError}
+            streak={onTimeStreak.streak}
+            streakLoading={onTimeStreak.isLoading}
+            nextCoding={nextCoding ?? null}
+            codingEnabled={codingAccess.data?.enabled === true}
+            enrolledCount={enrolledCount}
+          />
+        </div>
       </div>
     </div>
   );

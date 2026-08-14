@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.models import TestAssignment, TestSession, User, UserRole
+from app.models import CodingTest, TestAssignment, TestSession, User, UserRole
 from app.routers.student_results import _get_active_session, _session_evals
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -25,6 +26,21 @@ class LeaderboardScoreOut(BaseModel):
 
 class LeaderboardScoresResponse(BaseModel):
     scores: list[LeaderboardScoreOut]
+
+
+class CodingStreakEventOut(BaseModel):
+    key: str
+    title: str
+    available_at: datetime
+    completed_at: datetime | None = None
+
+
+class CodingStreakEventsRequest(BaseModel):
+    email: str
+
+
+class CodingStreakEventsResponse(BaseModel):
+    items: list[CodingStreakEventOut] = Field(default_factory=list)
 
 
 def _coding_points_for_student(db: Session, student_id: int) -> int:
@@ -86,3 +102,57 @@ def leaderboard_scores(
         for student in students
     ]
     return LeaderboardScoresResponse(scores=scores)
+
+
+def _latest_submitted_session(db: Session, assignment_id: int) -> TestSession | None:
+    return (
+        db.query(TestSession)
+        .filter(
+            TestSession.assignment_id == assignment_id,
+            TestSession.submitted_at.isnot(None),
+        )
+        .order_by(TestSession.submitted_at.desc(), TestSession.id.desc())
+        .first()
+    )
+
+
+@router.post("/streak-events", response_model=CodingStreakEventsResponse)
+def streak_events(
+    payload: CodingStreakEventsRequest,
+    db: Session = Depends(get_db),
+    x_coding_sync_secret: str | None = Header(default=None),
+):
+    if not settings.coding_sync_secret or x_coding_sync_secret != settings.coding_sync_secret:
+        raise HTTPException(status_code=401, detail="Invalid sync secret")
+
+    email = payload.email.strip().lower()
+    if not email:
+        return CodingStreakEventsResponse(items=[])
+
+    student = (
+        db.query(User)
+        .filter(User.email == email, User.role == UserRole.STUDENT)
+        .first()
+    )
+    if not student:
+        return CodingStreakEventsResponse(items=[])
+
+    assignments = (
+        db.query(TestAssignment)
+        .filter(TestAssignment.student_id == student.id)
+        .all()
+    )
+    items: list[CodingStreakEventOut] = []
+    for assignment in assignments:
+        test = db.query(CodingTest).filter(CodingTest.id == assignment.coding_test_id).first()
+        title = test.title if test else "Coding test"
+        session = _latest_submitted_session(db, assignment.id)
+        items.append(
+            CodingStreakEventOut(
+                key=f"coding:{assignment.id}",
+                title=title,
+                available_at=assignment.created_at,
+                completed_at=session.submitted_at if session else None,
+            )
+        )
+    return CodingStreakEventsResponse(items=items)
