@@ -223,7 +223,7 @@ function StudentDashboardView() {
             </div>
             <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-black/50 via-black/25 to-transparent" />
             <div className="pointer-events-none relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="max-w-2xl rounded-2xl bg-[#0b1326]/55 p-3 backdrop-blur-[2px] sm:p-3.5">
+              <div className="max-w-2xl">
                 <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/15">
                   <BrandLogo variant="base" className="h-3.5 w-auto" />
                   <span>ASTRA Student Intelligence</span>
