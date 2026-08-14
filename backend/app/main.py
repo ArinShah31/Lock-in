@@ -14,6 +14,7 @@ from app.api.routes.assignments import router as assignments_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.classroom_course_builder import router as course_builder_router
 from app.api.routes.practice import router as practice_router
+from app.api.routes.presentations import router as presentations_router
 from app.core.config import settings
 from app.core.database import Base, engine
 from sqlalchemy import inspect, text
@@ -34,6 +35,8 @@ from app.models import (  # noqa: F401
     MockExam,
     MockExamAttempt,
     PracticeAssessmentLock,
+    ClassroomPresentation,
+    PresentationSlide,
     Department,
     Institution,
     Subject,
@@ -74,6 +77,11 @@ def on_startup():
     cleared = fail_orphaned_jobs()
     if cleared:
         print(f"[course-builder] marked {cleared} orphaned job(s) as FAILED")
+    from app.services.presentation_jobs import fail_orphaned_video_jobs
+
+    video_cleared = fail_orphaned_video_jobs()
+    if video_cleared:
+        print(f"[presentations] marked {video_cleared} orphaned video job(s) as FAILED")
 
     try:
         from app.ai.vectorstore.service import create_collection
@@ -121,6 +129,22 @@ def _ensure_sqlite_columns():
             with engine.begin() as conn:
                 conn.execute(
                     text("ALTER TABLE classrooms ADD COLUMN analytics_share_code VARCHAR(12)")
+                )
+    if "classroom_presentations" in tables:
+        cols = {c["name"] for c in inspector.get_columns("classroom_presentations")}
+        if "video_path" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE classroom_presentations ADD COLUMN video_path VARCHAR(500)"
+                    )
+                )
+        if "progress_message" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE classroom_presentations ADD COLUMN progress_message VARCHAR(255)"
+                    )
                 )
     _backfill_analytics_share_codes()
 
@@ -179,4 +203,5 @@ app.include_router(assignments_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
 app.include_router(course_builder_router, prefix="/api/v1")
 app.include_router(practice_router, prefix="/api/v1")
+app.include_router(presentations_router, prefix="/api/v1")
 app.include_router(coding_platform_router, prefix="/api/v1")

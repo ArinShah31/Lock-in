@@ -12,6 +12,8 @@ import { ClassroomDetailsTab } from "./pages/ClassroomDetailsTab";
 import { ClassroomDocumentsTab } from "./pages/ClassroomDocumentsTab";
 import { ClassroomLayout } from "./pages/ClassroomLayout";
 import { ClassroomLeaderboardTab } from "./pages/ClassroomLeaderboardTab";
+import { ClassroomPresentationPlayer } from "./pages/ClassroomPresentationPlayer";
+import { ClassroomPresentationsTab } from "./pages/ClassroomPresentationsTab";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
 import { CodingPage } from "./pages/CodingPage";
 import { CreateClassroomPage } from "./pages/CreateClassroomPage";
@@ -53,6 +55,8 @@ export default function App() {
                   <Route path="announcements" element={<ClassroomAnnouncementsTab />} />
                   <Route path="course-builder" element={<ClassroomCourseBuilderTab />} />
                   <Route path="documents" element={<ClassroomDocumentsTab />} />
+                  <Route path="presentations/:presentationId" element={<ClassroomPresentationPlayer />} />
+                  <Route path="presentations" element={<ClassroomPresentationsTab />} />
                   <Route path="assignments" element={<ClassroomAssignmentsTab />} />
                   <Route path="leaderboard" element={<ClassroomLeaderboardTab />} />
                   <Route path="analytics" element={<ClassroomAnalyticsTab />} />

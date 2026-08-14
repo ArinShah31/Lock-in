@@ -581,3 +581,62 @@ export type PracticeAttempt = {
   payload: Record<string, unknown>;
   created_at: string;
 };
+
+export type PresentationStatus =
+  | "UPLOADED"
+  | "PREPARING"
+  | "SCRIPTS_READY"
+  | "AUDIO_READY"
+  | "GENERATING"
+  | "VIDEO_READY"
+  | "FAILED";
+
+export type PresentationShape = {
+  index: number;
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  kind?: string;
+};
+
+export type PresentationCue = {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+  shape_index: number | null;
+};
+
+export type PresentationSlide = {
+  id: number;
+  presentation_id: number;
+  index: number;
+  extracted_text: string;
+  script: string;
+  duration_ms: number;
+  has_audio: boolean;
+  has_image: boolean;
+  shapes: PresentationShape[];
+  cues: PresentationCue[];
+};
+
+export type ClassroomPresentation = {
+  id: number;
+  classroom_id: number;
+  uploaded_by: number;
+  title: string;
+  file_name: string;
+  status: PresentationStatus;
+  error_message?: string | null;
+  progress_message?: string | null;
+  slide_count: number;
+  has_video?: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClassroomPresentationDetail = ClassroomPresentation & {
+  slides: PresentationSlide[];
+  caption_cues?: PresentationCue[];
+};

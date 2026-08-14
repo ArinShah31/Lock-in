@@ -41,7 +41,7 @@ function mapFetchError(err: unknown): never {
   throw err;
 }
 
-function getAccessToken() {
+export function getAccessToken() {
   return localStorage.getItem("astra_access_token");
 }
 
@@ -120,7 +120,6 @@ export async function api<T>(
   auth = true,
 ): Promise<T> {
   const { timeoutMs, signal, ...fetchOptions } = options;
-
   const buildHeaders = () => {
     const headers = new Headers(fetchOptions.headers);
     if (!headers.has("Content-Type") && fetchOptions.body) {
@@ -170,6 +169,7 @@ export async function apiForm<T>(
   path: string,
   formData: FormData,
   method: "POST" | "PATCH" = "POST",
+  timeoutMs = 60_000,
 ): Promise<T> {
   const buildHeaders = () => {
     const headers = new Headers();
@@ -184,7 +184,7 @@ export async function apiForm<T>(
       method,
       headers: buildHeaders(),
       body: formData,
-      signal: withTimeoutSignal(),
+      signal: withTimeoutSignal(undefined, timeoutMs),
     });
   } catch (err) {
     mapFetchError(err);
@@ -198,7 +198,7 @@ export async function apiForm<T>(
           method,
           headers: buildHeaders(),
           body: formData,
-          signal: withTimeoutSignal(),
+          signal: withTimeoutSignal(undefined, timeoutMs),
         });
       } catch (err) {
         mapFetchError(err);
@@ -211,4 +211,42 @@ export async function apiForm<T>(
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export async function apiBlob(path: string, timeoutMs = 60_000): Promise<Blob> {
+  const buildHeaders = () => {
+    const headers = new Headers();
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    return headers;
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: buildHeaders(),
+      signal: withTimeoutSignal(undefined, timeoutMs),
+    });
+  } catch (err) {
+    mapFetchError(err);
+  }
+
+  if (!response.ok) {
+    const error = await toApiError(response);
+    if (await handleUnauthorized(path, true, error)) {
+      try {
+        response = await fetch(`${API_BASE}${path}`, {
+          headers: buildHeaders(),
+          signal: withTimeoutSignal(undefined, timeoutMs),
+        });
+      } catch (err) {
+        mapFetchError(err);
+      }
+      if (!response.ok) throw await toApiError(response);
+    } else {
+      throw error;
+    }
+  }
+
+  return response.blob();
 }

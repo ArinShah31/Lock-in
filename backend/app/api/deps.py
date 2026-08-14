@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -9,14 +9,12 @@ from app.core.security import TokenType, decode_token
 from app.models.user import User, UserRole
 
 bearer_scheme = HTTPBearer(auto_error=True)
+bearer_optional = HTTPBearer(auto_error=False)
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+def _user_from_access_token(token: str, db: Session) -> User:
     try:
-        payload = decode_token(credentials.credentials)
+        payload = decode_token(token)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -34,6 +32,25 @@ def get_current_user(
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
     return user
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    return _user_from_access_token(credentials.credentials, db)
+
+
+def get_media_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_optional),
+    access_token: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> User:
+    """Allow <img>/<video> tags to authenticate with ?access_token=."""
+    raw = (credentials.credentials if credentials else None) or (access_token or "").strip()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return _user_from_access_token(raw, db)
 
 
 def require_roles(allowed_roles: Iterable[UserRole]):

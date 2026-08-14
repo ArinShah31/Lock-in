@@ -14,7 +14,11 @@ export default defineConfig({
     host: "localhost",
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8000",
+      "/api": {
+        target: "http://127.0.0.1:8000",
+        timeout: 1_200_000,
+        proxyTimeout: 1_200_000,
+      },
       "/coding-api": {
         target: "http://127.0.0.1:8011",
         changeOrigin: true,
