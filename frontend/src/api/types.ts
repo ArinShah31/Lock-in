@@ -642,3 +642,14 @@ export type ClassroomPresentationDetail = ClassroomPresentation & {
   slides: PresentationSlide[];
   caption_cues?: PresentationCue[];
 };
+
+export type StreakBreak = {
+  reason: string;
+  title: string;
+  occurred_at: string;
+};
+
+export type StudentStreak = {
+  streak: number;
+  last_break: StreakBreak | null;
+};

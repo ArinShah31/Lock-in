@@ -14,6 +14,7 @@ from app.api.routes.assignments import router as assignments_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.classroom_course_builder import router as course_builder_router
 from app.api.routes.practice import router as practice_router
+from app.api.routes.streak import router as streak_router
 from app.api.routes.presentations import router as presentations_router
 from app.core.config import settings
 from app.core.database import Base, engine
@@ -205,3 +206,4 @@ app.include_router(course_builder_router, prefix="/api/v1")
 app.include_router(practice_router, prefix="/api/v1")
 app.include_router(presentations_router, prefix="/api/v1")
 app.include_router(coding_platform_router, prefix="/api/v1")
+app.include_router(streak_router, prefix="/api/v1")
