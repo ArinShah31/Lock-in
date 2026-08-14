@@ -26,6 +26,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from "../components/ui";
+import { BloomBadge } from "../components/BloomBadge";
 
 type PracticeSection = "quizzes" | "flashcards" | "scenarios" | "assessments";
 type AssessmentSection = "topic" | "subject";
@@ -197,7 +198,10 @@ function QuestionRunner({
       <div className="space-y-4">
         {questions.map((question, index) => (
           <div key={`${question.question}-${index}`} className="rounded-2xl border border-[#dfe4ea] bg-white px-5 py-5 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#3f5d9b]">Question {index + 1}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#3f5d9b]">Question {index + 1}</p>
+              <BloomBadge level={question.bloom_level} />
+            </div>
             <p className="mt-3 font-display text-lg font-bold leading-8 text-[#031635]">{question.question}</p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {question.options.map((option) => {

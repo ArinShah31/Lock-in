@@ -28,12 +28,14 @@ from app.schemas.classroom_course import (
     CourseBuildJobOut,
     LessonOut,
     PublishRequest,
+    QuestionBloomUpdate,
     QuizAttemptRequest,
     SetSourcesRequest,
     SubtopicVideoUpdate,
 )
 from app.services.classroom_course_builder import start_job
 from app.services import groq_course
+from app.services.bloom import normalize_bloom_level, resolve_bloom_level
 from app.services.lesson_schema import lesson_has_content, normalize_lesson
 from app.services.youtube import extract_youtube_id
 
@@ -164,12 +166,15 @@ def _course_out(
             if not isinstance(q, dict):
                 continue
             options = [str(o) for o in (q.get("options") or [])]
+            question_text = str(q.get("question") or "")
+            level = resolve_bloom_level(question_text, q.get("bloom_level"))
             quiz.append(
                 {
-                    "question": str(q.get("question") or ""),
+                    "question": question_text,
                     "options": options,
                     "correct_answer": str(q.get("correct_answer") or (options[0] if options else "")),
                     "explanation": str(q.get("explanation") or ""),
+                    "bloom_level": level.value,
                 }
             )
         chapters.append(
@@ -622,6 +627,64 @@ def set_chapter_lock(
         lock.is_unlocked = payload.is_unlocked
         lock.updated_by_id = current_user.id
     db.commit()
+    return _course_out(course, is_teacher=True, locks=_locks_map(db, classroom_id))
+
+
+@router.patch(
+    "/classrooms/{classroom_id}/course-builder/chapters/{chapter_number}/questions/{question_index}/bloom",
+    response_model=ClassroomCourseOut,
+)
+def update_question_bloom(
+    classroom_id: int,
+    chapter_number: int,
+    question_index: int,
+    payload: QuestionBloomUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+    _ensure_class_teacher(current_user, classroom)
+    level = normalize_bloom_level(payload.bloom_level)
+    if level is None:
+        raise HTTPException(status_code=400, detail="Invalid bloom_level")
+    if question_index < 0:
+        raise HTTPException(status_code=400, detail="Invalid question index")
+
+    course = _get_or_create_course(db, classroom, current_user)
+    chapters = list((course.content or {}).get("chapters") or [])
+    target = next((ch for ch in chapters if int(ch.get("chapter") or 0) == chapter_number), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    updated = False
+    if payload.scenario_id:
+        for scenario in target.get("scenarios") or []:
+            if not isinstance(scenario, dict) or scenario.get("id") != payload.scenario_id:
+                continue
+            questions = scenario.get("questions") or []
+            if question_index >= len(questions):
+                raise HTTPException(status_code=404, detail="Scenario question not found")
+            question = questions[question_index]
+            if not isinstance(question, dict):
+                raise HTTPException(status_code=404, detail="Scenario question not found")
+            question["bloom_level"] = level.value
+            updated = True
+            break
+        if not updated:
+            raise HTTPException(status_code=404, detail="Scenario not found")
+    else:
+        quiz = target.get("quiz") or []
+        if question_index >= len(quiz):
+            raise HTTPException(status_code=404, detail="Quiz question not found")
+        question = quiz[question_index]
+        if not isinstance(question, dict):
+            raise HTTPException(status_code=404, detail="Quiz question not found")
+        question["bloom_level"] = level.value
+
+    course.content = {"chapters": chapters}
+    db.commit()
+    db.refresh(course)
     return _course_out(course, is_teacher=True, locks=_locks_map(db, classroom_id))
 
 

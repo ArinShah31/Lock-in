@@ -12,8 +12,13 @@ class ScenarioParsingTests(unittest.TestCase):
                 "questions": [
                     {
                         "question": f"Question {index}?",
-                        "options": ["A", "B", "C", "D"],
-                        "correct_answer": "A",
+                        "options": [
+                            "Evacuate and notify supervisors immediately",
+                            "Ignore the leak and continue work",
+                            "Open all storage valves to release pressure",
+                            "Wait until the next weekly inspection",
+                        ],
+                        "correct_answer": "Evacuate and notify supervisors immediately",
                     }
                     for index in range(1, 6)
                 ],

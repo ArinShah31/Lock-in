@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from app.ai.llm.client import generate_content_with_pool
 from app.core.config import settings
 from app.models.content import ClassroomContent
+from app.services.bloom import resolve_bloom_level
 from app.services.source_text import build_source_text
 
 SCENARIO_QUESTIONS_PER_CASE = 5
@@ -45,6 +46,7 @@ class GeminiPracticeQuizQuestion(BaseModel):
     options: list[str] = Field(default_factory=list)
     correct_answer: str
     explanation: str = ""
+    bloom_level: str | None = None
 
 
 class GeminiPracticeFlashcard(BaseModel):
@@ -88,11 +90,13 @@ def parse_quiz_questions(
             correct_answer = str(item.get("correct_answer") or "").strip()
             question = str(item.get("question") or "").strip()
             explanation = str(item.get("explanation") or "").strip()
+            stored_bloom = item.get("bloom_level")
         else:
             options = [option.strip() for option in item.options if option.strip()]
             correct_answer = item.correct_answer.strip()
             question = item.question.strip()
             explanation = item.explanation.strip()
+            stored_bloom = getattr(item, "bloom_level", None)
         if (
             not valid_mcq_options(options)
             or correct_answer not in options
@@ -105,6 +109,7 @@ def parse_quiz_questions(
                 "options": options,
                 "correct_answer": correct_answer,
                 "explanation": explanation,
+                "bloom_level": resolve_bloom_level(question, stored_bloom).value,
             }
         )
         if required_count is not None and len(quiz) >= required_count:
@@ -185,6 +190,8 @@ def generate_chapter_scenarios(
             f"- exactly {SCENARIO_QUESTIONS_PER_CASE} MCQs that require applying the situation (not trivia)\n"
             "- each MCQ must have exactly 4 options\n"
             "- correct_answer must match one option exactly\n"
+            "- each MCQ must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE\n"
+            "- bloom_level must match the cognitive demand of the question stem\n"
             "Keep situations short so the full set fits in one response."
         ),
         config={
@@ -236,9 +243,12 @@ def generate_practice_chapters(
             "- flashcards must help revision and recall\n"
             "- quiz questions must test understanding, not trivia noise\n"
             "- each quiz must have exactly 4 options\n"
+            "- each quiz question must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE\n"
+            "- bloom_level must match the cognitive demand of the question stem\n"
             "- each scenario has a title, one concise situation paragraph, and exactly "
             f"{SCENARIO_QUESTIONS_PER_CASE} MCQs with 4 options each\n"
             "- scenario MCQs must require applying the situation, not memorizing isolated facts\n"
+            "- each scenario MCQ must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE\n"
             "- correct_answer must match one option exactly\n"
             "- keep everything bounded to the uploaded documents and syllabus\n"
             "- return clean academic material suitable for students"

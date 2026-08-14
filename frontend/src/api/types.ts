@@ -378,6 +378,7 @@ export type CourseQuizQuestion = {
   options: string[];
   correct_answer: string;
   explanation?: string;
+  bloom_level?: string | null;
 };
 
 export type CourseChapter = {
@@ -427,6 +428,7 @@ export type CourseBuildJob = {
 export type PracticeQuestion = {
   question: string;
   options: string[];
+  bloom_level?: string | null;
 };
 
 export type MockExamQuestion = {

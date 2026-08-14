@@ -12,6 +12,8 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { CourseMarkdown } from "../components/CourseMarkdown";
+import { BloomBadge } from "../components/BloomBadge";
+import { BLOOM_LEVELS, bloomLabel, type BloomLevel } from "../lib/bloom";
 import {
   EmptyState,
   ErrorText,
@@ -892,6 +894,30 @@ export function ClassroomCourseBuilderTab() {
     refetchInterval: () => (isGenerating ? 4000 : false),
   });
 
+  const updateBloomMutation = useMutation({
+    mutationFn: ({
+      chapterNumber,
+      questionIndex,
+      bloom_level,
+      scenario_id,
+    }: {
+      chapterNumber: number;
+      questionIndex: number;
+      bloom_level: BloomLevel;
+      scenario_id?: string | null;
+    }) =>
+      courseBuilderApi.updateQuestionBloom(id, chapterNumber, questionIndex, {
+        bloom_level,
+        scenario_id,
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["classroom-course", id] });
+    },
+    onError: (err: unknown) => {
+      setError(err instanceof Error ? err.message : "Could not update Bloom level");
+    },
+  });
+
   const documents = useQuery({
     queryKey: ["documents", id],
     queryFn: () => contentsApi.listByClassroom(id),
@@ -1326,9 +1352,35 @@ export function ClassroomCourseBuilderTab() {
                       <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-mist">Quiz</h4>
                       {active.quiz.map((q, qi) => (
                         <div key={`${q.question}-${qi}`} className="rounded-xl border border-line p-3">
-                          <p className="text-sm font-medium text-paper">
-                            {qi + 1}. {q.question}
-                          </p>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-paper">
+                              {qi + 1}. {q.question}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <BloomBadge level={q.bloom_level} />
+                              {isTeacher ? (
+                                <select
+                                  className="rounded-lg border border-line bg-paper px-2 py-1 text-xs text-mist"
+                                  value={q.bloom_level || "APPLY"}
+                                  onChange={(e) =>
+                                    void updateBloomMutation.mutateAsync({
+                                      chapterNumber: active.chapter,
+                                      questionIndex: qi,
+                                      bloom_level: e.target.value as BloomLevel,
+                                    })
+                                  }
+                                  disabled={updateBloomMutation.isPending}
+                                  aria-label={`Bloom level for question ${qi + 1}`}
+                                >
+                                  {BLOOM_LEVELS.map((level) => (
+                                    <option key={level} value={level}>
+                                      {bloomLabel(level)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : null}
+                            </div>
+                          </div>
                           <div className="mt-2 space-y-1">
                             {q.options.map((opt) => (
                               <label key={opt} className="flex items-center gap-2 text-sm text-mist">

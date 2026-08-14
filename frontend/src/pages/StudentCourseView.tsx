@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { courseBuilderApi } from "../api";
 import type { ClassroomCourse, CourseChapter, CourseFlashcard, CourseLesson } from "../api/types";
 import { CourseMarkdown } from "../components/CourseMarkdown";
+import { BloomBadge } from "../components/BloomBadge";
 import { CourseRagChatWidget } from "../components/CourseRagChatWidget";
 import { EmptyState, ErrorText, GhostButton, PrimaryButton } from "../components/ui";
 
@@ -642,9 +643,12 @@ export function StudentCourseView({
                   </h4>
                   {active.quiz.map((q, qi) => (
                     <div key={`${q.question}-${qi}`} className="rounded-xl border border-line p-3">
-                      <p className="text-sm font-medium text-paper">
-                        {qi + 1}. {q.question}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-paper">
+                          {qi + 1}. {q.question}
+                        </p>
+                        <BloomBadge level={q.bloom_level} />
+                      </div>
                       <div className="mt-2 space-y-1">
                         {q.options.map((opt) => (
                           <label key={opt} className="flex items-center gap-2 text-sm text-mist">

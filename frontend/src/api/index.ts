@@ -278,6 +278,16 @@ export const courseBuilderApi = {
       `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/quiz-attempt`,
       { method: "POST", body: JSON.stringify({ selected_answers }) },
     ),
+  updateQuestionBloom: (
+    classroomId: number,
+    chapterNumber: number,
+    questionIndex: number,
+    body: { bloom_level: string; scenario_id?: string | null },
+  ) =>
+    api<ClassroomCourse>(
+      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/questions/${questionIndex}/bloom`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
 };
 
 export const practiceApi = {
