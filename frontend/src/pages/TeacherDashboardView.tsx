@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -281,6 +281,7 @@ export function TeacherDashboardView() {
   const navigate = useNavigate();
   const [aiOpen, setAiOpen] = useState(false);
   const [pickerAction, setPickerAction] = useState<ClassroomQuickAction | null>(null);
+  const activityListRef = useRef<HTMLUListElement>(null);
 
   const overview = useQuery({
     queryKey: ["teacher-overview"],
@@ -357,6 +358,13 @@ export function TeacherDashboardView() {
     setPickerAction(null);
   }
 
+  function scrollRecentActivity(direction: "up" | "down") {
+    activityListRef.current?.scrollBy({
+      top: direction === "up" ? -96 : 96,
+      behavior: "smooth",
+    });
+  }
+
   return (
     <div className="space-y-5">
       <div className="relative min-h-[168px] overflow-hidden rounded-2xl border border-white/10 bg-[#0b1326] p-5 shadow-xs">
@@ -380,7 +388,7 @@ export function TeacherDashboardView() {
         </div>
         <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-r from-black/50 via-black/25 to-transparent" />
         <div className="pointer-events-none relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="max-w-2xl rounded-2xl bg-[#0b1326]/55 p-3 backdrop-blur-[2px] sm:p-4">
+          <div className="max-w-2xl">
             <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/15">
               <BrandLogo variant="base" className="h-3.5 w-auto" />
               <span>ASTRA Teaching Intelligence</span>
@@ -529,13 +537,39 @@ export function TeacherDashboardView() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
-        <DashboardPanel className="h-full">
-          <h3 className="mb-3 font-display text-sm font-bold text-[#031635]">Recent activity</h3>
+        <DashboardPanel className="flex h-full flex-col">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="font-display text-sm font-bold text-[#031635]">Recent activity</h3>
+            {data.recent_activity.length > 0 ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => scrollRecentActivity("up")}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#e1e3e4] bg-[#f8f9fa] text-[#44474e] transition hover:border-[#031635] hover:text-[#031635]"
+                  aria-label="Scroll recent activity up"
+                >
+                  <span className="material-symbols-outlined text-[18px]">keyboard_arrow_up</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollRecentActivity("down")}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#e1e3e4] bg-[#f8f9fa] text-[#44474e] transition hover:border-[#031635] hover:text-[#031635]"
+                  aria-label="Scroll recent activity down"
+                >
+                  <span className="material-symbols-outlined text-[18px]">keyboard_arrow_down</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
           {!data.recent_activity.length ? (
             <p className="text-sm text-[#75777f]">No recent activity.</p>
           ) : (
-            <ul className="space-y-2">
-              {data.recent_activity.slice(0, 5).map((item, index) => (
+            <ul
+              ref={activityListRef}
+              className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
+              style={{ maxHeight: "280px" }}
+            >
+              {data.recent_activity.map((item, index) => (
                 <li key={`${item.kind}-${item.occurred_at}-${index}`} className="flex gap-2.5 border-b border-[#f0f1f2] pb-2 last:border-0 last:pb-0">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#3f5d9b]" />
                   <div className="min-w-0">
