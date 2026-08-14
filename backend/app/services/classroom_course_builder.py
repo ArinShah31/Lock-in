@@ -13,7 +13,7 @@ from app.models.classroom import Classroom
 from app.models.classroom_course import ClassroomCourse, CourseBuildJob
 from app.models.content import ClassroomContent
 from app.services import groq_course
-from app.services.source_text import build_source_text
+from app.services.source_text import build_documents_source_text, build_source_text
 from app.services.youtube import search_youtube_video
 
 
@@ -83,6 +83,20 @@ def _complete(db: Session, job: CourseBuildJob, message: str | None = None) -> N
     job.error_message = None
     job.updated_at = _now()
     db.commit()
+
+
+def _get_course_documents(db: Session, course: ClassroomCourse, classroom: Classroom) -> list[ClassroomContent]:
+    query = (
+        db.query(ClassroomContent)
+        .filter(
+            ClassroomContent.classroom_id == classroom.id,
+            ClassroomContent.is_active.is_(True),
+        )
+    )
+    ids = list(course.source_content_ids or [])
+    if ids:
+        query = query.filter(ClassroomContent.id.in_(ids))
+    return query.order_by(ClassroomContent.created_at.asc()).all()
 
 
 def _get_source_text(db: Session, course: ClassroomCourse, classroom: Classroom) -> str:
@@ -219,9 +233,15 @@ def _run_chapter_quiz(
         _fail(db, job, "Chapter not found")
         return
     _set_progress(db, job, f"Building assessments for chapter {job.chapter_number}…")
+    documents = _get_course_documents(db, course, classroom)
+    document_source_text = build_documents_source_text(documents)
+    if not document_source_text.strip():
+        _fail(db, job, "No classroom documents available — select documents before generating assessments")
+        return
     assessments = groq_course.generate_chapter_assessments(
         classroom_name=classroom.name,
         chapter=target,
+        document_source_text=document_source_text,
         include_flashcards=True,
     )
     target["quiz"] = assessments["quiz"]

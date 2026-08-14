@@ -2,12 +2,14 @@ from pathlib import Path
 import shutil
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.classroom import Classroom
 from app.models.content import ClassroomContent, ContentType
+from app.models.user import User
 from app.schemas.content import ContentOut, ContentUpdate
 from app.ai.indexing.service import index_document
 
@@ -18,6 +20,21 @@ router = APIRouter(
 
 UPLOAD_DIR = Path("uploads/contents")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _get_classroom_or_404(db: Session, classroom_id: int) -> Classroom:
+    classroom = db.query(Classroom).filter(Classroom.id == classroom_id).first()
+    if classroom is None:
+        raise HTTPException(status_code=404, detail="Classroom not found")
+    return classroom
+
+
+def _ensure_class_teacher(user: User, classroom: Classroom) -> None:
+    if classroom.class_teacher_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the class teacher can manage classroom documents",
+        )
 
 
 @router.post(
@@ -32,18 +49,10 @@ async def upload_content(
     uploaded_by: int = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    classroom = (
-        db.query(Classroom)
-        .filter(Classroom.id == classroom_id)
-        .first()
-    )
-
-    if classroom is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Classroom not found",
-        )
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_class_teacher(current_user, classroom)
 
     extension = Path(file.filename).suffix
     stored_name = f"{uuid.uuid4()}{extension}"
@@ -56,7 +65,7 @@ async def upload_content(
 
     content = ClassroomContent(
         classroom_id=classroom_id,
-        uploaded_by=uploaded_by,
+        uploaded_by=current_user.id,
         title=title,
         description=description,
         content_type=content_type,
@@ -123,6 +132,7 @@ def update_content(
     content_id: int,
     payload: ContentUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     content = (
         db.query(ClassroomContent)
@@ -135,6 +145,9 @@ def update_content(
             status_code=404,
             detail="Document not found",
         )
+
+    classroom = _get_classroom_or_404(db, content.classroom_id)
+    _ensure_class_teacher(current_user, classroom)
 
     update_data = payload.model_dump(exclude_unset=True)
 
@@ -151,7 +164,11 @@ def delete_content(
     classroom_id: int,
     content_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_class_teacher(current_user, classroom)
+
     content = (
         db.query(ClassroomContent)
         .filter(
