@@ -95,6 +95,7 @@ export function ClassroomDocumentsTab() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [isDragging, setIsDragging] = useState(false);
+  const canUploadDocuments = user?.role === "CLASS_TEACHER";
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["documents", classroomId],
@@ -153,6 +154,8 @@ export function ClassroomDocumentsTab() {
   });
 
   useEffect(() => {
+    if (!canUploadDocuments) return;
+
     const handleDragEnter = (e: DragEvent) => {
       e.preventDefault();
 
@@ -182,7 +185,7 @@ export function ClassroomDocumentsTab() {
       window.removeEventListener("dragleave", handleDragLeave);
       window.removeEventListener("drop", handleDrop);
     };
-  }, []);
+  }, [canUploadDocuments]);
 
   if (isLoading) {
     return <p>Loading documents...</p>;
@@ -193,7 +196,7 @@ export function ClassroomDocumentsTab() {
   }
 
   const uploadFile = (file: File) => {
-    if (!user) return;
+    if (!user || !canUploadDocuments) return;
 
     const formData = new FormData();
 
@@ -208,10 +211,10 @@ export function ClassroomDocumentsTab() {
 
   return (
     <>
-      <DragOverlay onDropFile={uploadFile} />
+      {canUploadDocuments ? <DragOverlay onDropFile={uploadFile} /> : null}
 
       <div
-        className={`space-y-4 transition-colors ${isDragging ? "ring-2 ring-cyan-400" : ""}`}
+        className={`space-y-4 transition-colors ${canUploadDocuments && isDragging ? "ring-2 ring-cyan-400" : ""}`}
       >
         <div className="flex items-center justify-between">
           <div>
@@ -223,7 +226,7 @@ export function ClassroomDocumentsTab() {
             </p>
           </div>
 
-          {user?.role === "CLASS_TEACHER" && (
+          {canUploadDocuments && (
             <button
               onClick={() => fileInputRef.current?.click()}
               className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
@@ -305,6 +308,7 @@ export function ClassroomDocumentsTab() {
           ref={fileInputRef}
           type="file"
           className="hidden"
+          disabled={!canUploadDocuments}
           onChange={(e) => {
             const file = e.target.files?.[0];
 
@@ -327,12 +331,12 @@ export function ClassroomDocumentsTab() {
             </h3>
 
             <p className="mt-1 max-w-sm text-sm leading-5 text-mist">
-              {user?.role === "CLASS_TEACHER"
+              {canUploadDocuments
                 ? "Upload your first classroom document to make course resources available to students."
                 : "Your teacher hasn't uploaded any classroom documents yet."}
             </p>
 
-            {user?.role === "CLASS_TEACHER" && (
+            {canUploadDocuments && (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -415,7 +419,7 @@ export function ClassroomDocumentsTab() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {user?.role === "CLASS_TEACHER" && (
+                    {canUploadDocuments && (
                       <button
                         onClick={() => {
                           setEditingDoc(doc);
@@ -429,7 +433,7 @@ export function ClassroomDocumentsTab() {
                       </button>
                     )}
 
-                    {user?.role === "CLASS_TEACHER" && (
+                    {canUploadDocuments && (
                       <button
                         onClick={() => setDeletingDoc(doc)}
                         className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-lg text-red-500 transition-all duration-200 hover:border-red-500 hover:bg-red-500/10 hover:scale-105"

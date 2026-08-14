@@ -52,3 +52,14 @@ def build_source_text(
     if not chunks:
         return "No syllabus or documents provided. Create a general foundational course outline."
     return "\n\n".join(chunks)
+
+
+def build_documents_source_text(documents: list[ClassroomContent]) -> str:
+    chunks: list[str] = []
+    for doc in documents:
+        header = f"## Document: {doc.title} ({doc.file_name})"
+        body = extract_text_from_file(doc.file_path, fallback_title=doc.description or doc.title)
+        chunks.append(f"{header}\n{body}")
+    if not chunks:
+        return ""
+    return "\n\n".join(chunks)

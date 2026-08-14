@@ -6,7 +6,7 @@ from app.ai.llm.client import generate_content_with_pool
 from app.core.config import settings
 from app.models.content import ClassroomContent
 from app.services.bloom import resolve_bloom_level
-from app.services.source_text import build_source_text
+from app.services.source_text import build_documents_source_text
 
 SCENARIO_QUESTIONS_PER_CASE = 5
 SCENARIOS_PER_CHAPTER_MIN = 5
@@ -157,18 +157,12 @@ def generate_chapter_scenarios(
     *,
     classroom_name: str,
     chapter: dict,
-    syllabus_text: str | None = None,
-    syllabus_path: str | None = None,
-    syllabus_name: str | None = None,
     documents: list[ClassroomContent] | None = None,
 ) -> list[dict]:
     chapter_number = int(chapter.get("chapter") or 0)
-    source_text = build_source_text(
-        syllabus_text=syllabus_text,
-        syllabus_path=syllabus_path,
-        syllabus_name=syllabus_name,
-        documents=documents or [],
-    )
+    source_text = build_documents_source_text(documents or [])
+    if not source_text.strip():
+        return []
     chapter_context = (
         f"Chapter {chapter_number}: {chapter.get('title')}\n"
         f"Summary: {chapter.get('summary')}\n"
@@ -208,24 +202,16 @@ def generate_chapter_scenarios(
 def generate_practice_chapters(
     *,
     classroom_name: str,
-    syllabus_text: str | None,
-    syllabus_path: str | None,
-    syllabus_name: str | None,
     documents: list[ClassroomContent],
 ) -> list[dict]:
-    source_text = build_source_text(
-        syllabus_text=syllabus_text,
-        syllabus_path=syllabus_path,
-        syllabus_name=syllabus_name,
-        documents=documents,
-    )
+    source_text = build_documents_source_text(documents)
     if not source_text.strip():
         return []
 
     response = generate_content_with_pool(
         model=settings.gemini_chat_model,
         contents=(
-            "You are ASTRA's practice generator. Use ONLY the provided classroom documents and syllabus context. "
+            "You are ASTRA's practice generator. Use ONLY the provided classroom documents. "
             "Do not invent topics outside the source material.\n\n"
             f"Classroom: {classroom_name}\n\n"
             "Source material:\n"
@@ -250,7 +236,7 @@ def generate_practice_chapters(
             "- scenario MCQs must require applying the situation, not memorizing isolated facts\n"
             "- each scenario MCQ must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE\n"
             "- correct_answer must match one option exactly\n"
-            "- keep everything bounded to the uploaded documents and syllabus\n"
+            "- keep everything bounded to the uploaded classroom documents\n"
             "- return clean academic material suitable for students"
         ),
         config={

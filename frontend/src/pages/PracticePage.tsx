@@ -345,7 +345,7 @@ function FlashcardsExperience({
     return (
       <EmptyState
         title="Flashcards will show up here"
-        body={emptyBody ?? "Generate chapter assessments from classroom documents and syllabus to unlock revision decks."}
+        body={emptyBody ?? "Generate chapter assessments from classroom documents to unlock revision decks."}
       />
     );
   }
@@ -420,7 +420,7 @@ function FlashcardsExperience({
             <div>
               <h3 className="font-display text-lg font-bold text-[#031635]">Choose a revision deck</h3>
               <p className="text-sm text-[#4b5563]">
-                These decks are generated directly from your classroom documents and syllabus scope.
+                These decks are generated directly from your classroom documents.
               </p>
             </div>
             <span className="rounded-full border border-[#dce7fa] bg-[#f6f9ff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
@@ -498,7 +498,7 @@ function QuizGrid({
         title="Quizzes will appear here"
         body={
           emptyBody ??
-          "Once classroom material is generated from syllabus and uploaded documents, quick quizzes will light up here automatically."
+          "Once classroom material is generated from uploaded documents, quick quizzes will light up here automatically."
         }
       />
     );
@@ -1523,7 +1523,7 @@ export function PracticePage() {
     <div className="space-y-6">
       <PageHeader
         title="Practise"
-        subtitle={`Generated from ${classroom.name} classroom material so your revision stays within syllabus and shared document context.`}
+        subtitle={`Generated from ${classroom.name} classroom documents so your revision stays within shared document context.`}
         action={
           <div className="flex flex-wrap items-center gap-2">
             {classrooms.length > 1 ? (
@@ -1591,7 +1591,7 @@ export function PracticePage() {
             </div>
             <h2 className="mt-4 font-display text-2xl font-extrabold text-[#031635]">Your daily practice lane</h2>
             <p className="mt-2 text-sm leading-6 text-[#44474e]">
-              Classroom documents and syllabus feed this space directly, so your revision, quizzes, flashcards, and assessment scope stay grounded in what was actually taught.
+              Classroom documents feed this space directly, so your revision, quizzes, flashcards, and assessment scope stay grounded in uploaded materials.
             </p>
             <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
               {practice?.source_document_count ?? 0} source documents connected

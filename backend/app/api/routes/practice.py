@@ -27,6 +27,7 @@ from app.services import groq_course
 from app.services.mock_exam_gemini import extract_mock_exam_pattern, generate_mock_exam_paper
 from app.services.practice_gemini import generate_chapter_scenarios, generate_practice_chapters, valid_mcq_options
 from app.services.bloom import resolve_bloom_level
+from app.services.source_text import build_documents_source_text
 from app.schemas.practice import (
     MockExamAttemptOut,
     MockExamAttemptRequest,
@@ -185,6 +186,29 @@ def _active_documents(db: Session, classroom_id: int) -> list[ClassroomContent]:
     )
 
 
+def _course_documents(
+    db: Session,
+    *,
+    classroom_id: int,
+    source_content_ids: list[int] | None,
+) -> list[ClassroomContent]:
+    query = (
+        db.query(ClassroomContent)
+        .filter(
+            ClassroomContent.classroom_id == classroom_id,
+            ClassroomContent.is_active.is_(True),
+        )
+    )
+    ids = list(source_content_ids or [])
+    if ids:
+        query = query.filter(ClassroomContent.id.in_(ids))
+    return query.order_by(ClassroomContent.created_at.asc()).all()
+
+
+def _documents_source_text(documents: list[ClassroomContent]) -> str:
+    return build_documents_source_text(documents)
+
+
 def _save_chapters(db: Session, course: ClassroomCourse, chapters: list[dict]) -> None:
     course.content = {"chapters": copy.deepcopy(chapters)}
     db.commit()
@@ -243,6 +267,7 @@ def _fill_missing_assessments_groq(
     *,
     classroom_name: str,
     chapters: list[dict],
+    document_source_text: str,
     max_chapters: int = 1,
 ) -> int:
     processed = 0
@@ -254,6 +279,7 @@ def _fill_missing_assessments_groq(
         assessments = groq_course.generate_chapter_assessments(
             classroom_name=classroom_name,
             chapter=chapter,
+            document_source_text=document_source_text,
             include_flashcards=True,
         )
         if assessments.get("quiz"):
@@ -277,21 +303,23 @@ def _bootstrap_practice_background(classroom_id: int) -> None:
             if not course:
                 return
             classroom_name = classroom.name
-            documents = _active_documents(db, classroom_id)
-            syllabus_text = course.syllabus_text
-            syllabus_path = course.syllabus_file_path
-            syllabus_name = course.syllabus_file_name
+            documents = _course_documents(
+                db,
+                classroom_id=classroom_id,
+                source_content_ids=course.source_content_ids,
+            )
+            document_source_text = _documents_source_text(documents)
             chapters = list((course.content or {}).get("chapters") or [])
         finally:
             db.close()
+
+        if not document_source_text.strip():
+            return
 
         if not chapters:
             try:
                 generated = generate_practice_chapters(
                     classroom_name=classroom_name,
-                    syllabus_text=syllabus_text,
-                    syllabus_path=syllabus_path,
-                    syllabus_name=syllabus_name,
                     documents=documents,
                 )
             except Exception as exc:
@@ -335,6 +363,7 @@ def _bootstrap_practice_background(classroom_id: int) -> None:
                 assessments = groq_course.generate_chapter_assessments(
                     classroom_name=classroom_name,
                     chapter=target,
+                    document_source_text=document_source_text,
                     include_flashcards=True,
                 )
             except Exception as exc:
@@ -395,18 +424,24 @@ def _bootstrap_practice_background(classroom_id: int) -> None:
                 if not target:
                     return
                 chapter_number = int(target.get("chapter") or 0)
-                documents = _active_documents(db, classroom_id)
-                syllabus_text = course.syllabus_text
-                syllabus_path = course.syllabus_file_path
-                syllabus_name = course.syllabus_file_name
+                documents = _course_documents(
+                    db,
+                    classroom_id=classroom_id,
+                    source_content_ids=course.source_content_ids,
+                )
+                document_source_text = _documents_source_text(documents)
             finally:
                 db.close()
+
+            if not document_source_text.strip():
+                return
 
             scenarios: list[dict] = []
             try:
                 assessments = groq_course.generate_chapter_assessments(
                     classroom_name=classroom_name,
                     chapter=target,
+                    document_source_text=document_source_text,
                     include_flashcards=False,
                 )
                 scenarios = assessments.get("scenarios") or []
@@ -422,9 +457,6 @@ def _bootstrap_practice_background(classroom_id: int) -> None:
                     scenarios = generate_chapter_scenarios(
                         classroom_name=classroom_name,
                         chapter=target,
-                        syllabus_text=syllabus_text,
-                        syllabus_path=syllabus_path,
-                        syllabus_name=syllabus_name,
                         documents=documents,
                     )
                 except Exception as exc:
@@ -476,9 +508,6 @@ def _fill_missing_scenarios(
             scenarios = generate_chapter_scenarios(
                 classroom_name=classroom.name,
                 chapter=chapter,
-                syllabus_text=course.syllabus_text,
-                syllabus_path=course.syllabus_file_path,
-                syllabus_name=course.syllabus_file_name,
                 documents=documents,
             )
         except Exception as exc:
@@ -525,7 +554,7 @@ def _bootstrap_practice_content(
     course: ClassroomCourse,
 ) -> tuple[ClassroomCourse, bool]:
     documents = _active_documents(db, classroom.id)
-    if not documents and not course.syllabus_text and not course.syllabus_file_path:
+    if not documents:
         return course, False
 
     document_ids = [document.id for document in documents]

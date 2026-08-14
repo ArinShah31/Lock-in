@@ -562,7 +562,7 @@ function BuildPanel({
         <p className="text-xs font-medium text-warn">Save your source selection above before generating.</p>
       ) : !canGenerateAssessments ? (
         <p className="text-xs text-mist">
-          Generate structure first, then run Generate assessments for quizzes and flashcards.
+          Select classroom documents and generate structure first, then run Generate assessments for quizzes, flashcards, and scenarios.
         </p>
       ) : null}
       <GenerationProgressPanel id="course-builder-progress" job={activeJob} recent={recentJobs} />
@@ -1061,7 +1061,8 @@ export function ClassroomCourseBuilderTab() {
   }
 
   const data = course.data as ClassroomCourse;
-  const canGenerateAssessments = data.chapters.length > 0;
+  const canGenerateAssessments =
+    data.chapters.length > 0 && (data.source_content_ids?.length ?? 0) > 0;
 
   // Student study UI lives in StudentCourseView — teacher builder below stays unchanged.
   // Revert: restore this early-return block + delete StudentCourseView.tsx, or

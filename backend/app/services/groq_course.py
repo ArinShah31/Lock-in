@@ -844,10 +844,12 @@ def generate_chapter_quiz(
     *,
     classroom_name: str,
     chapter: dict[str, Any],
+    document_source_text: str,
 ) -> list[dict[str, Any]]:
     assessments = generate_chapter_assessments(
         classroom_name=classroom_name,
         chapter=chapter,
+        document_source_text=document_source_text,
         include_flashcards=False,
     )
     return assessments["quiz"]
@@ -857,12 +859,13 @@ def generate_chapter_assessments(
     *,
     classroom_name: str,
     chapter: dict[str, Any],
+    document_source_text: str,
     include_flashcards: bool = True,
 ) -> dict[str, Any]:
     client = GroqStageClient("CHAPTER_QUIZ")
-    lessons = chapter_lessons(chapter)
-    lesson_titles = [s.get("title") for s in lessons]
-    notes = _notes_excerpts(chapter)
+    source_excerpt = document_source_text.strip()[:18000]
+    if not source_excerpt:
+        return {"quiz": [], "flashcards": [], "scenarios": []}
     flashcard_schema = (
         ',"flashcards":[{"question":"","answer":"","topic":""}]' if include_flashcards else ""
     )
@@ -889,16 +892,15 @@ def generate_chapter_assessments(
         last_data = client.chat_json(
             system=(
                 "You are ASTRA's assessment writer. Return ONLY valid JSON. "
-                "Write quizzes from the taught lesson notes — test understanding and reasoning, "
-                "not trivia memorization of the syllabus."
+                "Write quizzes, flashcards, and scenarios from the provided classroom documents only — "
+                "test understanding and reasoning grounded in those materials."
             ),
             user=(
                 f"Classroom: {classroom_name}\n"
                 f"Chapter {chapter.get('chapter')}: {chapter.get('title')}\n"
                 f"Summary: {chapter.get('summary')}\n"
-                f"Lessons: {lesson_titles}\n"
                 f"Topics: {chapter.get('topics')}\n\n"
-                f"Taught notes (excerpts):\n{notes or '(no notes yet — use chapter summary/topics)'}\n\n"
+                f"Classroom documents:\n{source_excerpt}\n\n"
                 "Return JSON:\n"
                 '{"quiz":[{"question":"","options":["First complete answer","Second complete answer",'
                 '"Third complete answer","Fourth complete answer"],"correct_answer":"Second complete answer",'
