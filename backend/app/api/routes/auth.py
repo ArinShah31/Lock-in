@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
@@ -25,7 +25,10 @@ from app.schemas.auth import (
     TokenPair,
     UserOut,
 )
+from app.schemas.profile import ChangePasswordRequest, ProfileOut, UpdateMeRequest
+from app.services.avatar_upload import read_avatar_bytes, save_avatar_file, validate_avatar_upload
 from app.services.coding_platform_sync import sync_user_to_coding_platform
+from app.services.profile import build_user_profile
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -189,3 +192,67 @@ def me(db: Session = Depends(get_db), current_user: User = Depends(get_current_u
     # Keep coding-platform identity in sync whenever the session is restored.
     sync_user_to_coding_platform(current_user)
     return UserOut.model_validate(current_user)
+
+
+@router.get("/me/profile", response_model=ProfileOut)
+def my_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return ProfileOut.model_validate(build_user_profile(db, current_user))
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    payload: UpdateMeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user.full_name = payload.full_name.strip()
+    db.commit()
+    db.refresh(current_user)
+    sync_user_to_coding_platform(current_user)
+    return UserOut.model_validate(current_user)
+
+
+@router.post("/me/avatar", response_model=UserOut)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = await read_avatar_bytes(file)
+    mime_type = validate_avatar_upload(file, data)
+    previous_avatar_url = current_user.avatar_url
+    current_user.avatar_url = save_avatar_file(
+        user_id=current_user.id,
+        data=data,
+        mime_type=mime_type,
+        previous_avatar_url=previous_avatar_url,
+    )
+    db.commit()
+    db.refresh(current_user)
+    sync_user_to_coding_platform(current_user)
+    return UserOut.model_validate(current_user)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        if current_user.google_sub:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This account uses Google Sign-In and does not have a usable password for change.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect current password",
+        )
+
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+    return None

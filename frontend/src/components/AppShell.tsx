@@ -5,6 +5,7 @@ import { classroomsApi, codingPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { BrandLogo } from "./BrandLogo";
 import { NotificationBell } from "./NotificationBell";
+import { AccountMenu } from "./AccountMenu";
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -557,12 +558,7 @@ export function AppShell() {
         </div>
         <div className="flex items-center gap-3">
           <NotificationBell compact />
-          <span className="rounded-full bg-[#ede9fe] px-2 py-1 text-xs font-semibold text-[#6366f1]">
-            {user ? roleLabel[user.role] : ""}
-          </span>
-          <button onClick={logout} className="text-[#44474e] hover:text-[#ba1a1a]">
-            <span className="material-symbols-outlined text-xl">logout</span>
-          </button>
+          <AccountMenu compact />
         </div>
       </header>
 
@@ -608,24 +604,7 @@ export function AppShell() {
 
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <button
-              type="button"
-              title={user ? `${user.full_name} (profile coming soon)` : "Profile (coming soon)"}
-              className="flex size-9 items-center justify-center overflow-hidden rounded-full bg-[#6366f1] text-sm font-bold text-white transition hover:bg-[#4f46e5]"
-            >
-              {user?.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  className="size-full object-cover"
-                />
-              ) : user?.full_name?.charAt(0)?.toUpperCase() ? (
-                user.full_name.charAt(0).toUpperCase()
-              ) : (
-                <span className="material-symbols-outlined text-lg">person</span>
-              )}
-            </button>
+            <AccountMenu />
           </div>
         </header>
 

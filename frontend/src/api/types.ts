@@ -188,6 +188,94 @@ export type TeacherOverview = {
   classrooms: TeacherClassroomCard[];
 };
 
+export type ProfileStreak = {
+  current_streak: number;
+  best_streak: number;
+  last_active_date: string | null;
+  week_dates: { date: string; active: boolean }[];
+};
+
+export type ProfileAchievement = {
+  id: string;
+  title: string;
+  description: string;
+  unlocked: boolean;
+  unlocked_at: string | null;
+};
+
+export type ProfileActivity = {
+  kind: string;
+  title: string;
+  subtitle: string;
+  occurred_at: string;
+};
+
+export type ProfileStudentProgress = {
+  classroom_id: number;
+  classroom_name: string;
+  completed_assignments: number;
+  total_assignments: number;
+  progress_pct: number | null;
+};
+
+export type ProfileStudentAcademicOverview = {
+  classrooms: number;
+  assignments_completed: number;
+  average_score_pct: number | null;
+  streak: ProfileStreak;
+};
+
+export type ProfileStudent = {
+  academic_overview: ProfileStudentAcademicOverview;
+  achievements: ProfileAchievement[];
+  recent_activity: ProfileActivity[];
+  learning_progress: ProfileStudentProgress[];
+};
+
+export type ProfileTeachingOverview = {
+  classrooms: number;
+  students: number;
+  assignments: number;
+  documents: number;
+  submissions: number;
+  average_score_pct: number | null;
+  assignments_needing_review: number;
+};
+
+export type ProfileTeacherInsight = {
+  kind: string;
+  label: string;
+  count: number;
+  classroom_id: number | null;
+  classroom_name: string | null;
+  to: string | null;
+};
+
+export type ProfileTeacher = {
+  teaching_overview: ProfileTeachingOverview;
+  classrooms: TeacherClassroomCard[];
+  insights: ProfileTeacherInsight[];
+  recent_activity: ProfileActivity[];
+  milestones: ProfileAchievement[];
+};
+
+export type ProfileIdentity = {
+  id: number;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  avatar_url?: string | null;
+  institution_name?: string | null;
+  department_name?: string | null;
+  is_google_account: boolean;
+};
+
+export type UserProfile = {
+  identity: ProfileIdentity;
+  student: ProfileStudent | null;
+  teacher: ProfileTeacher | null;
+};
+
 export type TeacherChatResponse = {
   answer: string;
   blocked: boolean;

@@ -19,6 +19,9 @@ export default defineConfig({
         timeout: 1_200_000,
         proxyTimeout: 1_200_000,
       },
+      "/uploads": {
+        target: "http://127.0.0.1:8000",
+      },
       "/coding-api": {
         target: "http://127.0.0.1:8011",
         changeOrigin: true,
