@@ -116,9 +116,11 @@ function PodiumProfileCard({
   return (
     <div className={`flex flex-1 flex-col items-center justify-end ${order[place]}`}>
       <ProfileCard
-        className={`pc-leaderboard ${place === 1 ? "pc-leaderboard-first" : ""}`}
+        className={`pc-leaderboard ${
+          place === 1 ? "pc-leaderboard-first" : place === 2 ? "pc-leaderboard-second" : "pc-leaderboard-third"
+        }`}
         name={entry.full_name}
-        title={`${PODIUM_TITLES[place]} · ${points.toLocaleString()} XP`}
+        title={PODIUM_TITLES[place]}
         handle={entry.initials}
         status={`${points.toLocaleString()} XP`}
         avatarUrl={avatarUrl}

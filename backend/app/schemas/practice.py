@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class PracticeQuestionOut(BaseModel):
     question: str
     options: list[str] = Field(default_factory=list)
+    bloom_level: str | None = None
 
 
 class PracticeQuizOut(BaseModel):

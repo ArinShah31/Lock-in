@@ -811,25 +811,9 @@ def _notes_excerpts(chapter: dict[str, Any], *, per_lesson: int = 1200, total_ca
 
 
 def _parse_quiz(data: dict[str, Any]) -> list[dict[str, Any]]:
-    from app.services.practice_gemini import valid_mcq_options
+    from app.services.practice_gemini import parse_quiz_questions
 
-    quiz = []
-    for q in data.get("quiz") or []:
-        options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
-        if not valid_mcq_options(options):
-            continue
-        correct = str(q.get("correct_answer") or "").strip()
-        if correct not in options:
-            correct = options[0]
-        quiz.append(
-            {
-                "question": str(q.get("question") or "").strip(),
-                "options": options,
-                "correct_answer": correct,
-                "explanation": str(q.get("explanation") or "").strip(),
-            }
-        )
-    return [q for q in quiz if q["question"]]
+    return parse_quiz_questions(data.get("quiz") or [])
 
 
 def _parse_flashcards(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -885,7 +869,7 @@ def generate_chapter_assessments(
     scenario_schema = (
         ',"scenarios":[{"title":"","situation":"","questions":[{"question":"","options":'
         '["First complete answer","Second complete answer","Third complete answer","Fourth complete answer"],'
-        '"correct_answer":"Second complete answer","explanation":""}]}]'
+        '"correct_answer":"Second complete answer","explanation":"","bloom_level":"APPLY"}]}]'
     )
     flashcard_instruction = (
         "\nAlso provide 6 to 12 flashcards that check understanding of taught concepts."
@@ -918,16 +902,19 @@ def generate_chapter_assessments(
                 "Return JSON:\n"
                 '{"quiz":[{"question":"","options":["First complete answer","Second complete answer",'
                 '"Third complete answer","Fourth complete answer"],"correct_answer":"Second complete answer",'
-                '"explanation":""}]'
+                '"explanation":"","bloom_level":"APPLY"}]'
                 f"{flashcard_schema}"
                 f"{scenario_schema}"
                 "}\n"
                 "Provide 4 to 8 multiple-choice quiz questions.\n"
+                "Each question must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE.\n"
+                "The bloom_level must match the cognitive demand of the question stem.\n"
                 "Each option must be a full answer sentence or phrase — never use bare letters like A, B, C, or D.\n"
                 "correct_answer must exactly match one option string."
                 f"{flashcard_instruction}\n"
                 "Also provide 5 to 6 scenario case studies. Each scenario has a title, one concise situation "
-                "paragraph, and exactly 5 MCQs with 4 full-text options each. Scenario questions must apply the situation."
+                "paragraph, and exactly 5 MCQs with 4 full-text options each. Scenario questions must apply the situation. "
+                "Each scenario MCQ must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE."
                 f"{retry_note}"
             ),
         )

@@ -83,6 +83,7 @@ class QuizQuestionOut(BaseModel):
     options: list[str]
     correct_answer: str
     explanation: str = ""
+    bloom_level: str | None = None
 
 
 class ChapterOut(BaseModel):
@@ -149,6 +150,11 @@ class PublishRequest(BaseModel):
 
 class SubtopicVideoUpdate(BaseModel):
     youtube_url: str | None = None
+
+
+class QuestionBloomUpdate(BaseModel):
+    bloom_level: str
+    scenario_id: str | None = None
 
 
 class QuizAttemptRequest(BaseModel):

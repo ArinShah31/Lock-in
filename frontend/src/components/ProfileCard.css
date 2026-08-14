@@ -430,7 +430,7 @@
 
 .pc-card-wrapper.pc-leaderboard .pc-user-info {
   --ui-inset: 12px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   position: relative;
   bottom: auto;
   left: auto;
@@ -438,6 +438,68 @@
   width: 100%;
   margin: 0;
   border-radius: 0 0 calc(var(--card-radius) - 8px) calc(var(--card-radius) - 8px);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.pc-card-wrapper.pc-leaderboard .pc-user-details {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  order: 2;
+  gap: 0;
+}
+
+.pc-card-wrapper.pc-leaderboard .pc-mini-avatar,
+.pc-card-wrapper.pc-leaderboard .pc-handle {
+  display: none;
+}
+
+.pc-card-wrapper.pc-leaderboard .pc-user-text {
+  align-items: center;
+  width: 100%;
+}
+
+.pc-card-wrapper.pc-leaderboard .pc-contact-btn {
+  width: 100%;
+  text-align: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: default;
+  pointer-events: none;
+  order: 1;
+}
+
+.pc-card-wrapper.pc-leaderboard .pc-contact-btn:hover {
+  border: none;
+  transform: none;
+}
+
+.pc-card-wrapper.pc-leaderboard.pc-leaderboard-first .pc-status {
+  color: #ffd700;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.pc-card-wrapper.pc-leaderboard.pc-leaderboard-second .pc-status {
+  color: #cfd8e3;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.pc-card-wrapper.pc-leaderboard.pc-leaderboard-third .pc-status {
+  color: #d4a574;
+  font-weight: 700;
+  font-size: 12px;
 }
 
 /* Stack avatar above rank bar so the photo is fully visible */

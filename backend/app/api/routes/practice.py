@@ -26,6 +26,7 @@ from app.models.user import User, UserRole
 from app.services import groq_course
 from app.services.mock_exam_gemini import extract_mock_exam_pattern, generate_mock_exam_paper
 from app.services.practice_gemini import generate_chapter_scenarios, generate_practice_chapters, valid_mcq_options
+from app.services.bloom import resolve_bloom_level
 from app.schemas.practice import (
     MockExamAttemptOut,
     MockExamAttemptRequest,
@@ -560,7 +561,14 @@ def _question_out_list(items: list[dict]) -> list[PracticeQuestionOut]:
         question = str(item.get("question") or "").strip()
         options = [str(option).strip() for option in (item.get("options") or []) if str(option).strip()]
         if question and options:
-            result.append(PracticeQuestionOut(question=question, options=options))
+            level = resolve_bloom_level(question, item.get("bloom_level"))
+            result.append(
+                PracticeQuestionOut(
+                    question=question,
+                    options=options,
+                    bloom_level=level.value,
+                )
+            )
     return result
 
 
