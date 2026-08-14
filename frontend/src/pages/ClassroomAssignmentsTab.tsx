@@ -5,6 +5,7 @@ import { assignmentsApi } from "../api";
 import type { Assignment, AssignmentSubmission, Classroom } from "../api/types";
 import { uploadFileUrl } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { AssignmentsCalendar } from "../components/AssignmentsCalendar";
 import {
   EmptyState,
   ErrorText,
@@ -15,6 +16,151 @@ import {
 } from "../components/ui";
 
 type OutletCtx = { classroom: Classroom };
+
+type AssignmentStatus = "graded" | "submitted" | "pending" | "not_submitted";
+
+type TeacherCardStatus = "all_graded" | "partial" | "none";
+
+type AssignmentStats = {
+  total: number;
+  submitted: number;
+  pending: number;
+  graded: number;
+};
+
+type StatusTheme = {
+  accent: string;
+  iconBg: string;
+  iconColor: string;
+  badgeBg: string;
+  badgeText: string;
+};
+
+const CARD_ICONS = ["description", "quiz", "menu_book"] as const;
+
+function formatDueDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function isDueInFuture(iso: string): boolean {
+  const d = new Date(iso);
+  return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
+}
+
+function getStudentAssignmentStatus(a: Assignment): AssignmentStatus {
+  const sub = a.my_submission;
+  if (!sub) return isDueInFuture(a.due_at) ? "pending" : "not_submitted";
+  if (sub.is_graded) return "graded";
+  return "submitted";
+}
+
+function getTeacherCardStatus(a: Assignment): TeacherCardStatus {
+  const submitted = a.submitted_count ?? 0;
+  const graded = a.graded_count ?? 0;
+  if (submitted === 0) return "none";
+  if (graded >= submitted) return "all_graded";
+  return "partial";
+}
+
+function getStatusTheme(status: AssignmentStatus): StatusTheme {
+  switch (status) {
+    case "graded":
+      return {
+        accent: "border-l-[#22c55e]",
+        iconBg: "bg-[#dcfce7]",
+        iconColor: "text-[#16a34a]",
+        badgeBg: "bg-[#dcfce7]",
+        badgeText: "text-[#15803d]",
+      };
+    case "submitted":
+      return {
+        accent: "border-l-[#f97316]",
+        iconBg: "bg-[#ffedd5]",
+        iconColor: "text-[#ea580c]",
+        badgeBg: "bg-[#ffedd5]",
+        badgeText: "text-[#c2410c]",
+      };
+    case "pending":
+      return {
+        accent: "border-l-[#f97316]",
+        iconBg: "bg-[#ffedd5]",
+        iconColor: "text-[#ea580c]",
+        badgeBg: "bg-[#ffedd5]",
+        badgeText: "text-[#c2410c]",
+      };
+    case "not_submitted":
+      return {
+        accent: "border-l-[#3b82f6]",
+        iconBg: "bg-[#dbeafe]",
+        iconColor: "text-[#2563eb]",
+        badgeBg: "bg-[#dbeafe]",
+        badgeText: "text-[#1d4ed8]",
+      };
+  }
+}
+
+function getTeacherStatusTheme(status: TeacherCardStatus): StatusTheme {
+  switch (status) {
+    case "all_graded":
+      return getStatusTheme("graded");
+    case "partial":
+      return getStatusTheme("submitted");
+    case "none":
+      return getStatusTheme("not_submitted");
+  }
+}
+
+function studentStatusLabel(status: AssignmentStatus): string {
+  switch (status) {
+    case "graded":
+      return "Graded";
+    case "submitted":
+      return "Submitted";
+    case "pending":
+      return "Pending";
+    case "not_submitted":
+      return "Not submitted";
+  }
+}
+
+function computeStats(items: Assignment[], isTeacher: boolean): AssignmentStats {
+  if (isTeacher) {
+    return items.reduce(
+      (acc, a) => {
+        const submitted = a.submitted_count ?? 0;
+        const graded = a.graded_count ?? 0;
+        return {
+          total: acc.total + 1,
+          submitted: acc.submitted + submitted,
+          pending: acc.pending + Math.max(0, submitted - graded),
+          graded: acc.graded + graded,
+        };
+      },
+      { total: 0, submitted: 0, pending: 0, graded: 0 },
+    );
+  }
+  return items.reduce(
+    (acc, a) => {
+      const hasSubmission = !!a.my_submission;
+      const isGraded = !!a.my_submission?.is_graded;
+      return {
+        total: acc.total + 1,
+        submitted: acc.submitted + (hasSubmission ? 1 : 0),
+        pending: acc.pending + (hasSubmission && !isGraded ? 1 : 0),
+        graded: acc.graded + (isGraded ? 1 : 0),
+      };
+    },
+    { total: 0, submitted: 0, pending: 0, graded: 0 },
+  );
+}
 
 function statusLabel(a: Assignment, isTeacher: boolean): string {
   if (isTeacher) {
@@ -29,6 +175,210 @@ function statusLabel(a: Assignment, isTeacher: boolean): string {
   return "Submitted";
 }
 
+function MetricTile({
+  label,
+  value,
+  icon,
+  iconColor,
+}: {
+  label: string;
+  value: number;
+  icon: string;
+  iconColor: string;
+}) {
+  return (
+    <div className="rounded-xl border border-[#e1e3e4] bg-white px-4 py-4 shadow-xs">
+      <div className="flex items-center justify-between">
+        <span className={`material-symbols-outlined text-xl ${iconColor}`}>{icon}</span>
+      </div>
+      <p className="mt-2 font-display text-3xl font-extrabold text-[#031635]">{value}</p>
+      <p className="mt-1 text-sm text-[#75777f]">{label}</p>
+    </div>
+  );
+}
+
+function AssignmentsHeader({
+  isTeacher,
+  showCreate,
+  showCalendar,
+  onToggleCreate,
+  onToggleCalendar,
+}: {
+  isTeacher: boolean;
+  showCreate: boolean;
+  showCalendar: boolean;
+  onToggleCreate: () => void;
+  onToggleCalendar: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#e1e3e4] bg-white px-5 py-5 shadow-xs">
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#ede9fe]">
+          <span className="material-symbols-outlined text-2xl text-[#6366f1]">assignment</span>
+        </div>
+        <div>
+          <h2 className="font-display text-xl font-extrabold text-[#031635]">Assignments</h2>
+          <p className="mt-1 text-sm text-[#75777f]">
+            {isTeacher
+              ? "Create document assignments, review submissions, and grade."
+              : "View assignments, upload your answers, and check grades."}
+          </p>
+        </div>
+      </div>
+      {isTeacher ? (
+        <PrimaryButton onClick={onToggleCreate}>{showCreate ? "Cancel" : "New assignment"}</PrimaryButton>
+      ) : (
+        <button
+          type="button"
+          onClick={onToggleCalendar}
+          className="inline-flex items-center gap-2 rounded-lg bg-[#6366f1] px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-[#4f46e5]"
+        >
+          <span className="material-symbols-outlined text-base">calendar_month</span>
+          {showCalendar ? "Hide Calendar" : "View Calendar"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AssignmentCard({
+  assignment,
+  index,
+  isTeacher,
+  onOpen,
+}: {
+  assignment: Assignment;
+  index: number;
+  isTeacher: boolean;
+  onOpen: (id: number) => void;
+}) {
+  const icon = CARD_ICONS[index % CARD_ICONS.length];
+  const description =
+    assignment.instructions?.trim() ||
+    (assignment.file_name ? `Download and complete: ${assignment.file_name}` : "Open for full instructions.");
+
+  if (isTeacher) {
+    const teacherStatus = getTeacherCardStatus(assignment);
+    const theme = getTeacherStatusTheme(teacherStatus);
+    const submitted = assignment.submitted_count ?? 0;
+    const graded = assignment.graded_count ?? 0;
+
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={() => onOpen(assignment.id)}
+          className={`group flex w-full items-center gap-4 rounded-xl border border-[#e1e3e4] border-l-4 bg-white px-4 py-4 text-left shadow-xs transition hover:border-[#6366f1]/40 hover:shadow-md ${theme.accent}`}
+        >
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${theme.iconBg}`}>
+            <span className={`material-symbols-outlined text-xl ${theme.iconColor}`}>{icon}</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-[#031635]">{assignment.title}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#75777f]">
+              <span className="inline-flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">calendar_today</span>
+                Due {formatDueDate(assignment.due_at)}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">close</span>
+                Max {assignment.max_marks}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">group</span>
+                {submitted} submitted · {graded} graded
+              </span>
+            </div>
+            <p className="mt-2 line-clamp-2 text-sm text-[#44474e]">{description}</p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${theme.badgeBg} ${theme.badgeText}`}>
+              {submitted === 0 ? "No submissions" : `${graded}/${submitted} graded`}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-lg border border-[#6366f1]/30 bg-[#ede9fe] px-3 py-1.5 text-xs font-semibold text-[#6366f1]">
+              Review submissions
+              <span className="material-symbols-outlined text-sm">chevron_right</span>
+            </span>
+          </div>
+        </button>
+      </li>
+    );
+  }
+
+  const status = getStudentAssignmentStatus(assignment);
+  const theme = getStatusTheme(status);
+  const sub = assignment.my_submission;
+
+  let ctaLabel = "Start Assignment";
+  let ctaIcon = "upload";
+  if (status === "graded") {
+    ctaLabel = "View Feedback";
+    ctaIcon = "rate_review";
+  } else if (status === "submitted") {
+    ctaLabel = "View submission";
+    ctaIcon = "visibility";
+  }
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onOpen(assignment.id)}
+        className={`group flex w-full items-center gap-4 rounded-xl border border-[#e1e3e4] border-l-4 bg-white px-4 py-4 text-left shadow-xs transition hover:border-[#6366f1]/40 hover:shadow-md ${theme.accent}`}
+      >
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${theme.iconBg}`}>
+          <span className={`material-symbols-outlined text-xl ${theme.iconColor}`}>{icon}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-[#031635]">{assignment.title}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#75777f]">
+            <span className="inline-flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">calendar_today</span>
+              Due {formatDueDate(assignment.due_at)}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">close</span>
+              Max {assignment.max_marks}
+            </span>
+            <span className={`inline-flex items-center gap-1 font-medium ${theme.badgeText}`}>
+              <span className="material-symbols-outlined text-sm">
+                {status === "graded" ? "grade" : status === "submitted" ? "check_circle" : "schedule"}
+              </span>
+              {studentStatusLabel(status)}
+            </span>
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm text-[#44474e]">{description}</p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {status === "graded" && sub ? (
+            <div className="text-right">
+              <p className="text-xs font-medium text-[#16a34a]">Grade</p>
+              <p className="font-display text-xl font-extrabold text-[#15803d]">
+                {sub.marks}/{assignment.max_marks}
+              </p>
+            </div>
+          ) : (
+            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${theme.badgeBg} ${theme.badgeText}`}>
+              {studentStatusLabel(status)}
+            </span>
+          )}
+          <span
+            className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${
+              status === "graded"
+                ? "border border-[#6366f1]/30 bg-white text-[#6366f1]"
+                : "border border-[#6366f1] bg-[#6366f1] text-white"
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">{ctaIcon}</span>
+            {ctaLabel}
+            <span className="material-symbols-outlined text-sm">chevron_right</span>
+          </span>
+        </div>
+      </button>
+    </li>
+  );
+}
+
 export function ClassroomAssignmentsTab() {
   const { classroom } = useOutletContext<OutletCtx>();
   const { classroomId } = useParams();
@@ -39,6 +389,7 @@ export function ClassroomAssignmentsTab() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [form, setForm] = useState({
     title: "",
     instructions: "",
@@ -60,6 +411,13 @@ export function ClassroomAssignmentsTab() {
     enabled: !Number.isNaN(id),
   });
 
+  const assignmentList = assignments.data ?? [];
+
+  const stats = useMemo(
+    () => computeStats(assignmentList, isTeacher),
+    [assignmentList, isTeacher],
+  );
+
   useEffect(() => {
     const raw = searchParams.get("assignment");
     if (!raw) return;
@@ -68,8 +426,8 @@ export function ClassroomAssignmentsTab() {
   }, [searchParams]);
 
   const selected = useMemo(
-    () => assignments.data?.find((a) => a.id === selectedId) ?? null,
-    [assignments.data, selectedId],
+    () => assignmentList.find((a) => a.id === selectedId) ?? null,
+    [assignmentList, selectedId],
   );
 
   const detail = useQuery({
@@ -133,6 +491,12 @@ export function ClassroomAssignmentsTab() {
     },
     onError: (err: Error) => setError(err.message),
   });
+
+  function openAssignment(assignmentId: number) {
+    setError(null);
+    setSelectedId(assignmentId);
+    setShowCalendar(false);
+  }
 
   function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -203,9 +567,9 @@ export function ClassroomAssignmentsTab() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <GhostButton onClick={() => setSelectedId(null)}>← All assignments</GhostButton>
-            <h2 className="mt-3 font-display text-xl text-paper">{active.title}</h2>
-            <p className="mt-1 text-sm text-mist">
-              Due {new Date(active.due_at).toLocaleString()} · Max {active.max_marks} marks
+            <h2 className="mt-3 font-display text-xl text-[#031635]">{active.title}</h2>
+            <p className="mt-1 text-sm text-[#75777f]">
+              Due {formatDueDate(active.due_at)} · Max {active.max_marks} marks
               {isTeacher ? ` · ${statusLabel(active, true)}` : ` · ${statusLabel(active, false)}`}
             </p>
           </div>
@@ -215,8 +579,10 @@ export function ClassroomAssignmentsTab() {
 
         {active.instructions ? (
           <div>
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Instructions</h3>
-            <p className="whitespace-pre-wrap text-sm text-paper">{active.instructions}</p>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-[#75777f]">
+              Instructions
+            </h3>
+            <p className="whitespace-pre-wrap text-sm text-[#031635]">{active.instructions}</p>
           </div>
         ) : null}
 
@@ -225,45 +591,45 @@ export function ClassroomAssignmentsTab() {
             href={promptUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex text-sm font-semibold text-accent hover:underline"
+            className="inline-flex text-sm font-semibold text-[#6366f1] hover:underline"
           >
             Download assignment file: {active.file_name}
           </a>
         ) : null}
 
         {isStudent ? (
-          <div className="space-y-4 border-t border-line pt-4">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-mist">Your submission</h3>
+          <div className="space-y-4 border-t border-[#e1e3e4] pt-4">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-[#75777f]">Your submission</h3>
             {mySub ? (
-              <div className="rounded-xl border border-line px-3 py-3 text-sm">
-                <p className="text-paper">
+              <div className="rounded-xl border border-[#e1e3e4] px-3 py-3 text-sm">
+                <p className="text-[#031635]">
                   {mySub.file_name}
-                  {mySub.is_late ? <span className="ml-2 text-accent">Late</span> : null}
+                  {mySub.is_late ? <span className="ml-2 text-[#6366f1]">Late</span> : null}
                 </p>
-                <p className="text-xs text-mist">Submitted {new Date(mySub.submitted_at).toLocaleString()}</p>
+                <p className="text-xs text-[#75777f]">Submitted {new Date(mySub.submitted_at).toLocaleString()}</p>
                 {uploadFileUrl(mySub.file_path) ? (
                   <a
                     href={uploadFileUrl(mySub.file_path)!}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-flex text-accent hover:underline"
+                    className="mt-2 inline-flex text-[#6366f1] hover:underline"
                   >
                     View uploaded file
                   </a>
                 ) : null}
                 {mySub.is_graded ? (
-                  <div className="mt-3 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2">
-                    <p className="font-semibold text-paper">
+                  <div className="mt-3 rounded-xl border border-[#22c55e]/30 bg-[#dcfce7] px-3 py-2">
+                    <p className="font-semibold text-[#15803d]">
                       Grade: {mySub.marks} / {active.max_marks}
                     </p>
-                    {mySub.feedback ? <p className="mt-1 text-mist">{mySub.feedback}</p> : null}
+                    {mySub.feedback ? <p className="mt-1 text-[#44474e]">{mySub.feedback}</p> : null}
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs text-mist">You can replace this file until it is graded.</p>
+                  <p className="mt-2 text-xs text-[#75777f]">You can replace this file until it is graded.</p>
                 )}
               </div>
             ) : (
-              <p className="text-sm text-mist">No submission yet.</p>
+              <p className="text-sm text-[#75777f]">No submission yet.</p>
             )}
 
             {canSubmit ? (
@@ -285,24 +651,24 @@ export function ClassroomAssignmentsTab() {
         ) : null}
 
         {isTeacher ? (
-          <div className="space-y-4 border-t border-line pt-4">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-mist">Submissions</h3>
+          <div className="space-y-4 border-t border-[#e1e3e4] pt-4">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-[#75777f]">Submissions</h3>
             {!submissions.data?.length ? (
-              <p className="text-sm text-mist">No submissions yet.</p>
+              <p className="text-sm text-[#75777f]">No submissions yet.</p>
             ) : (
               <ul className="space-y-3">
                 {submissions.data.map((sub) => {
                   const fileHref = uploadFileUrl(sub.file_path);
                   const isEditing = gradingStudentId === sub.student_id;
                   return (
-                    <li key={sub.id} className="rounded-xl border border-line px-3 py-3 text-sm">
+                    <li key={sub.id} className="rounded-xl border border-[#e1e3e4] px-3 py-3 text-sm">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="font-medium text-paper">
+                          <p className="font-medium text-[#031635]">
                             {sub.student_full_name ?? `Student ${sub.student_id}`}
-                            {sub.is_late ? <span className="ml-2 text-accent">Late</span> : null}
+                            {sub.is_late ? <span className="ml-2 text-[#6366f1]">Late</span> : null}
                           </p>
-                          <p className="text-xs text-mist">
+                          <p className="text-xs text-[#75777f]">
                             {sub.student_email}
                             {" · "}
                             {new Date(sub.submitted_at).toLocaleString()}
@@ -312,13 +678,13 @@ export function ClassroomAssignmentsTab() {
                               href={fileHref}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="mt-1 inline-flex text-accent hover:underline"
+                              className="mt-1 inline-flex text-[#6366f1] hover:underline"
                             >
                               {sub.file_name}
                             </a>
                           ) : null}
                           {sub.is_graded ? (
-                            <p className="mt-2 text-paper">
+                            <p className="mt-2 text-[#031635]">
                               Grade: {sub.marks} / {active.max_marks}
                               {sub.feedback ? ` · ${sub.feedback}` : ""}
                             </p>
@@ -329,7 +695,7 @@ export function ClassroomAssignmentsTab() {
                         </GhostButton>
                       </div>
                       {isEditing ? (
-                        <form className="mt-3 grid gap-3 border-t border-line pt-3" onSubmit={onGrade}>
+                        <form className="mt-3 grid gap-3 border-t border-[#e1e3e4] pt-3" onSubmit={onGrade}>
                           <Field label={`Marks (max ${active.max_marks})`}>
                             <input
                               className={inputClass}
@@ -371,26 +737,18 @@ export function ClassroomAssignmentsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-display text-xl text-paper">Assignments</h2>
-          <p className="text-sm text-mist">
-            {isTeacher
-              ? "Create document assignments, review submissions, and grade."
-              : "View assignments, upload your answers, and check grades."}
-          </p>
-        </div>
-        {isTeacher ? (
-          <PrimaryButton onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? "Cancel" : "New assignment"}
-          </PrimaryButton>
-        ) : null}
-      </div>
+      <AssignmentsHeader
+        isTeacher={isTeacher}
+        showCreate={showCreate}
+        showCalendar={showCalendar}
+        onToggleCreate={() => setShowCreate((v) => !v)}
+        onToggleCalendar={() => setShowCalendar((v) => !v)}
+      />
 
       <ErrorText message={error} />
 
       {isTeacher && showCreate ? (
-        <form className="grid gap-3 rounded-2xl border border-line p-4" onSubmit={onCreate}>
+        <form className="grid gap-3 rounded-2xl border border-[#e1e3e4] bg-white p-4 shadow-xs" onSubmit={onCreate}>
           <Field label="Title">
             <input
               className={inputClass}
@@ -443,10 +801,25 @@ export function ClassroomAssignmentsTab() {
         </form>
       ) : null}
 
-      {assignments.isLoading ? <p className="text-sm text-mist">Loading assignments…</p> : null}
+      {!isTeacher && showCalendar ? (
+        <AssignmentsCalendar
+          items={assignmentList}
+          onSelect={openAssignment}
+          onClose={() => setShowCalendar(false)}
+        />
+      ) : null}
+
+      {assignments.isLoading ? <p className="text-sm text-[#75777f]">Loading assignments…</p> : null}
       {assignments.isError ? <ErrorText message="Failed to load assignments." /> : null}
 
-      {!assignments.data?.length && !assignments.isLoading ? (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricTile label="Total Assignments" value={stats.total} icon="assignment" iconColor="text-[#6366f1]" />
+        <MetricTile label="Submitted" value={stats.submitted} icon="check_circle" iconColor="text-[#16a34a]" />
+        <MetricTile label="Pending" value={stats.pending} icon="schedule" iconColor="text-[#ea580c]" />
+        <MetricTile label="Graded" value={stats.graded} icon="grade" iconColor="text-[#2563eb]" />
+      </div>
+
+      {!assignmentList.length && !assignments.isLoading ? (
         <EmptyState
           title="No assignments yet"
           body={
@@ -457,27 +830,24 @@ export function ClassroomAssignmentsTab() {
         />
       ) : (
         <ul className="space-y-3">
-          {assignments.data?.map((a) => (
-            <li key={a.id}>
-              <button
-                type="button"
-                className="w-full rounded-2xl border border-line bg-ink-soft/40 px-4 py-3 text-left transition hover:border-accent/40"
-                onClick={() => {
-                  setError(null);
-                  setSelectedId(a.id);
-                }}
-              >
-                <p className="font-semibold text-paper">{a.title}</p>
-                <p className="mt-1 text-xs text-mist">
-                  Due {new Date(a.due_at).toLocaleString()} · Max {a.max_marks}
-                  {" · "}
-                  {statusLabel(a, isTeacher)}
-                </p>
-              </button>
-            </li>
+          {assignmentList.map((a, index) => (
+            <AssignmentCard
+              key={a.id}
+              assignment={a}
+              index={index}
+              isTeacher={isTeacher}
+              onOpen={openAssignment}
+            />
           ))}
         </ul>
       )}
+
+      {assignmentList.length ? (
+        <p className="flex items-center justify-center gap-2 text-center text-sm text-[#75777f]">
+          <span className="material-symbols-outlined text-base">lightbulb</span>
+          Tip: Click on an assignment to view instructions and details.
+        </p>
+      ) : null}
     </div>
   );
 }
