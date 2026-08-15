@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gc
+import os
 import re
 import shutil
 import subprocess
@@ -40,7 +41,7 @@ def list_pngs(folder: Path) -> list[str]:
 
 def _clear_pngs(folder: Path) -> None:
     for png in list_pngs(folder):
-        Path(png).unlink(missing_ok=True)
+        _remove_file(Path(png))
 
 
 def _libreoffice_bin() -> str | None:
@@ -95,16 +96,25 @@ def validate_slide_images(paths: list[str], expected_count: int) -> None:
     _log(f"Image validation succeeded ({expected_count} PNG{'s' if expected_count != 1 else ''})")
 
 
+def _remove_file(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _unblock_windows_file(path: Path) -> None:
     """Drop Mark-of-the-Web so PowerPoint COM will open downloaded PPTX files."""
-    stream = f"{path}:Zone.Identifier"
+    ads = f"{path}:Zone.Identifier"
     try:
-        Path(stream).unlink(missing_ok=True)
+        os.remove(ads)
     except OSError:
         pass
     try:
         subprocess.run(
-            ["powershell", "-NoProfile", "-Command", f'Unblock-File -LiteralPath "{path}"'],
+            ["powershell", "-NoProfile", "-Command", f"Unblock-File -LiteralPath '{path}'"],
             capture_output=True,
             timeout=15,
         )
@@ -120,7 +130,7 @@ def _copy_to_temp(pptx: Path) -> Path:
 
 
 def _open_presentation(app, pptx: Path):
-    target = str(pptx)
+    target = os.path.normpath(str(pptx.resolve()))
     attempts = [
         ("read-only", (True, False, False)),
         ("writable", (False, False, False)),
@@ -152,89 +162,128 @@ def _rewrite_pptx(pptx: Path) -> Path:
     return dest
 
 
+def _com_initialize() -> str | None:
+    try:
+        import pythoncom
+
+        pythoncom.CoInitialize()
+        return "pythoncom"
+    except Exception:
+        try:
+            import comtypes
+
+            comtypes.CoInitialize()
+            return "comtypes"
+        except Exception:
+            return None
+
+
+def _com_uninitialize(kind: str | None) -> None:
+    if not kind:
+        return
+    try:
+        if kind == "pythoncom":
+            import pythoncom
+
+            pythoncom.CoUninitialize()
+        else:
+            import comtypes
+
+            comtypes.CoUninitialize()
+    except Exception:
+        pass
+
+
 def render_with_powerpoint(pptx_path: str, out_dir: str) -> list[str]:
     """Primary renderer: Microsoft PowerPoint COM, read-only, then quit cleanly."""
     pptx = Path(pptx_path).resolve()
     dest = Path(out_dir).resolve()
     dest.mkdir(parents=True, exist_ok=True)
     _log(f"PowerPoint starting: {pptx}")
+    com_kind = _com_initialize()
 
     backend = None
+    win32 = None
+    comtypes_client = None
     try:
-        import comtypes.client as comtypes_client
+        try:
+            import comtypes.client as comtypes_client
 
-        backend = "comtypes"
-    except Exception:
-        try:
-            import win32com.client as win32
-        except Exception as exc:  # noqa: BLE001
-            raise SlideRenderError(f"PowerPoint COM libraries are unavailable: {exc}") from exc
-        backend = "win32com"
-
-    temp = _copy_to_temp(pptx)
-    rewritten: Path | None = None
-    app = None
-    pres = None
-    try:
-        if backend == "comtypes":
-            app = comtypes_client.CreateObject("PowerPoint.Application")
-        else:
-            app = win32.Dispatch("PowerPoint.Application")
-        try:
-            app.DisplayAlerts = 0
-        except Exception:
-            pass
-        try:
-            app.AutomationSecurity = 1
-        except Exception:
-            pass
-        try:
-            app.Visible = 0
+            backend = "comtypes"
         except Exception:
             try:
-                app.Visible = 1
+                import win32com.client as win32
+            except Exception as exc:  # noqa: BLE001
+                raise SlideRenderError(f"PowerPoint COM libraries are unavailable: {exc}") from exc
+            backend = "win32com"
+
+        temp = None
+        rewritten: Path | None = None
+        app = None
+        pres = None
+        try:
+            temp = _copy_to_temp(pptx)
+            if backend == "comtypes":
+                app = comtypes_client.CreateObject("PowerPoint.Application")
+            else:
+                app = win32.Dispatch("PowerPoint.Application")
+            try:
+                app.DisplayAlerts = 0
             except Exception:
                 pass
+            try:
+                app.AutomationSecurity = 1
+            except Exception:
+                pass
+            try:
+                app.Visible = 0
+            except Exception:
+                try:
+                    app.Visible = 1
+                except Exception:
+                    pass
 
-        try:
-            pres = _open_presentation(app, temp)
-        except Exception as open_exc:  # noqa: BLE001
-            _log(f"PowerPoint direct open failed: {open_exc}")
-            rewritten = _rewrite_pptx(pptx)
-            _log(f"PowerPoint retrying with rewritten PPTX: {rewritten.name}")
-            pres = _open_presentation(app, rewritten)
+            try:
+                pres = _open_presentation(app, temp)
+            except Exception as open_exc:  # noqa: BLE001
+                _log(f"PowerPoint direct open failed: {open_exc}")
+                rewritten = _rewrite_pptx(pptx)
+                _log(f"PowerPoint retrying with rewritten PPTX: {rewritten.name}")
+                pres = _open_presentation(app, rewritten)
 
-        _log(f"PowerPoint exporting PNG to {dest}")
-        pres.Export(str(dest), "PNG")
-        try:
-            pres.Close()
-        except Exception:
-            pass
-        pres = None
-        pngs = list_pngs(dest)
-        if not pngs:
-            raise SlideRenderError("PowerPoint exported no PNG files")
-        _log(f"PowerPoint succeeded ({len(pngs)} slide images)")
-        return pngs
-    except Exception as exc:  # noqa: BLE001
-        raise SlideRenderError(str(exc)) from exc
-    finally:
-        if pres is not None:
+            _log(f"PowerPoint exporting PNG to {dest}")
+            export_dir = str(dest)
+            pres.Export(export_dir, "PNG")
             try:
                 pres.Close()
             except Exception:
                 pass
-        if app is not None:
-            try:
-                app.Quit()
-            except Exception:
-                pass
-        pres = None
-        app = None
-        gc.collect()
-        temp.unlink(missing_ok=True)
-        if rewritten is not None:
-            rewritten.unlink(missing_ok=True)
+            pres = None
+            pngs = list_pngs(dest)
+            if not pngs:
+                raise SlideRenderError("PowerPoint exported no PNG files")
+            _log(f"PowerPoint succeeded ({len(pngs)} slide images)")
+            return pngs
+        except Exception as exc:  # noqa: BLE001
+            raise SlideRenderError(str(exc)) from exc
+        finally:
+            if pres is not None:
+                try:
+                    pres.Close()
+                except Exception:
+                    pass
+            if app is not None:
+                try:
+                    app.Quit()
+                except Exception:
+                    pass
+            pres = None
+            app = None
+            gc.collect()
+            _remove_file(temp)
+            _remove_file(rewritten)
+    finally:
+        _com_uninitialize(com_kind)
 
 
 def render_with_libreoffice(pptx_path: str, out_dir: str) -> list[str]:
