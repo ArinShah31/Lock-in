@@ -20,73 +20,99 @@ from app.services.presentation_video import build_narrated_video
 
 UPLOAD_ROOT = Path("uploads/presentations")
 
+_running_lock = threading.Lock()
+_running: dict[int, int] = {}
+_job_seq = 0
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _run_with_com(fn, presentation_id: int, *, crash_label: str) -> None:
-    com_inited = False
-    try:
-        import pythoncom
+def job_is_running(presentation_id: int) -> bool:
+    with _running_lock:
+        return presentation_id in _running
 
-        pythoncom.CoInitialize()
-        com_inited = True
-    except Exception:
-        try:
-            import comtypes
 
-            comtypes.CoInitialize()
-            com_inited = True
-        except Exception:
-            pass
+def _claim_job(presentation_id: int, *, force: bool = False) -> int | None:
+    global _job_seq
+    with _running_lock:
+        if presentation_id in _running and not force:
+            return None
+        _job_seq += 1
+        _running[presentation_id] = _job_seq
+        return _job_seq
 
+
+def _clear_job(presentation_id: int, token: int | None = None) -> None:
+    with _running_lock:
+        current = _running.get(presentation_id)
+        if token is None or current == token:
+            _running.pop(presentation_id, None)
+
+
+def _fail_row(db: Session, row: ClassroomPresentation | None, message: str) -> None:
+    if not row:
+        return
+    row.status = PresentationStatus.FAILED
+    row.error_message = message[:2000]
+    row.progress_message = None
+    row.updated_at = _now()
+    db.commit()
+
+
+def _run_job(fn, presentation_id: int, *, kind: str, crash_label: str, token: int) -> None:
+    print(f"[presentations] {kind} job started id={presentation_id}", flush=True)
     db = SessionLocal()
     try:
+        row = db.query(ClassroomPresentation).filter(ClassroomPresentation.id == presentation_id).first()
+        if not row:
+            print(f"[presentations] {crash_label}: presentation {presentation_id} not found", flush=True)
+            return
+        if not row.is_active:
+            _fail_row(db, row, "Presentation is no longer active.")
+            print(f"[presentations] {crash_label}: presentation {presentation_id} is inactive", flush=True)
+            return
+        _set_progress(db, row, "Starting…")
         fn(db, presentation_id)
     except Exception as exc:  # noqa: BLE001
-        print(f"[presentations] {crash_label} crashed: {exc}")
+        print(f"[presentations] {crash_label} crashed: {exc}", flush=True)
         try:
             row = db.query(ClassroomPresentation).filter(ClassroomPresentation.id == presentation_id).first()
-            if row:
-                row.status = PresentationStatus.FAILED
-                row.error_message = str(exc)[:2000]
-                row.progress_message = None
-                row.updated_at = _now()
-                db.commit()
+            _fail_row(db, row, str(exc))
         except Exception:
             db.rollback()
     finally:
         db.close()
-        if com_inited:
-            try:
-                import pythoncom
-
-                pythoncom.CoUninitialize()
-            except Exception:
-                try:
-                    import comtypes
-
-                    comtypes.CoUninitialize()
-                except Exception:
-                    pass
+        _clear_job(presentation_id, token)
+        print(f"[presentations] {kind} job finished id={presentation_id}", flush=True)
 
 
-def start_prepare_job(presentation_id: int) -> None:
+def start_prepare_job(presentation_id: int, *, force: bool = False) -> None:
+    token = _claim_job(presentation_id, force=force)
+    if token is None:
+        print(f"[presentations] prepare already running id={presentation_id}", flush=True)
+        return
+    print(f"[presentations] starting prepare job id={presentation_id}", flush=True)
     thread = threading.Thread(
-        target=_run_with_com,
+        target=_run_job,
         args=(_execute_prepare_job, presentation_id),
-        kwargs={"crash_label": "prepare job"},
+        kwargs={"kind": "prepare", "crash_label": "prepare job", "token": token},
         daemon=True,
     )
     thread.start()
 
 
-def start_video_job(presentation_id: int) -> None:
+def start_video_job(presentation_id: int, *, force: bool = False) -> None:
+    token = _claim_job(presentation_id, force=force)
+    if token is None:
+        print(f"[presentations] video already running id={presentation_id}", flush=True)
+        return
+    print(f"[presentations] starting video job id={presentation_id}", flush=True)
     thread = threading.Thread(
-        target=_run_with_com,
+        target=_run_job,
         args=(_execute_video_job, presentation_id),
-        kwargs={"crash_label": "background video job"},
+        kwargs={"kind": "video", "crash_label": "background video job", "token": token},
         daemon=True,
     )
     thread.start()
@@ -185,7 +211,7 @@ def _expand_scripts(db: Session, row: ClassroomPresentation, slides: list) -> No
 def _execute_prepare_job(db: Session, presentation_id: int) -> None:
     row = db.query(ClassroomPresentation).filter(ClassroomPresentation.id == presentation_id).first()
     if not row or not row.is_active:
-        return
+        raise RuntimeError("Presentation is missing or inactive")
     slides = sorted(row.slides, key=lambda s: s.index)
     if not slides:
         raise RuntimeError("This presentation has no slides")
@@ -210,7 +236,7 @@ def _execute_prepare_job(db: Session, presentation_id: int) -> None:
     row.progress_message = None
     row.updated_at = _now()
     db.commit()
-    print(f"[presentations] prepared presentation {presentation_id}")
+    print(f"[presentations] prepared presentation {presentation_id}", flush=True)
 
 
 def _slides_have_valid_images(slides: list) -> bool:
@@ -227,7 +253,7 @@ def _slides_have_valid_images(slides: list) -> bool:
 def _execute_video_job(db: Session, presentation_id: int) -> None:
     row = db.query(ClassroomPresentation).filter(ClassroomPresentation.id == presentation_id).first()
     if not row or not row.is_active:
-        return
+        raise RuntimeError("Presentation is missing or inactive")
     folder = UPLOAD_ROOT / str(row.classroom_id)
     audio_dir = folder / f"{row.id}-audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -315,4 +341,4 @@ def _execute_video_job(db: Session, presentation_id: int) -> None:
     row.progress_message = "Done"
     row.updated_at = _now()
     db.commit()
-    print(f"[presentations] background video ready for presentation {presentation_id}")
+    print(f"[presentations] background video ready for presentation {presentation_id}", flush=True)

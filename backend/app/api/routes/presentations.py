@@ -25,7 +25,7 @@ from app.schemas.presentation import (
     SlideShapeOut,
 )
 from app.services.presentation_media import build_cues
-from app.services.presentation_jobs import start_prepare_job, start_video_job
+from app.services.presentation_jobs import job_is_running, start_prepare_job, start_video_job
 from app.services.presentation_parse import extract_slides
 from app.services.presentation_render import validate_pptx_file
 from app.services.presentation_scripts import needs_script_expansion
@@ -174,6 +174,13 @@ def list_presentations(
         .order_by(ClassroomPresentation.id.desc())
         .all()
     )
+    for row in rows:
+        if row.status in {
+            PresentationStatus.PREPARING,
+            PresentationStatus.GENERATING,
+            PresentationStatus.FAILED,
+        }:
+            _maybe_resume_job(db, row)
     return [_summary(row) for row in rows]
 
 
@@ -243,9 +250,18 @@ async def upload_presentation(
     return _detail(row)
 
 
-def _maybe_start_prepare(db: Session, row: ClassroomPresentation) -> None:
+def _maybe_resume_job(db: Session, row: ClassroomPresentation) -> None:
     stale = _job_is_stale(row)
-    if row.status == PresentationStatus.PREPARING and not stale:
+    if job_is_running(row.id) and not stale:
+        return
+    if row.status == PresentationStatus.GENERATING:
+        row.progress_message = "Queued…"
+        row.error_message = None
+        _touch(row)
+        db.commit()
+        start_video_job(row.id, force=stale)
+        return
+    if row.status == PresentationStatus.PREPARING and job_is_running(row.id) and not stale:
         return
     if not row.slides:
         return
@@ -254,21 +270,25 @@ def _maybe_start_prepare(db: Session, row: ClassroomPresentation) -> None:
         needs_script_expansion(s.script or "", s.extracted_text or "") for s in row.slides
     )
     retry_failed_render = row.status == PresentationStatus.FAILED and missing_images
-    retry_stale = row.status == PresentationStatus.PREPARING and stale
+    retry_stale_prepare = row.status == PresentationStatus.PREPARING and (
+        stale or not job_is_running(row.id)
+    )
     if (
         row.status not in {PresentationStatus.UPLOADED, PresentationStatus.SCRIPTS_READY}
         and not retry_failed_render
-        and not retry_stale
+        and not retry_stale_prepare
     ):
         return
-    if not missing_images and not needs_ai:
+    if row.status == PresentationStatus.SCRIPTS_READY and not missing_images and not needs_ai:
+        return
+    if not missing_images and not needs_ai and row.status != PresentationStatus.PREPARING:
         return
     row.status = PresentationStatus.PREPARING
     row.progress_message = "Queued…"
     row.error_message = None
     _touch(row)
     db.commit()
-    start_prepare_job(row.id)
+    start_prepare_job(row.id, force=stale)
 
 
 def _job_is_stale(row: ClassroomPresentation, minutes: int = 8) -> bool:
@@ -277,7 +297,11 @@ def _job_is_stale(row: ClassroomPresentation, minutes: int = 8) -> bool:
         return True
     if updated.tzinfo is None:
         updated = updated.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) - updated > timedelta(minutes=minutes)
+    age = datetime.now(timezone.utc) - updated
+    progress = (row.progress_message or "").strip().casefold()
+    if progress.startswith("queued") and age > timedelta(seconds=45):
+        return True
+    return age > timedelta(minutes=minutes)
 
 
 @router.get("/{presentation_id}", response_model=PresentationDetailOut)
@@ -290,7 +314,7 @@ def get_presentation(
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_view_access(db, current_user, classroom)
     row = _get_presentation_or_404(db, classroom_id, presentation_id)
-    _maybe_start_prepare(db, row)
+    _maybe_resume_job(db, row)
     db.refresh(row)
     return _detail(row)
 
@@ -379,6 +403,8 @@ def generate_video(
     classroom = _get_classroom_or_404(db, classroom_id)
     _ensure_teacher_access(db, current_user, classroom)
     row = _get_presentation_or_404(db, classroom_id, presentation_id)
+    _maybe_resume_job(db, row)
+    db.refresh(row)
     if row.status in {PresentationStatus.GENERATING, PresentationStatus.PREPARING}:
         return _detail(row)
     if not row.slides:

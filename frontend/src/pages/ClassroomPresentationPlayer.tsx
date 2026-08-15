@@ -330,7 +330,9 @@ export function ClassroomPresentationPlayer() {
     enabled: !Number.isNaN(cid) && !Number.isNaN(pid),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === "GENERATING" || status === "PREPARING" || status === "UPLOADED" ? 2000 : false;
+      return status === "GENERATING" || status === "PREPARING" || status === "UPLOADED" || status === "FAILED"
+        ? 2000
+        : false;
     },
   });
 

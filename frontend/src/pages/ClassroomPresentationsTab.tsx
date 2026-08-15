@@ -38,7 +38,9 @@ export function ClassroomPresentationsTab() {
     queryFn: () => presentationsApi.list(id),
     enabled: !Number.isNaN(id),
     refetchInterval: (query) =>
-      query.state.data?.some((item) => item.status === "GENERATING" || item.status === "PREPARING")
+      query.state.data?.some(
+        (item) => item.status === "GENERATING" || item.status === "PREPARING" || item.status === "FAILED",
+      )
         ? 2000
         : false,
   });
