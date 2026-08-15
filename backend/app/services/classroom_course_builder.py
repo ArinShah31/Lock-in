@@ -309,9 +309,14 @@ def _run_video(
         _complete(db, job, f"Skipped video for intro/overview: {lesson.get('title')}")
         return
 
-    query = f"{classroom.name} {target.get('title')} {lesson.get('title')} tutorial"
-    _set_progress(db, job, f"Finding YouTube video: {lesson.get('title')}…")
+    lesson_title = str(lesson.get("title") or "").strip()
+    query = f"{classroom.name} {target.get('title')} {lesson_title} tutorial"
+    _set_progress(db, job, f"Finding YouTube video: {lesson_title}…")
     video_id, title = search_youtube_video(query=query)
+    if not video_id and lesson_title:
+        fallback = f"{lesson_title} tutorial"
+        _set_progress(db, job, f"Retrying YouTube search: {lesson_title}…")
+        video_id, title = search_youtube_video(query=fallback)
     lesson["youtube_video_id"] = video_id
     lesson["youtube_title"] = title
     lesson["youtube_url"] = f"https://www.youtube.com/watch?v={video_id}" if video_id else None

@@ -12,8 +12,6 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { CourseMarkdown } from "../components/CourseMarkdown";
-import { BloomBadge } from "../components/BloomBadge";
-import { BLOOM_LEVELS, bloomLabel, type BloomLevel } from "../lib/bloom";
 import {
   EmptyState,
   ErrorText,
@@ -508,8 +506,6 @@ function BuildPanel({
   activeJob,
   recentJobs,
   onGenerateAll,
-  onGenerateAssessments,
-  canGenerateAssessments,
   onRegenerateStructure,
   onTogglePublish,
 }: {
@@ -520,13 +516,10 @@ function BuildPanel({
   activeJob: CourseBuildJob | null;
   recentJobs: CourseBuildJob[];
   onGenerateAll: () => void;
-  onGenerateAssessments: () => void;
-  canGenerateAssessments: boolean;
   onRegenerateStructure: () => void;
   onTogglePublish: () => void;
 }) {
   const generateDisabled = isGenerating || !hasSources || unsavedSources;
-  const assessmentsDisabled = isGenerating || !canGenerateAssessments;
   return (
     <div className="sticky top-3 z-10 space-y-3 rounded-2xl border border-line bg-white/95 p-4 shadow-xs backdrop-blur">
       <div className="flex items-start gap-3">
@@ -546,9 +539,6 @@ function BuildPanel({
         <PrimaryButton disabled={generateDisabled} onClick={onGenerateAll}>
           {isGenerating ? "Generating…" : "Generate all"}
         </PrimaryButton>
-        <GhostButton disabled={assessmentsDisabled} onClick={onGenerateAssessments}>
-          Generate assessments
-        </GhostButton>
         <GhostButton disabled={generateDisabled} onClick={onRegenerateStructure}>
           Regenerate structure
         </GhostButton>
@@ -560,10 +550,6 @@ function BuildPanel({
         <p className="text-xs text-mist">Add a syllabus or select documents before generating.</p>
       ) : unsavedSources ? (
         <p className="text-xs font-medium text-warn">Save your source selection above before generating.</p>
-      ) : !canGenerateAssessments ? (
-        <p className="text-xs text-mist">
-          Select classroom documents and generate structure first, then run Generate assessments for quizzes, flashcards, and scenarios.
-        </p>
       ) : null}
       <GenerationProgressPanel id="course-builder-progress" job={activeJob} recent={recentJobs} />
     </div>
@@ -867,8 +853,6 @@ export function ClassroomCourseBuilderTab() {
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [selectedDocs, setSelectedDocs] = useState<number[]>([]);
   const [videoUrlDrafts, setVideoUrlDrafts] = useState<Record<string, string>>({});
-  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
-  const [quizScore, setQuizScore] = useState<number | null>(null);
   const [setupOpen, setSetupOpen] = useState(true);
   const [setupTouched, setSetupTouched] = useState(false);
   const [expandedLessons, setExpandedLessons] = useState<Set<string>>(new Set());
@@ -892,30 +876,6 @@ export function ClassroomCourseBuilderTab() {
     queryFn: () => courseBuilderApi.get(id),
     enabled: !Number.isNaN(id),
     refetchInterval: () => (isGenerating ? 4000 : false),
-  });
-
-  const updateBloomMutation = useMutation({
-    mutationFn: ({
-      chapterNumber,
-      questionIndex,
-      bloom_level,
-      scenario_id,
-    }: {
-      chapterNumber: number;
-      questionIndex: number;
-      bloom_level: BloomLevel;
-      scenario_id?: string | null;
-    }) =>
-      courseBuilderApi.updateQuestionBloom(id, chapterNumber, questionIndex, {
-        bloom_level,
-        scenario_id,
-      }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["classroom-course", id] });
-    },
-    onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : "Could not update Bloom level");
-    },
   });
 
   const documents = useQuery({
@@ -970,8 +930,6 @@ export function ClassroomCourseBuilderTab() {
   useEffect(() => {
     setExpandedLessons(new Set());
     setExpandedSections(new Set());
-    setQuizAnswers({});
-    setQuizScore(null);
   }, [selectedChapter]);
 
   const active: CourseChapter | null = useMemo(() => {
@@ -1061,8 +1019,6 @@ export function ClassroomCourseBuilderTab() {
   }
 
   const data = course.data as ClassroomCourse;
-  const canGenerateAssessments =
-    data.chapters.length > 0 && (data.source_content_ids?.length ?? 0) > 0;
 
   // Student study UI lives in StudentCourseView — teacher builder below stays unchanged.
   // Revert: restore this early-return block + delete StudentCourseView.tsx, or
@@ -1139,8 +1095,6 @@ export function ClassroomCourseBuilderTab() {
             activeJob={activeJob}
             recentJobs={jobs.data ?? []}
             onGenerateAll={() => void runJob(() => courseBuilderApi.generateAll(id))}
-            onGenerateAssessments={() => void runJob(() => courseBuilderApi.generateAssessments(id))}
-            canGenerateAssessments={canGenerateAssessments}
             onRegenerateStructure={() => void runJob(() => courseBuilderApi.generateStructure(id))}
             onTogglePublish={() =>
               void (async () => {
@@ -1333,93 +1287,6 @@ export function ClassroomCourseBuilderTab() {
                       })
                     )}
                   </div>
-
-                  {active.flashcards.length ? (
-                    <div>
-                      <h4 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Flashcards</h4>
-                      <ul className="space-y-2">
-                        {active.flashcards.map((fc, i) => (
-                          <li key={`${fc.question}-${i}`} className="rounded-xl border border-line px-3 py-2 text-sm">
-                            <p className="font-medium text-paper">{fc.question}</p>
-                            <p className="text-mist">{fc.answer}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {active.quiz.length ? (
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-mist">Quiz</h4>
-                      {active.quiz.map((q, qi) => (
-                        <div key={`${q.question}-${qi}`} className="rounded-xl border border-line p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-paper">
-                              {qi + 1}. {q.question}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <BloomBadge level={q.bloom_level} />
-                              {isTeacher ? (
-                                <select
-                                  className="rounded-lg border border-line bg-paper px-2 py-1 text-xs text-mist"
-                                  value={q.bloom_level || "APPLY"}
-                                  onChange={(e) =>
-                                    void updateBloomMutation.mutateAsync({
-                                      chapterNumber: active.chapter,
-                                      questionIndex: qi,
-                                      bloom_level: e.target.value as BloomLevel,
-                                    })
-                                  }
-                                  disabled={updateBloomMutation.isPending}
-                                  aria-label={`Bloom level for question ${qi + 1}`}
-                                >
-                                  {BLOOM_LEVELS.map((level) => (
-                                    <option key={level} value={level}>
-                                      {bloomLabel(level)}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="mt-2 space-y-1">
-                            {q.options.map((opt) => (
-                              <label key={opt} className="flex items-center gap-2 text-sm text-mist">
-                                <input
-                                  type="radio"
-                                  name={`q-${active.chapter}-${qi}`}
-                                  checked={quizAnswers[qi] === opt}
-                                  onChange={() => setQuizAnswers((a) => ({ ...a, [qi]: opt }))}
-                                  disabled={isTeacher}
-                                />
-                                {opt}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      {!isTeacher ? (
-                        <PrimaryButton
-                          onClick={() =>
-                            void (async () => {
-                              try {
-                                const answers = active.quiz.map((_, i) => quizAnswers[i] ?? "");
-                                const result = await courseBuilderApi.submitQuiz(id, active.chapter, answers);
-                                setQuizScore(result.score);
-                              } catch (err) {
-                                setError(err instanceof Error ? err.message : "Quiz submit failed");
-                              }
-                            })()
-                          }
-                        >
-                          Submit quiz
-                        </PrimaryButton>
-                      ) : null}
-                      {quizScore != null ? (
-                        <p className="text-sm text-accent">Score: {quizScore.toFixed(0)}%</p>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </>
               )}
             </div>
