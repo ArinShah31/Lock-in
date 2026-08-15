@@ -689,6 +689,8 @@ export type PresentationShape = {
   w: number;
   h: number;
   kind?: string;
+  element_id?: string;
+  name?: string | null;
 };
 
 export type PresentationCue = {

@@ -13,6 +13,9 @@ class SlideShapeOut(BaseModel):
     w: float
     h: float
     kind: str = "text"
+    role: str | None = None
+    element_id: str | None = None
+    name: str | None = None
 
 
 class SlideCueOut(BaseModel):

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { presentationsApi } from "../api";
 import type { Classroom, PresentationCue, PresentationSlide } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { ErrorText, GhostButton, PrimaryButton, inputClass } from "../components/ui";
+import { ErrorText, GhostButton, JobProgress, PrimaryButton, inputClass } from "../components/ui";
 
 type OutletCtx = { classroom: Classroom };
 const TEACHER_ROLES = new Set(["CLASS_TEACHER", "SUBJECT_TEACHER", "SUPER_ADMIN"]);
@@ -340,6 +340,7 @@ export function ClassroomPresentationPlayer() {
   const preparing = detail.data?.status === "PREPARING" || detail.data?.status === "UPLOADED";
   const busy = generating || preparing;
   const hasVideo = Boolean(detail.data?.has_video) || detail.data?.status === "VIDEO_READY";
+  const scriptsReady = detail.data?.status === "SCRIPTS_READY" && !hasVideo;
   const videoSrc = hasVideo && !generating
     ? presentationsApi.mediaSrc(presentationsApi.videoUrl(cid, pid))
     : null;
@@ -422,17 +423,31 @@ export function ClassroomPresentationPlayer() {
         </GhostButton>
       </div>
 
-      <ErrorText message={detail.data.status === "FAILED" ? detail.data.error_message : error} />
+      <ErrorText message={detail.data.error_message || error} />
 
       {preparing ? (
-        <div className="rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3 text-sm text-[#44474e]">
-          {detail.data.progress_message || "Rendering slides and writing narration…"} This runs in the background — stay on this page or come back in a minute.
+        <div className="rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3">
+          <JobProgress
+            message={detail.data.progress_message}
+            fallback="Rendering slides and writing narration…"
+          />
+          <p className="mt-2 text-[11px] text-[#75777f]">This runs in the background — you can stay on this page.</p>
         </div>
       ) : null}
 
       {generating ? (
-        <div className="rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3 text-sm text-[#44474e]">
-          {detail.data.progress_message || "Generating video in the background…"} You can keep editing, or leave and come back.
+        <div className="rounded-xl border border-[#e1e3e4] bg-[#f8f9fa] px-4 py-3">
+          <JobProgress
+            message={detail.data.progress_message}
+            fallback="Generating video in the background…"
+          />
+          <p className="mt-2 text-[11px] text-[#75777f]">Voiceover and encoding can take a few minutes for large decks.</p>
+        </div>
+      ) : null}
+
+      {scriptsReady ? (
+        <div className="rounded-xl border border-[#d6e3ff] bg-[#f4f7ff] px-4 py-3 text-sm text-[#031635]">
+          Slide images and spoken scripts are ready ({slides.length} slides). Click <strong>Generate video</strong> to create the narrated MP4 — that step shows voiceover progress (1/{slides.length}, 2/{slides.length}, …).
         </div>
       ) : null}
 
