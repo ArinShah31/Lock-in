@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { presentationsApi } from "../api";
 import type { Classroom, ClassroomPresentation } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { EmptyState, ErrorText, Field, GhostButton, PrimaryButton, inputClass } from "../components/ui";
+import { EmptyState, ErrorText, Field, GhostButton, JobProgress, PrimaryButton, inputClass } from "../components/ui";
 
 type OutletCtx = { classroom: Classroom };
 
@@ -39,7 +39,7 @@ export function ClassroomPresentationsTab() {
     enabled: !Number.isNaN(id),
     refetchInterval: (query) =>
       query.state.data?.some((item) => item.status === "GENERATING" || item.status === "PREPARING")
-        ? 3000
+        ? 2000
         : false,
   });
 
@@ -48,11 +48,14 @@ export function ClassroomPresentationsTab() {
       if (!file) throw new Error("Choose a .pptx file");
       return presentationsApi.upload(id, title.trim() || file.name.replace(/\.pptx$/i, ""), file);
     },
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       setTitle("");
       setFile(null);
       setError(null);
       await qc.invalidateQueries({ queryKey: ["presentations", id] });
+      if (created?.id) {
+        navigate(`/classrooms/${id}/presentations/${created.id}`, { state: { classroom } });
+      }
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -140,12 +143,15 @@ export function ClassroomPresentationsTab() {
                   {item.has_video && item.status !== "GENERATING" && item.status !== "PREPARING"
                     ? "Video ready"
                     : statusLabel(item.status)}
-                  {item.status === "GENERATING" || item.status === "PREPARING"
-                    ? item.progress_message
-                      ? ` · ${item.progress_message}`
-                      : ""
-                    : ""}
                 </p>
+                  {item.status === "GENERATING" || item.status === "PREPARING" ? (
+                    <div className="mt-2 max-w-md">
+                      <JobProgress
+                        message={item.progress_message}
+                        fallback={item.status === "GENERATING" ? "Generating video…" : "Preparing slides…"}
+                      />
+                    </div>
+                  ) : null}
                 {item.status === "FAILED" && item.error_message ? (
                   <p className="mt-1 text-xs text-[#a03a3a]">{item.error_message}</p>
                 ) : null}

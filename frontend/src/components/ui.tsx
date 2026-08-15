@@ -117,6 +117,38 @@ export function GhostButton({
   );
 }
 
+export function JobProgress({
+  message,
+  fallback = "Working…",
+}: {
+  message?: string | null;
+  fallback?: string;
+}) {
+  const text = (message || "").trim() || fallback;
+  const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+  const current = match ? Number(match[1]) : 0;
+  const total = match ? Number(match[2]) : 0;
+  const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : null;
+
+  return (
+    <div>
+      <p className="text-sm text-[#44474e]">{text}</p>
+      {pct !== null ? (
+        <>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e1e3e4]">
+            <div className="h-full rounded-full bg-[#031635] transition-[width] duration-300" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="mt-1 text-[11px] font-medium text-[#75777f]">{pct}%</p>
+        </>
+      ) : (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e1e3e4]">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-[#9bb0d4]" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ErrorText({ message }: { message?: string | null }) {
   if (!message) return null;
   return <p className="mb-4 rounded-md border border-[#ba1a1a]/30 bg-[#ffdad6]/50 px-3.5 py-2.5 text-sm font-medium text-[#ba1a1a]">{message}</p>;

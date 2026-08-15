@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.presentation import ClassroomPresentation, PresentationStatus
-from app.services.presentation_media import build_cues, export_slide_images
+from app.services.presentation_media import build_cues
 from app.services.presentation_parse import extract_slides
+from app.services.presentation_render import SlideRenderError, export_slide_images, validate_slide_images
 from app.services.presentation_scripts import expand_slide_scripts, needs_script_expansion
 from app.services.presentation_tts import probe_audio_duration_ms, synthesize_slide
 from app.services.presentation_video import build_narrated_video
@@ -132,6 +134,9 @@ def _refresh_shapes(db: Session, row: ClassroomPresentation, slides: list) -> No
             item = by_index.get(slide.index)
             if item:
                 slide.shapes = item.get("shapes") or slide.shapes or []
+                cleaned = (item.get("extracted_text") or "").strip()
+                if cleaned:
+                    slide.extracted_text = cleaned
         db.commit()
     except Exception as parse_exc:  # noqa: BLE001
         print(f"[presentations] re-parse skipped: {parse_exc}")
@@ -166,6 +171,9 @@ def _expand_scripts(db: Session, row: ClassroomPresentation, slides: list) -> No
             for s in slides
         ],
         title=row.title,
+        on_progress=lambda done, total: _set_progress(
+            db, row, f"Writing narration {done}/{total}…"
+        ),
     )
     for slide, script in zip(slides, expanded):
         if needs_script_expansion(slide.script or "", slide.extracted_text or ""):
@@ -188,10 +196,13 @@ def _execute_prepare_job(db: Session, presentation_id: int) -> None:
     _set_progress(db, row, f"Rendering {len(slides)} original slides…")
     try:
         _render_slide_images(db, row, slides)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[presentations] slide render failed: {exc}")
-        row.error_message = str(exc)[:2000]
+    except SlideRenderError as exc:
+        raise RuntimeError(str(exc)) from exc
 
+    if not all(s.image_path for s in slides):
+        raise RuntimeError("Slide rendering did not produce an image for every slide")
+
+    row.error_message = None
     _set_progress(db, row, "Writing explanatory narration…")
     _expand_scripts(db, row, slides)
 
@@ -200,6 +211,17 @@ def _execute_prepare_job(db: Session, presentation_id: int) -> None:
     row.updated_at = _now()
     db.commit()
     print(f"[presentations] prepared presentation {presentation_id}")
+
+
+def _slides_have_valid_images(slides: list) -> bool:
+    paths = [str(s.image_path or "") for s in slides]
+    if not all(paths):
+        return False
+    try:
+        validate_slide_images(paths, len(slides))
+        return True
+    except Exception:
+        return False
 
 
 def _execute_video_job(db: Session, presentation_id: int) -> None:
@@ -217,15 +239,26 @@ def _execute_video_job(db: Session, presentation_id: int) -> None:
     _set_progress(db, row, "Reading slide layout…")
     _refresh_shapes(db, row, slides)
 
-    _set_progress(db, row, f"Rendering {len(slides)} original slides…")
-    _render_slide_images(db, row, slides)
+    if _slides_have_valid_images(slides):
+        _set_progress(db, row, "Slide images ready…")
+    else:
+        _set_progress(db, row, f"Rendering {len(slides)} original slides…")
+        _render_slide_images(db, row, slides)
+        if not all(s.image_path for s in slides):
+            raise RuntimeError("Slide rendering did not produce an image for every slide")
 
-    _set_progress(db, row, "Writing explanatory narration…")
-    _expand_scripts(db, row, slides)
+    needs_ai = any(
+        needs_script_expansion(s.script or "", s.extracted_text or "") for s in slides
+    )
+    if needs_ai:
+        _set_progress(db, row, "Writing explanatory narration…")
+        _expand_scripts(db, row, slides)
+    else:
+        _set_progress(db, row, "Scripts ready — starting voiceover…")
 
     total = len(slides)
+    pending: list[tuple[int, str, str]] = []
     for i, slide in enumerate(slides, start=1):
-        _set_progress(db, row, f"Voiceover {i}/{total}…")
         existing = Path(slide.audio_path) if slide.audio_path else None
         if existing and existing.exists() and slide.duration_ms > 0:
             probed = probe_audio_duration_ms(str(existing))
@@ -233,16 +266,33 @@ def _execute_video_job(db: Session, presentation_id: int) -> None:
                 slide.duration_ms = probed
             slide.cues = build_cues(slide.script, slide.shapes or [], slide.duration_ms)
             db.commit()
+            _set_progress(db, row, f"Voiceover {i}/{total}…")
             continue
-        dest = audio_dir / f"slide-{slide.index}.wav"
-        duration, audio_path = synthesize_slide(slide.script, str(dest))
-        probed = probe_audio_duration_ms(audio_path)
-        if probed > duration:
-            duration = probed
-        slide.audio_path = audio_path
-        slide.duration_ms = duration
-        slide.cues = build_cues(slide.script, slide.shapes or [], duration)
-        db.commit()
+        pending.append((slide.index, slide.script or "", str(audio_dir / f"slide-{slide.index}.wav")))
+
+    if pending:
+        _set_progress(db, row, f"Voiceover 0/{total}…")
+        finished = total - len(pending)
+
+        def _synth(item: tuple[int, str, str]) -> tuple[int, float, str]:
+            index, script, dest = item
+            duration, audio_path = synthesize_slide(script, dest, prefer_edge=True)
+            probed = probe_audio_duration_ms(audio_path)
+            return index, max(duration, probed), audio_path
+
+        workers = min(4, len(pending))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_synth, item) for item in pending]
+            by_index = {s.index: s for s in slides}
+            for fut in as_completed(futures):
+                index, duration, audio_path = fut.result()
+                slide = by_index[index]
+                slide.audio_path = audio_path
+                slide.duration_ms = duration
+                slide.cues = build_cues(slide.script, slide.shapes or [], duration)
+                finished += 1
+                _set_progress(db, row, f"Voiceover {finished}/{total}…")
+                db.commit()
 
     _set_progress(db, row, "Encoding video with highlights…")
     video_path = folder / f"{row.id}-narrated.mp4"

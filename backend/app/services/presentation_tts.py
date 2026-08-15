@@ -153,7 +153,7 @@ def _run_async(coro):
     return result.get("ok")
 
 
-def synthesize_slide(script: str, dest_path: str) -> tuple[float, str]:
+def synthesize_slide(script: str, dest_path: str, *, prefer_edge: bool = False) -> tuple[float, str]:
     """Return (duration_ms, audio_file_path)."""
     text = (script or "").strip()
     if not text:
@@ -163,9 +163,10 @@ def synthesize_slide(script: str, dest_path: str) -> tuple[float, str]:
 
     dest = Path(dest_path)
     wav_path = dest.with_suffix(".wav")
-    gemini_ms = _gemini_tts(text, wav_path)
-    if gemini_ms is not None and wav_path.exists():
-        return gemini_ms, str(wav_path)
+    if not prefer_edge:
+        gemini_ms = _gemini_tts(text, wav_path)
+        if gemini_ms is not None and wav_path.exists():
+            return gemini_ms, str(wav_path)
 
     mp3_path = dest.with_suffix(".mp3")
     mp3_path.parent.mkdir(parents=True, exist_ok=True)

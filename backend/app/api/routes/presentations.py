@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import uuid
@@ -27,6 +27,7 @@ from app.schemas.presentation import (
 from app.services.presentation_media import build_cues
 from app.services.presentation_jobs import start_prepare_job, start_video_job
 from app.services.presentation_parse import extract_slides
+from app.services.presentation_render import validate_pptx_file
 from app.services.presentation_scripts import needs_script_expansion
 from app.services.presentation_tts import synthesize_slide
 from app.services.presentation_video import flatten_caption_cues
@@ -77,6 +78,8 @@ def _shape_out(raw: list) -> list[SlideShapeOut]:
                 w=float(item.get("w") or 0),
                 h=float(item.get("h") or 0),
                 kind=str(item.get("kind") or "text"),
+                element_id=str(item.get("element_id") or f"{item.get('kind') or 'text'}_{item.get('index', 0)}"),
+                name=str(item.get("name") or "") or None,
             )
         )
     return out
@@ -210,6 +213,7 @@ async def upload_presentation(
     db.refresh(row)
 
     try:
+        validate_pptx_file(str(dest))
         parsed = extract_slides(str(dest))
         for item in parsed:
             db.add(
@@ -240,9 +244,8 @@ async def upload_presentation(
 
 
 def _maybe_start_prepare(db: Session, row: ClassroomPresentation) -> None:
-    if row.status == PresentationStatus.PREPARING:
-        return
-    if row.status not in {PresentationStatus.UPLOADED, PresentationStatus.SCRIPTS_READY}:
+    stale = _job_is_stale(row)
+    if row.status == PresentationStatus.PREPARING and not stale:
         return
     if not row.slides:
         return
@@ -250,13 +253,31 @@ def _maybe_start_prepare(db: Session, row: ClassroomPresentation) -> None:
     needs_ai = any(
         needs_script_expansion(s.script or "", s.extracted_text or "") for s in row.slides
     )
+    retry_failed_render = row.status == PresentationStatus.FAILED and missing_images
+    retry_stale = row.status == PresentationStatus.PREPARING and stale
+    if (
+        row.status not in {PresentationStatus.UPLOADED, PresentationStatus.SCRIPTS_READY}
+        and not retry_failed_render
+        and not retry_stale
+    ):
+        return
     if not missing_images and not needs_ai:
         return
     row.status = PresentationStatus.PREPARING
     row.progress_message = "Queued…"
+    row.error_message = None
     _touch(row)
     db.commit()
     start_prepare_job(row.id)
+
+
+def _job_is_stale(row: ClassroomPresentation, minutes: int = 8) -> bool:
+    updated = row.updated_at
+    if not updated:
+        return True
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - updated > timedelta(minutes=minutes)
 
 
 @router.get("/{presentation_id}", response_model=PresentationDetailOut)

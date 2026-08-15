@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from app.services.presentation_parse import slide_looks_like_diagram
+from app.services.presentation_parse import is_content_visual, is_highlightable, slide_looks_like_diagram
 from app.services.presentation_tts import probe_audio_duration_ms
 
 TAIL_PAD_SEC = 0.45
@@ -370,8 +370,9 @@ def _diagram_segments(shapes: list[dict], audio_sec: float) -> list[tuple[float,
     visuals = [
         shape
         for shape in (shapes or [])
-        if str(shape.get("kind") or "") in {"picture", "chart", "group"}
-        and float(shape.get("w") or 0) * float(shape.get("h") or 0) >= 0.06
+        if is_content_visual(shape)
+        and is_highlightable(shape)
+        and 0.06 <= float(shape.get("w") or 0) * float(shape.get("h") or 0) <= 0.75
     ]
     visuals = sorted(visuals, key=lambda s: (float(s.get("y") or 0), float(s.get("x") or 0)))
     pruned: list[dict] = []
@@ -557,10 +558,22 @@ def _encode_slide_clip(
     dest: Path,
 ) -> None:
     usable = seconds - TAIL_PAD_SEC if seconds > 1 else seconds
-    if slide_looks_like_diagram(shapes):
+    cue_hits = [
+        cue.get("shape_index")
+        for cue in (cues or [])
+        if cue.get("shape_index") is not None
+        and is_highlightable(_shape_for_index(shapes, cue.get("shape_index")))
+    ]
+    if cue_hits:
+        segments = _cue_segments(cues, usable)
+    elif slide_looks_like_diagram(shapes):
         segments = _diagram_segments(shapes, usable)
     else:
-        segments = _cue_segments(cues, usable)
+        segments = [(usable, None)]
+    segments = [
+        (duration, idx if is_highlightable(_shape_for_index(shapes, idx)) else None)
+        for duration, idx in segments
+    ]
     segments = _ensure_clean_intro(segments, usable)
     timed = [(duration, idx, "") for duration, idx in segments]
 
@@ -570,9 +583,10 @@ def _encode_slide_clip(
         key = (shape_index if shape_index is not None else "__clean__", subtitle or "")
         if key not in cache:
             frame = work / f"frame-{i:03d}.png"
+            target = _shape_for_index(shapes, shape_index)
             cache[key] = render_slide_frame(
                 image,
-                _shape_for_index(shapes, shape_index),
+                target if is_highlightable(target) else None,
                 str(frame),
                 subtitle,
             )
