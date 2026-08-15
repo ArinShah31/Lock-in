@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { courseBuilderApi } from "../api";
-import type { ClassroomCourse, CourseChapter, CourseFlashcard, CourseLesson } from "../api/types";
+import type { ClassroomCourse, CourseChapter, CourseLesson } from "../api/types";
 import { CourseMarkdown } from "../components/CourseMarkdown";
-import { BloomBadge } from "../components/BloomBadge";
 import { CourseRagChatWidget } from "../components/CourseRagChatWidget";
-import { EmptyState, ErrorText, GhostButton, PrimaryButton } from "../components/ui";
+import { EmptyState, GhostButton, PrimaryButton } from "../components/ui";
 
 type ProgressState = {
   completedLessonKeys: string[];
@@ -72,24 +70,6 @@ function YouTubeEmbed({ videoId, title }: { videoId: string; title?: string | nu
         allowFullScreen
       />
     </div>
-  );
-}
-
-function FlipFlashcard({ card }: { card: CourseFlashcard }) {
-  const [flipped, setFlipped] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => setFlipped((v) => !v)}
-      className="w-full rounded-xl border border-line px-4 py-3 text-left transition hover:border-accent/40"
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-mist">
-        {flipped ? "Answer" : "Question"} · tap to flip
-      </p>
-      <p className={`mt-1 text-sm ${flipped ? "text-mist" : "font-medium text-paper"}`}>
-        {flipped ? card.answer : card.question}
-      </p>
-    </button>
   );
 }
 
@@ -330,12 +310,9 @@ export function StudentCourseView({
   classroomId: number;
   userId: number;
 }) {
-  const [error, setError] = useState<string | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [focusLessonIndex, setFocusLessonIndex] = useState<number | null>(null);
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress(classroomId, userId));
-  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
-  const [quizScore, setQuizScore] = useState<number | null>(null);
 
   useEffect(() => {
     setProgress(loadProgress(classroomId, userId));
@@ -355,8 +332,6 @@ export function StudentCourseView({
 
   useEffect(() => {
     setFocusLessonIndex(null);
-    setQuizAnswers({});
-    setQuizScore(null);
   }, [selectedChapter]);
 
   const completedSet = useMemo(() => new Set(progress.completedLessonKeys), [progress.completedLessonKeys]);
@@ -487,8 +462,6 @@ export function StudentCourseView({
         <h2 className="font-display text-xl text-paper">Course</h2>
         <p className="text-sm text-mist">Continue your learning path for this classroom.</p>
       </div>
-
-      <ErrorText message={error} />
 
       {resumeTarget && focusLessonIndex == null ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3">
@@ -624,67 +597,6 @@ export function StudentCourseView({
                   })
                 )}
               </div>
-
-              {active.flashcards.length ? (
-                <div>
-                  <h4 className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-mist">Flashcards</h4>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {active.flashcards.map((fc, i) => (
-                      <FlipFlashcard key={`${fc.question}-${i}`} card={fc} />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {active.quiz.length ? (
-                <div className="space-y-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-mist">
-                    Check your understanding
-                  </h4>
-                  {active.quiz.map((q, qi) => (
-                    <div key={`${q.question}-${qi}`} className="rounded-xl border border-line p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium text-paper">
-                          {qi + 1}. {q.question}
-                        </p>
-                        <BloomBadge level={q.bloom_level} />
-                      </div>
-                      <div className="mt-2 space-y-1">
-                        {q.options.map((opt) => (
-                          <label key={opt} className="flex items-center gap-2 text-sm text-mist">
-                            <input
-                              type="radio"
-                              name={`student-q-${active.chapter}-${qi}`}
-                              checked={quizAnswers[qi] === opt}
-                              onChange={() => setQuizAnswers((a) => ({ ...a, [qi]: opt }))}
-                            />
-                            {opt}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  <PrimaryButton
-                    onClick={() =>
-                      void (async () => {
-                        try {
-                          setError(null);
-                          const answers = active.quiz.map((_, i) => quizAnswers[i] ?? "");
-                          const result = await courseBuilderApi.submitQuiz(classroomId, active.chapter, answers);
-                          setQuizScore(result.score);
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "Quiz submit failed");
-                        }
-                      })()
-                    }
-                  >
-                    Submit quiz
-                  </PrimaryButton>
-                  {quizScore != null ? (
-                    <p className="text-sm text-accent">Score: {quizScore.toFixed(0)}%</p>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           )}
         </div>

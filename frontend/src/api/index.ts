@@ -242,10 +242,6 @@ export const courseBuilderApi = {
     }),
   generateAll: (classroomId: number) =>
     api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate-all`, { method: "POST" }),
-  generateAssessments: (classroomId: number) =>
-    api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate/assessments`, {
-      method: "POST",
-    }),
   generateStructure: (classroomId: number) =>
     api<CourseBuildJob>(`/classrooms/${classroomId}/course-builder/generate/structure`, {
       method: "POST",
@@ -253,11 +249,6 @@ export const courseBuilderApi = {
   generateChapterContent: (classroomId: number, chapterNumber: number) =>
     api<CourseBuildJob>(
       `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/generate-content`,
-      { method: "POST" },
-    ),
-  generateChapterQuiz: (classroomId: number, chapterNumber: number) =>
-    api<CourseBuildJob>(
-      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/generate-quiz`,
       { method: "POST" },
     ),
   generateSubtopicVideo: (classroomId: number, chapterNumber: number, subtopicIndex: number) =>
@@ -289,21 +280,6 @@ export const courseBuilderApi = {
       method: "PATCH",
       body: JSON.stringify({ is_unlocked }),
     }),
-  submitQuiz: (classroomId: number, chapterNumber: number, selected_answers: string[]) =>
-    api<{ score: number | null }>(
-      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/quiz-attempt`,
-      { method: "POST", body: JSON.stringify({ selected_answers }) },
-    ),
-  updateQuestionBloom: (
-    classroomId: number,
-    chapterNumber: number,
-    questionIndex: number,
-    body: { bloom_level: string; scenario_id?: string | null },
-  ) =>
-    api<ClassroomCourse>(
-      `/classrooms/${classroomId}/course-builder/chapters/${chapterNumber}/questions/${questionIndex}/bloom`,
-      { method: "PATCH", body: JSON.stringify(body) },
-    ),
 };
 
 export const practiceApi = {

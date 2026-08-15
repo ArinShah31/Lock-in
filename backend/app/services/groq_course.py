@@ -28,8 +28,9 @@ TRANSIENT_MARKERS = (
 )
 JSON_FAIL_MARKERS = ("json_validate_failed", "failed to generate json", "json_validate")
 NOTES_MAX_TOKENS = 8192
-INTRO_VIDEO_SKIP = re.compile(
-    r"\b(introduction|intro\b|overview|getting started|welcome|course outline|syllabus review)\b",
+# Only skip pure meta titles (whole title). "Introduction to Graphs" still gets a video.
+PURE_META_LESSON_TITLE = re.compile(
+    r"^\s*(introduction|intro|overview|welcome|getting started|course outline|syllabus review)\s*$",
     re.IGNORECASE,
 )
 
@@ -93,12 +94,23 @@ def _as_str_list(values: list | None) -> list[str]:
     return result
 
 
+def is_pure_meta_lesson_title(title: str) -> bool:
+    return bool(PURE_META_LESSON_TITLE.match((title or "").strip()))
+
+
 def infer_needs_video(title: str, explicit: bool | None = None) -> bool:
-    if explicit is False:
+    """Return whether a lesson should get a YouTube search.
+
+    Pure meta titles (bare Intro/Overview/Welcome/etc.) are skipped.
+    Topical titles like "Introduction to Graphs" always qualify, even if the
+    outline model set needs_video=false.
+    """
+    if is_pure_meta_lesson_title(title):
         return False
     if explicit is True:
         return True
-    return not bool(INTRO_VIDEO_SKIP.search(title or ""))
+    # Topical lesson: prefer video even when outline said false.
+    return True
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -446,7 +458,9 @@ def _lesson_outline(
             "Split one chapter into 3-6 teachable lessons that introduce concepts progressively "
             "(earlier lessons establish prerequisites for later ones). "
             "Do not design lessons as source summaries — design them as a teaching sequence. "
-            "Mark needs_video false for introduction/overview/welcome lessons; true for topical lessons."
+            "Default needs_video to true. Set needs_video false ONLY for pure meta lessons "
+            "(course welcome, syllabus review, bare Overview/Introduction with no topic). "
+            "Topical lessons such as 'Introduction to X' must keep needs_video true."
         ),
         user=(
             f"Classroom: {classroom_name}\n"
