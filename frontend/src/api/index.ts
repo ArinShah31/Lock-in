@@ -439,8 +439,8 @@ export const aiApi = {
     api<ChatResponse>("/ai/chat", {
       method: "POST",
       body: JSON.stringify(body),
-      // Gemini + document fallback often exceeds the default 15s client timeout.
-      timeoutMs: 120_000,
+      // Visual PDF analysis can take several minutes (render pages + Gemini vision).
+      timeoutMs: 600_000,
     }),
   teacherChat: (body: { question: string; classroom_id?: number | null }) =>
     api<TeacherChatResponse>(

@@ -229,7 +229,11 @@ export function CourseRagChatWidget({ classroomId }: { classroomId: number }) {
             {pending ? (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-md bg-white px-3.5 py-2.5 text-sm text-[#75777f] shadow-sm ring-1 ring-[#e1e3e4]">
-                  Searching classroom documents…
+                  {/diagram|table|chart|figure|graph|flowchart|image|visual/i.test(
+                    messages.filter((m) => m.role === "user").at(-1)?.text ?? "",
+                  )
+                    ? "Analyzing diagrams and tables in your documents…"
+                    : "Searching classroom documents…"}
                 </div>
               </div>
             ) : null}
