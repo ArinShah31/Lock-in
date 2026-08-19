@@ -11,6 +11,7 @@ import type {
   PracticeAssessment,
   PracticeFlashcard,
   PracticeFlashcardDeck,
+  PracticeAttempt,
   PracticeOverview,
   PracticeQuestion,
   PracticeQuiz,
@@ -153,6 +154,103 @@ function activityStatus(score: number | null) {
   return { label: "Retry", className: "border-[#ffe0b2] bg-[#fff4df] text-[#8a4f00]" };
 }
 
+function attemptCopy(score: number | null, kind: "quiz" | "scenario" | "assessment") {
+  const label = kind === "quiz" ? "quiz" : kind === "scenario" ? "scenario" : "assessment";
+  if (score == null) return `Your ${label} was submitted.`;
+  if (score >= 75) return "Solid round. You can close this or retake to lock it in.";
+  if (score >= 50) return "Decent start. Retake when you want a cleaner score.";
+  return `Keep going. Retake this ${label} after a quick review.`;
+}
+
+function AttemptResultPanel({
+  kind,
+  title,
+  score,
+  onClose,
+  onRetake,
+}: {
+  kind: "quiz" | "scenario" | "assessment";
+  title: string;
+  score: number | null;
+  onClose: () => void;
+  onRetake: () => void;
+}) {
+  const status = activityStatus(score);
+  const heading =
+    kind === "quiz" ? "Quiz submitted" : kind === "scenario" ? "Scenario submitted" : "Assessment submitted";
+  const retakeLabel =
+    kind === "quiz" ? "Retake quiz" : kind === "scenario" ? "Retake scenario" : "Retake assessment";
+
+  return (
+    <Panel className="space-y-5 border-[#d6e3ff] bg-[linear-gradient(135deg,#ffffff_0%,#f7fbff_100%)]">
+      <div className="inline-flex items-center gap-2 rounded-full border border-[#d6e3ff] bg-[#eef4ff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#3f5d9b]">
+        <span className="material-symbols-outlined text-[16px]">check_circle</span>
+        {heading}
+      </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h3 className="font-display text-2xl font-extrabold text-[#031635]">{title}</h3>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-[#4b5563]">{attemptCopy(score, kind)}</p>
+        </div>
+        <div className="rounded-2xl border border-[#e1e3e4] bg-white px-5 py-4 text-center shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#75777f]">Score</p>
+          <p className="mt-1 font-display text-4xl font-extrabold text-[#031635]">{formatScore(score)}</p>
+          <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${status.className}`}>
+            {status.label}
+          </span>
+        </div>
+      </div>
+      <div className="flex flex-wrap justify-end gap-3">
+        <GhostButton onClick={onClose}>Back to list</GhostButton>
+        <PrimaryButton onClick={onRetake}>{retakeLabel}</PrimaryButton>
+      </div>
+    </Panel>
+  );
+}
+
+function questionSetKey(questions: PracticeQuestion[]) {
+  return questions.map((question) => `${question.question}\0${(question.options ?? []).join("\0")}`).join("\n");
+}
+
+function looksLikeMarkup(text: string) {
+  return /<\/?[a-z][\w:-]*[\s/>]/i.test(text) || /^[a-z][\w:-]*(?:\s[^<>]*)?>/i.test(text);
+}
+
+const VOID_TAGS = "img|br|hr|input|meta|link|area|base|col|embed|param|source|track|wbr";
+
+function repairDroppedHtmlOpeners(text: string) {
+  if (!text) return text;
+  let current = text;
+  for (let i = 0; i < 8; i += 1) {
+    const paired = current.match(/(?<!<)([a-zA-Z][a-zA-Z0-9-]{0,24})((?:\s[^<>]*)?)>([\s\S]*?)<\/\1>/);
+    if (paired && paired.index != null) {
+      current =
+        current.slice(0, paired.index) +
+        `<${paired[1]}${paired[2] ?? ""}>${paired[3]}</${paired[1]}>` +
+        current.slice(paired.index + paired[0].length);
+      continue;
+    }
+    const voided = current.match(new RegExp(`(?<!<)(${VOID_TAGS})((?:\\s[^<>]*)?)>`, "i"));
+    if (voided && voided.index != null) {
+      current =
+        current.slice(0, voided.index) +
+        `<${voided[1]}${voided[2] ?? ""}>` +
+        current.slice(voided.index + voided[0].length);
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
+function PracticeOptionText({ text }: { text: string }) {
+  const display = repairDroppedHtmlOpeners(text).replaceAll("<", "<\u200b");
+  if (!looksLikeMarkup(text) && !looksLikeMarkup(display.replaceAll("\u200b", ""))) {
+    return <span>{text}</span>;
+  }
+  return <code className="whitespace-pre-wrap break-words font-mono text-[13px] text-inherit">{display}</code>;
+}
+
 function QuestionRunner({
   title,
   subtitle,
@@ -172,11 +270,17 @@ function QuestionRunner({
   onClose: () => void;
   lastScore: number | null;
 }) {
-  const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
+  const [selectedAnswers, setSelectedAnswers] = useState(() =>
+    Array.from({ length: questions.length }, () => ""),
+  );
+  const questionsKey = questionSetKey(questions);
+  const questionsKeyRef = useRef(questionsKey);
 
   useEffect(() => {
+    if (questionsKeyRef.current === questionsKey) return;
+    questionsKeyRef.current = questionsKey;
     setSelectedAnswers(Array.from({ length: questions.length }, () => ""));
-  }, [questions]);
+  }, [questionsKey, questions.length]);
 
   return (
     <Panel className="space-y-5 border-[#d6e3ff] bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)]">
@@ -202,7 +306,9 @@ function QuestionRunner({
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#3f5d9b]">Question {index + 1}</p>
               <BloomBadge level={question.bloom_level} />
             </div>
-            <p className="mt-3 font-display text-lg font-bold leading-8 text-[#031635]">{question.question}</p>
+            <p className="mt-3 font-display text-lg font-bold leading-8 text-[#031635]">
+              <PracticeOptionText text={question.question} />
+            </p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {question.options.map((option) => {
                 const checked = selectedAnswers[index] === option;
@@ -229,7 +335,7 @@ function QuestionRunner({
                       }
                       className="mt-1 h-4 w-4 accent-[#031635]"
                     />
-                    <span>{option}</span>
+                    <PracticeOptionText text={option} />
                   </label>
                 );
               })}
@@ -1111,7 +1217,7 @@ function MockExamRunner({
                                           }}
                                           className="mt-1 h-4 w-4 accent-[#031635]"
                                         />
-                                        <span>{option}</span>
+                                        <PracticeOptionText text={option} />
                                       </label>
                                     );
                                   })}
@@ -1193,6 +1299,11 @@ export function PracticePage() {
   const [activeAssessment, setActiveAssessment] = useState<{ kind: string; targetKey: string } | null>(null);
   const [activeMockExamId, setActiveMockExamId] = useState<number | null>(null);
   const [mockExamResult, setMockExamResult] = useState<MockExamAttempt | null>(null);
+  const [attemptResult, setAttemptResult] = useState<{
+    kind: "quiz" | "scenario" | "assessment";
+    attempt: PracticeAttempt;
+  } | null>(null);
+  const runnerAnchorRef = useRef<HTMLDivElement | null>(null);
   const [submitState, setSubmitState] = useState<{
     kind: "quiz" | "scenario" | "assessment" | "mock";
     loading: boolean;
@@ -1275,6 +1386,7 @@ export function PracticePage() {
       setActiveAssessment(null);
       setActiveMockExamId(null);
       setMockExamResult(null);
+      setAttemptResult(null);
       try {
         const selected = classrooms.find((item) => item.id === classroomId) ?? null;
         const [overview, exams] = await Promise.all([
@@ -1372,6 +1484,14 @@ export function PracticePage() {
     [assessmentItems, activeAssessment],
   );
 
+  useEffect(() => {
+    if (activeQuizChapter == null && activeScenarioId == null && activeAssessment == null) return;
+    const timer = window.setTimeout(() => {
+      runnerAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [activeQuizChapter, activeScenarioId, activeAssessment]);
+
   async function refreshPractice() {
     if (!classroom) return;
     const [overview, exams] = await Promise.all([
@@ -1427,9 +1547,10 @@ export function PracticePage() {
     if (!classroom || !activeQuiz) return;
     setSubmitState({ kind: "quiz", loading: true });
     try {
-      await practiceApi.submitQuiz(classroom.id, activeQuiz.chapter_number, selectedAnswers);
+      const attempt = await practiceApi.submitQuiz(classroom.id, activeQuiz.chapter_number, selectedAnswers);
       await refreshPractice();
       setActiveQuizChapter(activeQuiz.chapter_number);
+      setAttemptResult({ kind: "quiz", attempt });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit quiz");
     } finally {
@@ -1441,7 +1562,7 @@ export function PracticePage() {
     if (!classroom || !activeScenario) return;
     setSubmitState({ kind: "scenario", loading: true });
     try {
-      await practiceApi.submitScenario(
+      const attempt = await practiceApi.submitScenario(
         classroom.id,
         activeScenario.chapter_number,
         activeScenario.id,
@@ -1449,6 +1570,7 @@ export function PracticePage() {
       );
       await refreshPractice();
       setActiveScenarioId(activeScenario.id);
+      setAttemptResult({ kind: "scenario", attempt });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit scenario");
     } finally {
@@ -1460,7 +1582,7 @@ export function PracticePage() {
     if (!classroom || !activeAssessmentItem) return;
     setSubmitState({ kind: "assessment", loading: true });
     try {
-      await practiceApi.submitAssessment(
+      const attempt = await practiceApi.submitAssessment(
         classroom.id,
         activeAssessmentItem.assessment_kind,
         activeAssessmentItem.target_key,
@@ -1471,6 +1593,7 @@ export function PracticePage() {
         kind: activeAssessmentItem.assessment_kind,
         targetKey: activeAssessmentItem.target_key,
       });
+      setAttemptResult({ kind: "assessment", attempt });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit assessment");
     } finally {
@@ -1724,6 +1847,7 @@ export function PracticePage() {
               items={practice?.quizzes ?? []}
               emptyBody={practiceEmptyBody}
               onOpen={(quiz) => {
+                setAttemptResult(null);
                 setActiveQuizChapter(quiz.chapter_number);
                 setActiveScenarioId(null);
                 setActiveAssessment(null);
@@ -1731,16 +1855,38 @@ export function PracticePage() {
             />
           </AnimatedSwitchContent>
           {activeQuiz ? (
-            <QuestionRunner
-              title={activeQuiz.title}
-              subtitle={activeQuiz.summary || `Generated from ${classroom.name} classroom material for focused recall.`}
-              questions={activeQuiz.questions}
-              buttonText="Submit quiz"
-              isSubmitting={submitState?.kind === "quiz" && submitState.loading}
-              onSubmit={handleQuizSubmit}
-              onClose={() => setActiveQuizChapter(null)}
-              lastScore={practice?.quizzes.find((item) => item.chapter_number === activeQuiz.chapter_number)?.latest_score ?? null}
-            />
+            <div ref={runnerAnchorRef} className="scroll-mt-24">
+              {attemptResult?.kind === "quiz" ? (
+                <AttemptResultPanel
+                  kind="quiz"
+                  title={activeQuiz.title}
+                  score={attemptResult.attempt.score}
+                  onClose={() => {
+                    setActiveQuizChapter(null);
+                    setAttemptResult(null);
+                  }}
+                  onRetake={() => setAttemptResult(null)}
+                />
+              ) : (
+                <QuestionRunner
+                  key={activeQuiz.chapter_number}
+                  title={activeQuiz.title}
+                  subtitle={activeQuiz.summary || `Generated from ${classroom.name} classroom material for focused recall.`}
+                  questions={activeQuiz.questions}
+                  buttonText="Submit quiz"
+                  isSubmitting={submitState?.kind === "quiz" && submitState.loading}
+                  onSubmit={handleQuizSubmit}
+                  onClose={() => {
+                    setActiveQuizChapter(null);
+                    setAttemptResult(null);
+                  }}
+                  lastScore={
+                    practice?.quizzes.find((item) => item.chapter_number === activeQuiz.chapter_number)?.latest_score ??
+                    null
+                  }
+                />
+              )}
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -1752,6 +1898,7 @@ export function PracticePage() {
               items={practice?.scenarios ?? []}
               emptyBody={practiceEmptyBody}
               onOpen={(scenario) => {
+                setAttemptResult(null);
                 setActiveScenarioId(scenario.id);
                 setActiveQuizChapter(null);
                 setActiveAssessment(null);
@@ -1759,16 +1906,35 @@ export function PracticePage() {
             />
           </AnimatedSwitchContent>
           {activeScenario ? (
-            <ScenarioRunner
-              scenario={activeScenario}
-              buttonText="Submit scenario"
-              isSubmitting={submitState?.kind === "scenario" && submitState.loading}
-              onSubmit={handleScenarioSubmit}
-              onClose={() => setActiveScenarioId(null)}
-              lastScore={
-                practice?.scenarios?.find((item) => item.id === activeScenario.id)?.latest_score ?? null
-              }
-            />
+            <div ref={runnerAnchorRef} className="scroll-mt-24">
+              {attemptResult?.kind === "scenario" ? (
+                <AttemptResultPanel
+                  kind="scenario"
+                  title={activeScenario.title}
+                  score={attemptResult.attempt.score}
+                  onClose={() => {
+                    setActiveScenarioId(null);
+                    setAttemptResult(null);
+                  }}
+                  onRetake={() => setAttemptResult(null)}
+                />
+              ) : (
+                <ScenarioRunner
+                  key={activeScenario.id}
+                  scenario={activeScenario}
+                  buttonText="Submit scenario"
+                  isSubmitting={submitState?.kind === "scenario" && submitState.loading}
+                  onSubmit={handleScenarioSubmit}
+                  onClose={() => {
+                    setActiveScenarioId(null);
+                    setAttemptResult(null);
+                  }}
+                  lastScore={
+                    practice?.scenarios?.find((item) => item.id === activeScenario.id)?.latest_score ?? null
+                  }
+                />
+              )}
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -1819,6 +1985,7 @@ export function PracticePage() {
               <AssessmentGrid
                 items={assessmentItems}
                 onOpen={(assessment) => {
+                  setAttemptResult(null);
                   setActiveAssessment({
                     kind: assessment.assessment_kind,
                     targetKey: assessment.target_key,
@@ -1831,16 +1998,35 @@ export function PracticePage() {
             </div>
           </AnimatedSwitchContent>
           {activeAssessmentItem && !activeAssessmentItem.is_locked ? (
-            <QuestionRunner
-              title={activeAssessmentItem.title}
-              subtitle={activeAssessmentItem.detail}
-              questions={activeAssessmentItem.questions}
-              buttonText="Submit assessment"
-              isSubmitting={submitState?.kind === "assessment" && submitState.loading}
-              onSubmit={handleAssessmentSubmit}
-              onClose={() => setActiveAssessment(null)}
-              lastScore={activeAssessmentItem.latest_score}
-            />
+            <div ref={runnerAnchorRef} className="scroll-mt-24">
+              {attemptResult?.kind === "assessment" ? (
+                <AttemptResultPanel
+                  kind="assessment"
+                  title={activeAssessmentItem.title}
+                  score={attemptResult.attempt.score}
+                  onClose={() => {
+                    setActiveAssessment(null);
+                    setAttemptResult(null);
+                  }}
+                  onRetake={() => setAttemptResult(null)}
+                />
+              ) : (
+                <QuestionRunner
+                  key={`${activeAssessmentItem.assessment_kind}-${activeAssessmentItem.target_key}`}
+                  title={activeAssessmentItem.title}
+                  subtitle={activeAssessmentItem.detail}
+                  questions={activeAssessmentItem.questions}
+                  buttonText="Submit assessment"
+                  isSubmitting={submitState?.kind === "assessment" && submitState.loading}
+                  onSubmit={handleAssessmentSubmit}
+                  onClose={() => {
+                    setActiveAssessment(null);
+                    setAttemptResult(null);
+                  }}
+                  lastScore={activeAssessmentItem.latest_score}
+                />
+              )}
+            </div>
           ) : null}
         </div>
       ) : null}

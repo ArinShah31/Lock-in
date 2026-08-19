@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.api.deps import get_current_user
 from app.api.routes.classrooms import _ensure_view_access, _get_classroom_or_404
@@ -25,7 +26,12 @@ from app.models.content import ClassroomContent
 from app.models.user import User, UserRole
 from app.services import groq_course
 from app.services.mock_exam_gemini import extract_mock_exam_pattern, generate_mock_exam_paper
-from app.services.practice_gemini import generate_chapter_scenarios, generate_practice_chapters, valid_mcq_options
+from app.services.practice_gemini import (
+    generate_chapter_scenarios,
+    generate_practice_chapters,
+    repair_dropped_html_openers,
+    valid_mcq_options,
+)
 from app.services.bloom import resolve_bloom_level
 from app.services.source_text import build_documents_source_text
 from app.schemas.practice import (
@@ -577,6 +583,57 @@ def _estimate_minutes(question_count: int, *, seconds_per_question: int) -> int:
     return max(5, ceil((question_count * seconds_per_question) / 60))
 
 
+def _repair_question_html(question: dict) -> bool:
+    changed = False
+    for key in ("question", "correct_answer"):
+        raw = str(question.get(key) or "")
+        fixed = repair_dropped_html_openers(raw)
+        if fixed != raw:
+            question[key] = fixed
+            changed = True
+    options = question.get("options")
+    if isinstance(options, list):
+        repaired = [repair_dropped_html_openers(str(option)) for option in options]
+        if repaired != options:
+            question["options"] = repaired
+            changed = True
+    return changed
+
+
+def _persist_repaired_html(db: Session, course: ClassroomCourse) -> None:
+    content = course.content
+    if not isinstance(content, dict):
+        return
+    changed = False
+    for chapter in content.get("chapters") or []:
+        if not isinstance(chapter, dict):
+            continue
+        for question in chapter.get("quiz") or []:
+            if isinstance(question, dict) and _repair_question_html(question):
+                changed = True
+        for scenario in chapter.get("scenarios") or []:
+            if not isinstance(scenario, dict):
+                continue
+            for question in scenario.get("questions") or []:
+                if isinstance(question, dict) and _repair_question_html(question):
+                    changed = True
+    if not changed:
+        return
+    course.content = content
+    flag_modified(course, "content")
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+
+
+def _answers_match(selected: str | None, correct: str | None) -> bool:
+    if not selected or not correct:
+        return False
+    if selected == correct:
+        return True
+    return repair_dropped_html_openers(selected) == repair_dropped_html_openers(correct)
+
+
 def _topic_label(chapter: dict) -> str:
     topics = [str(item).strip() for item in (chapter.get("topics") or []) if str(item).strip()]
     return topics[0] if topics else f"Chapter {int(chapter.get('chapter') or 0)}"
@@ -587,8 +644,12 @@ def _question_out_list(items: list[dict]) -> list[PracticeQuestionOut]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        question = str(item.get("question") or "").strip()
-        options = [str(option).strip() for option in (item.get("options") or []) if str(option).strip()]
+        question = repair_dropped_html_openers(str(item.get("question") or "").strip())
+        options = [
+            repair_dropped_html_openers(str(option).strip())
+            for option in (item.get("options") or [])
+            if str(option).strip()
+        ]
         if question and options:
             level = resolve_bloom_level(question, item.get("bloom_level"))
             result.append(
@@ -942,6 +1003,7 @@ def get_practice_overview(
     _ensure_view_access(db, current_user, classroom)
     course = _get_or_create_course(db, classroom, current_user)
     course, generation_pending = _bootstrap_practice_content(db, classroom=classroom, course=course)
+    _persist_repaired_html(db, course)
     chapters = list((course.content or {}).get("chapters") or [])
     needs_background = generation_pending or _needs_scenario_fill_in(chapters)
     if needs_background and _try_start_practice_generation(classroom_id):
@@ -1286,7 +1348,7 @@ def submit_practice_quiz_attempt(
     correct = 0
     for index, question in enumerate(quiz):
         selected = payload.selected_answers[index] if index < len(payload.selected_answers) else None
-        if selected and selected == question.get("correct_answer"):
+        if selected and _answers_match(selected, question.get("correct_answer")):
             correct += 1
     score = (correct / len(quiz) * 100.0) if quiz else 0.0
 
@@ -1335,7 +1397,7 @@ def submit_practice_scenario_attempt(
     correct = 0
     for index, question in enumerate(questions):
         selected = payload.selected_answers[index] if index < len(payload.selected_answers) else None
-        if selected and selected == question.get("correct_answer"):
+        if selected and _answers_match(selected, question.get("correct_answer")):
             correct += 1
     score = (correct / len(questions) * 100.0) if questions else 0.0
 
@@ -1394,7 +1456,7 @@ def submit_practice_assessment_attempt(
     correct = 0
     for index, question in enumerate(questions):
         selected = payload.selected_answers[index] if index < len(payload.selected_answers) else None
-        if selected and selected == question.get("correct_answer"):
+        if selected and _answers_match(selected, question.get("correct_answer")):
             correct += 1
     score = (correct / len(questions) * 100.0) if questions else 0.0
 

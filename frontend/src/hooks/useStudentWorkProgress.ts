@@ -275,8 +275,13 @@ export function useStudentWorkProgress() {
   const codingQuery = useQuery({
     queryKey: ["student-coding-assignments", user?.email],
     queryFn: async () => {
-      await ensureCodingSession(false, user?.email);
-      return codingApi<StudentCodingAssignment[]>("/student/assignments");
+      try {
+        await ensureCodingSession(false, user?.email);
+        return await codingApi<StudentCodingAssignment[]>("/student/assignments");
+      } catch {
+        // Coding SSO/API is optional for the streaks card; keep assignments/practice visible.
+        return [] as StudentCodingAssignment[];
+      }
     },
     enabled: enabled && codingEnabled && !!user?.email,
     staleTime: STALE_MS,
@@ -288,7 +293,8 @@ export function useStudentWorkProgress() {
   const practiceQueries = useQueries({
     queries: classrooms.map((room) => ({
       queryKey: ["student-work-practice", room.id] as const,
-      queryFn: () => fetchClassroomPractice(room.id, room.name),
+      queryFn: () =>
+        fetchClassroomPractice(room.id, room.name).catch(() => null),
       enabled: enabled && classrooms.length > 0,
       staleTime: STALE_MS,
       retry: false,
@@ -327,11 +333,7 @@ export function useStudentWorkProgress() {
     (codingEnabled && codingQuery.isLoading) ||
     (classrooms.length > 0 && practiceQueries.some((query) => query.isLoading));
 
-  const isError =
-    classroomsQuery.isError ||
-    feedQuery.isError ||
-    (codingEnabled && codingQuery.isError) ||
-    practiceQueries.some((query) => query.isError);
+  const isError = classroomsQuery.isError || feedQuery.isError;
 
   return {
     total: progress.total,
