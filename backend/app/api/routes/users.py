@@ -6,9 +6,10 @@ from app.core.database import get_db
 from app.core.security import get_password_hash
 from app.models.institution import Department, Institution
 from app.models.user import User, UserRole
-from app.schemas.auth import CodingPlatformToggleRequest, UserOut
+from app.schemas.auth import CodingPlatformToggleRequest, TheoryPlatformToggleRequest, UserOut
 from app.schemas.user import CreateUserRequest
 from app.services.coding_platform_sync import sync_user_to_coding_platform
+from app.services.theory_platform_sync import sync_user_to_theory_platform
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -124,6 +125,7 @@ def create_user(
     db.commit()
     db.refresh(user)
     sync_user_to_coding_platform(user)
+    sync_user_to_theory_platform(user)
 
     return user
 
@@ -185,6 +187,65 @@ def set_coding_platform(
             )
             for student in students:
                 sync_user_to_coding_platform(student)
+    return target
+
+
+@router.patch("/{user_id}/theory-platform", response_model=UserOut)
+def set_theory_platform(
+    user_id: int,
+    payload: TheoryPlatformToggleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.HOD:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only HOD can enable or disable the theory platform for teachers",
+        )
+    if not current_user.department_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="HOD has no department assigned",
+        )
+
+    target = db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.role not in TEACHER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Theory platform can only be toggled for class or subject teachers",
+        )
+    if target.department_id != current_user.department_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Teacher is not in your department",
+        )
+
+    target.theory_platform_enabled = payload.enabled
+    db.commit()
+    db.refresh(target)
+    if payload.enabled:
+        sync_user_to_theory_platform(target)
+        from app.api.routes.coding_platform import _teacher_classroom_ids
+        from app.models.classroom import ClassroomStudent, MembershipStatus
+
+        classroom_ids = _teacher_classroom_ids(db, target)
+        if classroom_ids:
+            students = (
+                db.query(User)
+                .join(ClassroomStudent, ClassroomStudent.student_id == User.id)
+                .filter(
+                    ClassroomStudent.classroom_id.in_(classroom_ids),
+                    ClassroomStudent.status == MembershipStatus.APPROVED,
+                    ClassroomStudent.is_active.is_(True),
+                    User.role == UserRole.STUDENT,
+                    User.is_active.is_(True),
+                )
+                .all()
+            )
+            for student in students:
+                sync_user_to_theory_platform(student)
     return target
 
 

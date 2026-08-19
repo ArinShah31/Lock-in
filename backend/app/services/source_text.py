@@ -3,6 +3,33 @@ from pathlib import Path
 from app.models.content import ClassroomContent
 
 
+def extract_full_text_from_file(path: str | None, *, fallback_title: str = "") -> str:
+    """Extract all pages from supported files (used for exercise solving)."""
+    if not path:
+        return fallback_title
+    file_path = Path(path)
+    if not file_path.exists():
+        return fallback_title
+    suffix = file_path.suffix.lower()
+    try:
+        if suffix == ".pdf":
+            try:
+                import fitz
+
+                document = fitz.open(str(file_path))
+                try:
+                    parts = [page.get_text() or "" for page in document]
+                finally:
+                    document.close()
+                text = "\n".join(parts).strip()
+                return text or fallback_title
+            except Exception:  # noqa: BLE001
+                pass
+        return extract_text_from_file(path, fallback_title=fallback_title)
+    except Exception:  # noqa: BLE001
+        return fallback_title
+
+
 def extract_text_from_file(path: str | None, *, fallback_title: str = "") -> str:
     if not path:
         return fallback_title

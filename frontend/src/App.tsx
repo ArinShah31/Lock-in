@@ -16,6 +16,7 @@ import { ClassroomPresentationPlayer } from "./pages/ClassroomPresentationPlayer
 import { ClassroomPresentationsTab } from "./pages/ClassroomPresentationsTab";
 import { ClassroomsPage } from "./pages/ClassroomsPage";
 import { CodingPage } from "./pages/CodingPage";
+import { TheoryPage } from "./pages/TheoryPage";
 import { CreateClassroomPage } from "./pages/CreateClassroomPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InstitutionsPage } from "./pages/InstitutionsPage";
@@ -70,6 +71,7 @@ export default function App() {
                 <Route path="/team" element={<TeamPage />} />
                 <Route path="/practice" element={<PracticePage />} />
                 <Route path="/coding" element={<CodingPage />} />
+                <Route path="/theory" element={<TheoryPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/settings" element={<AccountSettingsPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />

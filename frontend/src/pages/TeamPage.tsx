@@ -75,6 +75,15 @@ export function TeamPage() {
     onError: (err: Error) => setError(err.message),
   });
 
+  const toggleTheory = useMutation({
+    mutationFn: ({ userId, enabled }: { userId: number; enabled: boolean }) =>
+      usersApi.setTheoryPlatform(userId, enabled),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -225,17 +234,30 @@ export function TeamPage() {
                     </span>
                   </div>
                   {user?.role === "HOD" && isTeacher ? (
-                    <label className="flex items-center gap-2 text-xs text-[#44474e]">
-                      <span>Coding platform</span>
-                      <input
-                        type="checkbox"
-                        checked={!!m.coding_platform_enabled}
-                        disabled={toggleCoding.isPending}
-                        onChange={(e) =>
-                          toggleCoding.mutate({ userId: m.id, enabled: e.target.checked })
-                        }
-                      />
-                    </label>
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-[#44474e]">
+                      <label className="flex items-center gap-2">
+                        <span>Coding platform</span>
+                        <input
+                          type="checkbox"
+                          checked={!!m.coding_platform_enabled}
+                          disabled={toggleCoding.isPending}
+                          onChange={(e) =>
+                            toggleCoding.mutate({ userId: m.id, enabled: e.target.checked })
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <span>Theory platform</span>
+                        <input
+                          type="checkbox"
+                          checked={!!m.theory_platform_enabled}
+                          disabled={toggleTheory.isPending}
+                          onChange={(e) =>
+                            toggleTheory.mutate({ userId: m.id, enabled: e.target.checked })
+                          }
+                        />
+                      </label>
+                    </div>
                   ) : null}
                 </li>
               );
