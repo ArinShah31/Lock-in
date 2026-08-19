@@ -23,7 +23,7 @@ export default defineConfig({
         target: "http://127.0.0.1:8000",
       },
       "/coding-api": {
-        target: "http://127.0.0.1:8011",
+        target: "http://127.0.0.1:8010",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/coding-api/, "/api"),
       },

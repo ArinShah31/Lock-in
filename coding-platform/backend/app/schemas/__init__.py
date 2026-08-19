@@ -45,6 +45,14 @@ class RubricCriterion(BaseModel):
     max_points: float = Field(default=100, ge=1, le=100)
 
 
+class TestCase(BaseModel):
+    id: int = Field(ge=1)
+    description: str = Field(min_length=1, max_length=200)
+    input: str = Field(max_length=10000)
+    expected_output: str = Field(max_length=10000)
+    is_visible: bool = True
+
+
 class QuestionGenerateRequest(BaseModel):
     topic_or_scenario: str = Field(min_length=8, max_length=4000)
     bloom_level: BloomLevel
@@ -58,6 +66,7 @@ class QuestionDraftOut(BaseModel):
     bloom_level: BloomLevel
     language: Language
     rubric: list[RubricCriterion]
+    test_cases: list[TestCase] = []
     source_prompt: str | None = None
 
 
@@ -68,6 +77,7 @@ class QuestionCreate(BaseModel):
     language: Language
     bloom_level: BloomLevel
     rubric: list[RubricCriterion] = []
+    test_cases: list[TestCase] = []
     source_prompt: str | None = None
 
 
@@ -78,6 +88,7 @@ class QuestionUpdate(BaseModel):
     language: Language | None = None
     bloom_level: BloomLevel | None = None
     rubric: list[RubricCriterion] | None = None
+    test_cases: list[TestCase] | None = None
     source_prompt: str | None = None
     is_active: bool | None = None
 
@@ -90,6 +101,7 @@ class QuestionOut(BaseModel):
     language: Language
     bloom_level: BloomLevel
     rubric: list[RubricCriterion] = []
+    test_cases: list[TestCase] = []
     source_prompt: str | None = None
     created_by_id: int
     is_active: bool
@@ -165,6 +177,28 @@ class ExamQuestionOut(BaseModel):
     language: Language
     unlocked: bool
     draft_code: str | None = None
+    test_cases: list[TestCase] = []
+
+
+class RunCodeRequest(BaseModel):
+    question_id: int
+    code: str = Field(min_length=1, max_length=100000)
+    language: Language
+
+
+class TestCaseResult(BaseModel):
+    id: int
+    description: str
+    passed: bool
+    actual_output: str
+    expected_output: str
+    error: str | None = None
+
+
+class RunCodeResponse(BaseModel):
+    results: list[TestCaseResult] = []
+    ran_count: int = 0
+    message: str | None = None
 
 
 class DraftSaveRequest(BaseModel):
