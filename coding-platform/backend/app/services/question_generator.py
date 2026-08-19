@@ -11,6 +11,10 @@ from app.core.config import settings
 from app.models import BloomLevel, Language
 from app.services.bloom import normalize_rubric
 
+EXPECTED_VISIBLE_CASES = 3
+EXPECTED_HIDDEN_CASES = 2
+EXPECTED_TOTAL_CASES = EXPECTED_VISIBLE_CASES + EXPECTED_HIDDEN_CASES
+
 BLOOM_GUIDANCE = {
     BloomLevel.REMEMBER: "Recall facts, syntax, or definitions. Ask the student to identify, list, or reproduce a known construct.",
     BloomLevel.UNDERSTAND: "Explain or paraphrase a concept. Ask the student to describe what code does or why a construct is used.",
@@ -56,6 +60,33 @@ def _parse_json(raw_text: str) -> dict:
     return data
 
 
+def _normalize_test_cases(raw_cases: list | None) -> list[dict]:
+    """Validate and normalize AI-generated test cases."""
+    if not raw_cases:
+        return []
+    cases: list[dict] = []
+    for idx, rc in enumerate(raw_cases):
+        if not isinstance(rc, dict):
+            continue
+        case = {
+            "id": idx + 1,
+            "description": str(rc.get("description") or f"Case {idx + 1}").strip()[:200],
+            "input": str(rc.get("input") or "").replace("\\n", "\n").replace("\\t", "\t"),
+            "expected_output": str(rc.get("expected_output") or "").replace("\\n", "\n").replace("\\t", "\t"),
+            "is_visible": bool(rc.get("is_visible", True)),
+        }
+        cases.append(case)
+
+    # Enforce visibility rule: first N visible, remainder hidden.
+    for i, case in enumerate(cases):
+        case["is_visible"] = i < EXPECTED_VISIBLE_CASES
+
+    # If too few, keep what we have. If too many, truncate hidden ones first.
+    if len(cases) > EXPECTED_TOTAL_CASES:
+        cases = cases[:EXPECTED_TOTAL_CASES]
+    return cases
+
+
 def generate_question_draft(
     *,
     topic_or_scenario: str,
@@ -78,7 +109,12 @@ Rules:
 - Match the Bloom level strictly (do not make a Remember question require original design).
 - The prompt must be self-contained exam markdown (constraints, examples if useful).
 - Starter code must compile/parse as a skeleton in {language.value} with TODOs or pass/placeholders.
+- The student reads input from standard input (stdin) and prints the answer to standard output.
 - Rubric must have 3-5 weighted criteria that sum conceptually to 100% weight.
+- Provide exactly 5 test cases: the first 3 must be "is_visible": true (sample cases shown during the exam), and the last 2 must be "is_visible": false (hidden cases for grading).
+- Each test case must include "description", "input", and "expected_output".
+- Cover typical input, boundary/zero, edge/negative, large input, and a tricky corner case.
+- Input/output values use plain text; use \\n in the JSON string for line breaks.
 - Return valid JSON. Put real line breaks in starter_code and prompt_markdown as \\n escape sequences, not raw newlines.
 
 Return ONLY JSON:
@@ -92,6 +128,43 @@ Return ONLY JSON:
       "description": "what to look for",
       "weight": 40,
       "max_points": 100
+    }}
+  ],
+  "test_cases": [
+    {{
+      "id": 1,
+      "description": "typical case",
+      "input": "5\\n3",
+      "expected_output": "8",
+      "is_visible": true
+    }},
+    {{
+      "id": 2,
+      "description": "boundary case",
+      "input": "0\\n0",
+      "expected_output": "0",
+      "is_visible": true
+    }},
+    {{
+      "id": 3,
+      "description": "edge case",
+      "input": "-1\\n-2",
+      "expected_output": "-3",
+      "is_visible": true
+    }},
+    {{
+      "id": 4,
+      "description": "large input",
+      "input": "1000000\\n999999",
+      "expected_output": "1999999",
+      "is_visible": false
+    }},
+    {{
+      "id": 5,
+      "description": "tricky corner case",
+      "input": "0\\n1",
+      "expected_output": "1",
+      "is_visible": false
     }}
   ]
 }}
@@ -119,5 +192,6 @@ Return ONLY JSON:
         "bloom_level": bloom_level,
         "language": language,
         "rubric": normalize_rubric(raw.get("rubric")),
+        "test_cases": _normalize_test_cases(raw.get("test_cases")),
         "source_prompt": topic_or_scenario.strip(),
     }

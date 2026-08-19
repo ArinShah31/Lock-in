@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     violation_block_threshold: int = 5
     coding_sync_secret: str = "change_me_coding_sync_secret"
     astra_sso_secret: str = "change_me_coding_sso_secret"
+    enable_exam_run_testcases: bool = True
+    code_runner_timeout_seconds: int = 10
+    code_runner_max_output_bytes: int = 10240
+    code_runner_truncated_error_chars: int = 500
 
     model_config = SettingsConfigDict(
         env_file=".env",

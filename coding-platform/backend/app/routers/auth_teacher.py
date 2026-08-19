@@ -33,6 +33,7 @@ from app.schemas import (
     QuestionUpdate,
     RegisterRequest,
     RubricCriterion,
+    TestCase,
     TestCreate,
     TestOut,
     TestQuestionOut,
@@ -194,6 +195,7 @@ def me(user: User = Depends(get_current_user)):
 
 
 def _question_out(q: Question) -> QuestionOut:
+    cases = q.test_cases_json or []
     return QuestionOut(
         id=q.id,
         title=q.title,
@@ -202,6 +204,7 @@ def _question_out(q: Question) -> QuestionOut:
         language=q.language,
         bloom_level=resolve_bloom(q),
         rubric=[RubricCriterion.model_validate(item) for item in question_rubric(q)],
+        test_cases=[TestCase.model_validate(item) for item in cases],
         source_prompt=getattr(q, "source_prompt", None),
         created_by_id=q.created_by_id,
         is_active=q.is_active,
@@ -236,6 +239,17 @@ def _test_out(test: CodingTest) -> TestOut:
     )
 
 
+def _normalize_test_cases_for_save(test_cases: list[TestCase] | None) -> list[dict] | None:
+    if test_cases is None:
+        return None
+    out: list[dict] = []
+    for idx, tc in enumerate(test_cases, start=1):
+        data = tc.model_dump()
+        data["id"] = idx
+        out.append(data)
+    return out
+
+
 @teacher_router.post("/questions", response_model=QuestionOut)
 def create_question(
     payload: QuestionCreate,
@@ -252,6 +266,7 @@ def create_question(
         difficulty=difficulty_from_bloom(payload.bloom_level),
         question_type=QuestionType.SYLLABUS,
         rubric_json=rubric,
+        test_cases_json=_normalize_test_cases_for_save(payload.test_cases),
         source_prompt=(payload.source_prompt or "").strip() or None,
         created_by_id=teacher.id,
         is_active=True,
@@ -285,6 +300,7 @@ def generate_question(
         bloom_level=draft["bloom_level"],
         language=draft["language"],
         rubric=[RubricCriterion.model_validate(item) for item in draft["rubric"]],
+        test_cases=[TestCase.model_validate(item) for item in draft.get("test_cases", [])],
         source_prompt=draft.get("source_prompt"),
     )
 
@@ -310,6 +326,7 @@ def import_all_questions(
         language: Language,
         bloom_level: BloomLevel,
         rubric_json: list | None = None,
+        test_cases_json: list | None = None,
         source_prompt: str | None = None,
     ) -> None:
         key = (title.strip().lower(), language, bloom_level)
@@ -324,6 +341,7 @@ def import_all_questions(
             difficulty=difficulty_from_bloom(bloom_level),
             question_type=QuestionType.SYLLABUS,
             rubric_json=normalize_rubric(rubric_json),
+            test_cases_json=test_cases_json,
             source_prompt=source_prompt,
             created_by_id=teacher.id,
             is_active=True,
@@ -357,6 +375,7 @@ def import_all_questions(
             language=q.language,
             bloom_level=resolve_bloom(q),
             rubric_json=question_rubric(q),
+            test_cases_json=getattr(q, "test_cases_json", None),
             source_prompt=getattr(q, "source_prompt", None),
         )
 
@@ -396,12 +415,35 @@ def update_question(
         raise HTTPException(status_code=404, detail="Question not found")
     data = payload.model_dump(exclude_unset=True)
     rubric = data.pop("rubric", None)
+    test_cases = data.pop("test_cases", None)
     for key, value in data.items():
         setattr(q, key, value)
     if payload.bloom_level is not None:
         q.difficulty = difficulty_from_bloom(payload.bloom_level)
     if rubric is not None:
         q.rubric_json = normalize_rubric(rubric)
+    if test_cases is not None:
+        q.test_cases_json = _normalize_test_cases_for_save(test_cases)
+    db.commit()
+    db.refresh(q)
+    return _question_out(q)
+
+
+@teacher_router.put("/questions/{question_id}/test-cases", response_model=QuestionOut)
+def replace_test_cases(
+    question_id: int,
+    payload: list[TestCase],
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    q = (
+        db.query(Question)
+        .filter(Question.id == question_id, Question.created_by_id == teacher.id)
+        .first()
+    )
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found")
+    q.test_cases_json = _normalize_test_cases_for_save(payload)
     db.commit()
     db.refresh(q)
     return _question_out(q)

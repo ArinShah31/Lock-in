@@ -31,7 +31,7 @@ export async function api<T>(path: string, options: RequestInit = {}, auth = tru
       }
     } catch {
       if (res.status === 404) {
-        message = "Coding API not reachable (check Vite proxy → port 8011)";
+        message = "Coding API not reachable (check Vite proxy → port 8010)";
       }
     }
     throw new ApiError(res.status, message);
@@ -51,6 +51,29 @@ export type RubricCriterion = {
   max_points: number;
 };
 
+export type TestCase = {
+  id: number;
+  description: string;
+  input: string;
+  expected_output: string;
+  is_visible: boolean;
+};
+
+export type TestCaseResult = {
+  id: number;
+  description: string;
+  passed: boolean;
+  actual_output: string;
+  expected_output: string;
+  error?: string;
+};
+
+export type RunCodeResponse = {
+  results: TestCaseResult[];
+  ran_count: number;
+  message?: string;
+};
+
 export type User = {
   id: number;
   full_name: string;
@@ -66,6 +89,7 @@ export type Question = {
   language: Language;
   bloom_level: BloomLevel;
   rubric: RubricCriterion[];
+  test_cases: TestCase[];
   source_prompt?: string | null;
   created_by_id: number;
   is_active: boolean;
@@ -119,4 +143,15 @@ export type ExamQuestion = {
   language: Language;
   unlocked: boolean;
   draft_code?: string | null;
+  test_cases: TestCase[];
 };
+
+export function runCode(
+  sessionId: number,
+  body: { question_id: number; code: string; language: Language },
+): Promise<RunCodeResponse> {
+  return api<RunCodeResponse>(`/student/sessions/${sessionId}/run`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

@@ -116,6 +116,14 @@ export type RubricCriterion = {
   max_points: number;
 };
 
+export type TestCase = {
+  id: number;
+  description: string;
+  input: string;
+  expected_output: string;
+  is_visible: boolean;
+};
+
 export type CodingQuestion = {
   id: number;
   title: string;
@@ -124,6 +132,7 @@ export type CodingQuestion = {
   language: Language;
   bloom_level: BloomLevel;
   rubric: RubricCriterion[];
+  test_cases: TestCase[];
   source_prompt?: string | null;
   created_by_id: number;
   is_active: boolean;
@@ -136,6 +145,7 @@ export type QuestionDraft = {
   bloom_level: BloomLevel;
   language: Language;
   rubric: RubricCriterion[];
+  test_cases: TestCase[];
   source_prompt?: string | null;
 };
 
