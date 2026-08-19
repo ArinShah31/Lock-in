@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field
 
 from app.ai.llm.client import generate_content_with_pool
@@ -28,6 +30,62 @@ _PLACEHOLDER_OPTIONS = frozenset(
         "choice d",
     }
 )
+
+
+_VOID_TAGS = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+
+# Models often emit HTML inside JSON without the opening "<", e.g. "p>Hello</p>".
+_PAIRED_OPEN_MISSING_LT = re.compile(
+    r"(?<!<)(?P<tag>[a-zA-Z][a-zA-Z0-9-]{0,24})(?P<attrs>(?:\s[^<>]*)?)>(?P<body>.*?)</(?P=tag)>",
+    re.DOTALL,
+)
+_VOID_OPEN_MISSING_LT = re.compile(
+    r"(?<!<)(?P<tag>" + "|".join(sorted(_VOID_TAGS)) + r")(?P<attrs>(?:\s[^<>]*)?)>",
+    re.IGNORECASE,
+)
+
+
+def repair_dropped_html_openers(text: str) -> str:
+    """Restore a missing '<' on HTML opening tags so 'p>x</p>' becomes '<p>x</p>'."""
+    if not text:
+        return text
+    current = text
+    for _ in range(8):
+        nxt, paired = _PAIRED_OPEN_MISSING_LT.subn(
+            lambda match: f"<{match.group('tag')}{match.group('attrs')}>{match.group('body')}</{match.group('tag')}>",
+            current,
+            count=1,
+        )
+        if paired:
+            current = nxt
+            continue
+        nxt, voided = _VOID_OPEN_MISSING_LT.subn(
+            lambda match: f"<{match.group('tag')}{match.group('attrs')}>",
+            current,
+            count=1,
+        )
+        if voided:
+            current = nxt
+            continue
+        break
+    return current
 
 
 def valid_mcq_options(options: list) -> bool:
@@ -86,15 +144,19 @@ def parse_quiz_questions(
     quiz: list[dict] = []
     for item in items:
         if isinstance(item, dict):
-            options = [str(option).strip() for option in (item.get("options") or []) if str(option).strip()]
-            correct_answer = str(item.get("correct_answer") or "").strip()
-            question = str(item.get("question") or "").strip()
+            options = [
+                repair_dropped_html_openers(str(option).strip())
+                for option in (item.get("options") or [])
+                if str(option).strip()
+            ]
+            correct_answer = repair_dropped_html_openers(str(item.get("correct_answer") or "").strip())
+            question = repair_dropped_html_openers(str(item.get("question") or "").strip())
             explanation = str(item.get("explanation") or "").strip()
             stored_bloom = item.get("bloom_level")
         else:
-            options = [option.strip() for option in item.options if option.strip()]
-            correct_answer = item.correct_answer.strip()
-            question = item.question.strip()
+            options = [repair_dropped_html_openers(option.strip()) for option in item.options if option.strip()]
+            correct_answer = repair_dropped_html_openers(item.correct_answer.strip())
+            question = repair_dropped_html_openers(item.question.strip())
             explanation = item.explanation.strip()
             stored_bloom = getattr(item, "bloom_level", None)
         if (
@@ -183,6 +245,7 @@ def generate_chapter_scenarios(
             "- situation: one concise paragraph describing a realistic situation grounded in the material\n"
             f"- exactly {SCENARIO_QUESTIONS_PER_CASE} MCQs that require applying the situation (not trivia)\n"
             "- each MCQ must have exactly 4 options\n"
+            "- if an option is HTML or code, keep every angle bracket, including the opening '<'\n"
             "- correct_answer must match one option exactly\n"
             "- each MCQ must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE\n"
             "- bloom_level must match the cognitive demand of the question stem\n"

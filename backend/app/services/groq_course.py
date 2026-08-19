@@ -926,6 +926,8 @@ def generate_chapter_assessments(
                 "Each question must include bloom_level as one of: REMEMBER, UNDERSTAND, APPLY, ANALYZE, EVALUATE, CREATE.\n"
                 "The bloom_level must match the cognitive demand of the question stem.\n"
                 "Each option must be a full answer sentence or phrase — never use bare letters like A, B, C, or D.\n"
+                "If an option is HTML or code, keep every angle bracket, including the opening '<'. "
+                "In JSON, write '<' as \\u003c so the tag stays intact.\n"
                 "correct_answer must exactly match one option string."
                 f"{flashcard_instruction}\n"
                 "Also provide 5 to 6 scenario case studies. Each scenario has a title, one concise situation "
