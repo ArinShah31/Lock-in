@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     coding_sync_secret: str = "change_me_coding_sync_secret"
     coding_sso_secret: str = "change_me_coding_sso_secret"
 
+    # Theory platform integration
+    theory_platform_api_url: str = "http://127.0.0.1:8012/api/v1"
+    theory_platform_frontend_url: str = "http://127.0.0.1:5181"
+    theory_sync_secret: str = "change_me_theory_sync_secret"
+    theory_sso_secret: str = "change_me_coding_sso_secret"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

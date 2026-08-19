@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { classroomsApi, codingPlatformApi } from "../api";
+import { classroomsApi, codingPlatformApi, theoryPlatformApi } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { BrandLogo } from "./BrandLogo";
 import { NotificationBell } from "./NotificationBell";
@@ -177,6 +177,14 @@ export function AppShell() {
   });
   const codingEnabled = codingAccess.data?.enabled === true;
 
+  const theoryAccess = useQuery({
+    queryKey: ["theory-access"],
+    queryFn: theoryPlatformApi.access,
+    enabled: showCodingTab,
+    staleTime: 30_000,
+  });
+  const theoryEnabled = theoryAccess.data?.enabled === true;
+
   const teacherClassrooms = useQuery({
     queryKey: ["classrooms"],
     queryFn: classroomsApi.list,
@@ -212,13 +220,19 @@ export function AppShell() {
           show: showCodingTab,
         },
         {
+          to: "/theory",
+          label: theoryEnabled ? "Theory" : "Theory (off)",
+          icon: "menu_book",
+          show: showCodingTab,
+        },
+        {
           to: "/practice",
           label: "Practise",
           icon: "school",
           show: isStudent,
         },
       ].filter((l) => l.show),
-    [codingEnabled, isStudent, isTeacher, showCodingTab, user?.role],
+    [codingEnabled, theoryEnabled, isStudent, isTeacher, showCodingTab, user?.role],
   );
 
   const resourceLinks: NavLinkItem[] = useMemo(

@@ -27,6 +27,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/coding-api/, "/api"),
       },
+      "/theory-api": {
+        target: "http://127.0.0.1:8012",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/theory-api/, "/api"),
+      },
     },
   },
 });

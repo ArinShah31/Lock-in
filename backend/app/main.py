@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes.auth import router as auth_router
 from app.api.routes.classrooms import router as classrooms_router
 from app.api.routes.coding_platform import router as coding_platform_router
+from app.api.routes.theory_platform import router as theory_platform_router
 from app.api.routes.institutions import router as institutions_router
 from app.api.routes.rbac_demo import router as rbac_router
 from app.api.routes.subjects import router as subjects_router
@@ -60,6 +61,8 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5180",
         "http://127.0.0.1:5180",
+        "http://localhost:5181",
+        "http://127.0.0.1:5181",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -106,6 +109,13 @@ def _ensure_sqlite_columns():
                 conn.execute(
                     text(
                         "ALTER TABLE users ADD COLUMN coding_platform_enabled BOOLEAN NOT NULL DEFAULT 0"
+                    )
+                )
+        if "theory_platform_enabled" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN theory_platform_enabled BOOLEAN NOT NULL DEFAULT 0"
                     )
                 )
         if "avatar_url" not in cols:
@@ -206,4 +216,5 @@ app.include_router(course_builder_router, prefix="/api/v1")
 app.include_router(practice_router, prefix="/api/v1")
 app.include_router(presentations_router, prefix="/api/v1")
 app.include_router(coding_platform_router, prefix="/api/v1")
+app.include_router(theory_platform_router, prefix="/api/v1")
 app.include_router(streak_router, prefix="/api/v1")

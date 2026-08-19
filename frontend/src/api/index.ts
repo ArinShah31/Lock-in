@@ -391,6 +391,11 @@ export const usersApi = {
       method: "PATCH",
       body: JSON.stringify({ enabled }),
     }),
+  setTheoryPlatform: (userId: number, enabled: boolean) =>
+    api<User>(`/users/${userId}/theory-platform`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
 };
 
 export const codingPlatformApi = {
@@ -401,6 +406,18 @@ export const codingPlatformApi = {
   ssoToken: () =>
     api<{ token: string; frontend_url: string; expires_in_seconds: number }>(
       "/coding-platform/sso-token",
+      { method: "POST" },
+    ),
+};
+
+export const theoryPlatformApi = {
+  access: () =>
+    api<{ enabled: boolean; reason: string | null; frontend_url: string }>("/theory-platform/access"),
+  students: () =>
+    api<{ id: number; full_name: string; email: string }[]>("/theory-platform/students"),
+  ssoToken: () =>
+    api<{ token: string; frontend_url: string; expires_in_seconds: number }>(
+      "/theory-platform/sso-token",
       { method: "POST" },
     ),
 };
