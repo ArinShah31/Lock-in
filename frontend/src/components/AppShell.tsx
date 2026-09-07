@@ -596,10 +596,7 @@ export function AppShell() {
       >
         <header className="sticky top-0 z-10 hidden h-16 shrink-0 items-center justify-between border-b border-[#e1e3e4] bg-white px-8 md:flex">
           <div className="flex items-center gap-3">
-            <h2 className="font-display text-base font-bold text-[#031635]">Lumina Academic Workspace</h2>
-            <span className="rounded-full border border-[#e1e3e4] bg-[#f3f4f5] px-2.5 py-0.5 text-xs font-medium text-[#44474e]">
-              Fall Semester 2026
-            </span>
+            <h2 className="font-display text-base font-bold text-[#031635]">ASTRA</h2>
           </div>
 
           <div className="flex items-center gap-2">

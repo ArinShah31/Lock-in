@@ -354,7 +354,7 @@ function HODDashboardView() {
             <span className="material-symbols-outlined text-sm">account_balance</span>
             <span>Head of Department Executive View</span>
           </div>
-          <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635]">
+          <h1 className="font-serif text-2xl md:text-3xl font-extrabold text-[#031635]">
             Department Overview — {user?.full_name}
           </h1>
           <p className="text-sm text-[#44474e] mt-1">
@@ -431,7 +431,7 @@ function InstitutionAdminDashboardView() {
             <span className="material-symbols-outlined text-sm">corporate_fare</span>
             <span>Institution Management View</span>
           </div>
-          <h1 className="font-display text-2xl md:text-3xl font-extrabold text-[#031635]">
+          <h1 className="font-serif text-2xl md:text-3xl font-extrabold text-[#031635]">
             Institution Control Center — {user?.full_name}
           </h1>
           <p className="text-sm text-[#44474e] mt-1">
@@ -487,7 +487,7 @@ function SuperAdminDashboardView() {
             <span className="material-symbols-outlined text-sm">admin_panel_settings</span>
             <span>Platform Super Admin</span>
           </div>
-          <h1 className="font-display text-2xl md:text-3xl font-extrabold text-white">
+          <h1 className="font-serif text-2xl md:text-3xl font-extrabold text-white">
             System Administration — {user?.full_name}
           </h1>
           <p className="text-sm text-gray-300 mt-1">
