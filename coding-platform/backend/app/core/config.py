@@ -1,4 +1,7 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_SECRET_FIELDS = ("jwt_secret_key", "coding_sync_secret", "astra_sso_secret")
 
 
 class Settings(BaseSettings):
@@ -20,6 +23,20 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _reject_insecure_secrets(self) -> "Settings":
+        insecure = [
+            field
+            for field in _SECRET_FIELDS
+            if not getattr(self, field) or getattr(self, field).lower().startswith("change_me")
+        ]
+        if insecure:
+            raise ValueError(
+                "Refusing to start with insecure placeholder secret(s): "
+                f"{', '.join(insecure)}. Set real values via environment variables or .env."
+            )
+        return self
 
 
 settings = Settings()

@@ -21,7 +21,7 @@ from app.services.coding_streak import fetch_coding_streak_items
 DEFAULT_DUE_DAYS = 2
 ASSESSMENT_KIND_TOPIC = "TOPIC"
 ASSESSMENT_KIND_SUBJECT = "SUBJECT"
-SUBJECT_TARGET_KEY = "subject"
+SUBJECT_TARGET_KEY = "overall"
 
 
 class StreakOutcome(str, Enum):

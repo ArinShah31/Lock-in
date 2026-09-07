@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
-import { LoginPage } from "./pages/LoginPage";
+import { ReturnToAstraPage } from "./pages/ReturnToAstraPage";
 import { TeacherHome } from "./pages/TeacherHome";
 import { StudentHome } from "./pages/StudentHome";
 import { ExamPage } from "./pages/ExamPage";
@@ -10,7 +10,7 @@ import { SsoPage } from "./pages/SsoPage";
 function Guard({ role, children }: { role: "TEACHER" | "STUDENT"; children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="p-8 text-slate-300">Loading…</div>;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/no-access" replace />;
   if (user.role !== role) {
     return <Navigate to={user.role === "TEACHER" ? "/teacher" : "/student"} replace />;
   }
@@ -29,11 +29,11 @@ export default function App() {
           ) : user ? (
             <Navigate to={user.role === "TEACHER" ? "/teacher" : "/student"} replace />
           ) : (
-            <Navigate to="/login" replace />
+            <Navigate to="/no-access" replace />
           )
         }
       />
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/no-access" element={<ReturnToAstraPage />} />
       <Route path="/sso" element={<SsoPage />} />
       <Route
         path="/teacher/*"

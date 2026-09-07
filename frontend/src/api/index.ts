@@ -153,34 +153,8 @@ export const contentsApi = {
   listByClassroom: (id: number) =>
     api<Content[]>(`/contents/classrooms/${id}`),
 
-  upload: async (classroomId: number, formData: FormData) => {
-   
-   
-
-   const token = localStorage.getItem("astra_access_token");
-
-   const url = `${API_BASE}/contents/classrooms/${classroomId}`;
-   
-
-   const response = await fetch(url, {
-     method: "POST",
-     headers: token
-       ? {
-          Authorization: `Bearer ${token}`,
-         }
-       : {},
-     body: formData,
-   });
-
-   
-
-   if (!response.ok) {
-     
-     throw new Error("Upload failed");
-   }
-
-   return response.json();
- },
+  upload: (classroomId: number, formData: FormData) =>
+    apiForm<Content>(`/contents/classrooms/${classroomId}`, formData),
 
  delete: (classroomId: number, contentId: number) =>
   api<{ message: string }>(

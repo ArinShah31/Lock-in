@@ -33,6 +33,7 @@ backend/.env
 node_modules/
 frontend/dist/
 *.tsbuildinfo
+.vite/
 
 # Uploaded files
 backend/uploads/

@@ -1,16 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, type Role, type User } from "./api";
+import { api, type User } from "./api";
 
 type AuthCtx = {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (payload: {
-    full_name: string;
-    email: string;
-    password: string;
-    role: Role;
-  }) => Promise<void>;
   applySsoSession: (accessToken: string, user: User) => void;
   clearSession: () => void;
   logout: () => void;
@@ -63,28 +56,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       loading,
-      login: async (email, password) => {
-        const data = await api<{ access_token: string; user: User }>(
-          "/auth/login",
-          { method: "POST", body: JSON.stringify({ email, password }) },
-          false,
-        );
-        sessionGen.current += 1;
-        localStorage.setItem("coding_access_token", data.access_token);
-        setUser(data.user);
-        setLoading(false);
-      },
-      register: async (payload) => {
-        const data = await api<{ access_token: string; user: User }>(
-          "/auth/register",
-          { method: "POST", body: JSON.stringify(payload) },
-          false,
-        );
-        sessionGen.current += 1;
-        localStorage.setItem("coding_access_token", data.access_token);
-        setUser(data.user);
-        setLoading(false);
-      },
       applySsoSession: (accessToken, nextUser) => {
         sessionGen.current += 1;
         localStorage.setItem("coding_access_token", accessToken);

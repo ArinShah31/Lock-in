@@ -45,8 +45,8 @@ export function SsoPage() {
           <div className="text-sm">
             <p className="font-semibold text-[#a03a3a]">Could not sign you in</p>
             <p className="mt-1 text-[#44474e]">{error}</p>
-            <a href="/login" className="mt-3 inline-block text-xs font-semibold text-[#3f5d9b] underline">
-              Go to coding login
+            <a href="/no-access" className="mt-3 inline-block text-xs font-semibold text-[#3f5d9b] underline">
+              Return to ASTRA
             </a>
           </div>
         ) : (
