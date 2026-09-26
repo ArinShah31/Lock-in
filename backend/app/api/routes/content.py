@@ -3,9 +3,11 @@ import shutil
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_media_user
+from app.api.routes.classrooms import _ensure_view_access
 from app.core.database import get_db
 from app.models.classroom import Classroom
 from app.models.content import ClassroomContent, ContentType
@@ -102,18 +104,10 @@ async def upload_content(
 def get_classroom_contents(
     classroom_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    classroom = (
-        db.query(Classroom)
-        .filter(Classroom.id == classroom_id)
-        .first()
-    )
-
-    if classroom is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Classroom not found",
-        )
+    classroom = _get_classroom_or_404(db, classroom_id)
+    _ensure_view_access(db, current_user, classroom)
 
     contents = (
         db.query(ClassroomContent)
@@ -126,6 +120,26 @@ def get_classroom_contents(
     )
 
     return contents
+
+
+@router.get("/{content_id}/file")
+def download_content_file(
+    content_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_media_user),
+):
+    content = db.query(ClassroomContent).filter(ClassroomContent.id == content_id).first()
+    if content is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    classroom = _get_classroom_or_404(db, content.classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+
+    path = Path(content.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+
+    return FileResponse(path, filename=content.file_name, media_type=content.mime_type)
 
 @router.patch("/{content_id}", response_model=ContentOut)
 def update_content(

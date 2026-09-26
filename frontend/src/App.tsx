@@ -6,6 +6,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ClassroomAnalyticsTab } from "./pages/ClassroomAnalyticsTab";
 import { ClassroomAnnouncementsTab } from "./pages/ClassroomAnnouncementsTab";
 import { ClassroomAssignmentsTab } from "./pages/ClassroomAssignmentsTab";
+import { ClassroomAttendanceTab } from "./pages/ClassroomAttendanceTab";
 import { ClassroomCourseBuilderTab } from "./pages/ClassroomCourseBuilderTab";
 import { ClassroomDashboardTab } from "./pages/ClassroomDashboardTab";
 import { ClassroomDetailsTab } from "./pages/ClassroomDetailsTab";
@@ -50,7 +51,9 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route path="/" element={<DashboardPage />} />
-                <Route path="/institutions" element={<InstitutionsPage />} />
+                <Route element={<ProtectedRoute roles={["SUPER_ADMIN", "INSTITUTION_ADMIN"]} />}>
+                  <Route path="/institutions" element={<InstitutionsPage />} />
+                </Route>
                 <Route path="/classrooms/new" element={<CreateClassroomPage />} />
                 <Route path="/classrooms/:classroomId" element={<ClassroomLayout />}>
                   <Route index element={<Navigate to="dashboard" replace />} />
@@ -62,6 +65,7 @@ export default function App() {
                   <Route path="presentations/:presentationId" element={<ClassroomPresentationPlayer />} />
                   <Route path="presentations" element={<ClassroomPresentationsTab />} />
                   <Route path="assignments" element={<ClassroomAssignmentsTab />} />
+                  <Route path="attendance" element={<ClassroomAttendanceTab />} />
                   <Route path="leaderboard" element={<ClassroomLeaderboardTab />} />
                   <Route path="analytics" element={<ClassroomAnalyticsTab />} />
                 </Route>

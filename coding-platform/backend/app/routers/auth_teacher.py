@@ -162,6 +162,11 @@ def sso_exchange(payload: SsoExchangeRequest, db: Session = Depends(get_db)):
 
 @router.post("/register", response_model=AuthResponse)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    if payload.role != UserRole.STUDENT:
+        raise HTTPException(
+            status_code=403,
+            detail="Teacher accounts must be provisioned from ASTRA — sign in there instead.",
+        )
     exists = db.query(User).filter(User.email == payload.email.lower()).first()
     if exists:
         raise HTTPException(status_code=400, detail="Email already registered")

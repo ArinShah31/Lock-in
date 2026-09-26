@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignmentsApi, classroomsApi } from "../api";
 import type { Classroom, ClassroomStudent, StudentAssignmentFeedItem } from "../api/types";
+import { dueState } from "../lib/dueReminders";
 import { useAuth } from "../auth/AuthContext";
 import { AssignmentsCalendar } from "../components/AssignmentsCalendar";
 import {
@@ -308,7 +309,7 @@ function StudentAssignmentsPanel({
                       <li key={item.id}>
                         <AssignmentRow
                           item={item}
-                          chip="Due soon"
+                          chip={dueState(item.due_at) === "due_soon" ? "Due soon" : "Upcoming"}
                           chipClass="bg-[#ede9fe] text-[#6366f1]"
                           cardClass="border-[#e0e7ff] bg-[#f8f9ff] hover:border-[#6366f1]/40 hover:bg-white"
                           icon="event"

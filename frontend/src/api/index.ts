@@ -4,6 +4,9 @@ import type {
   AnalyticsShareCode,
   Assignment,
   AssignmentSubmission,
+  AttendanceMark,
+  AttendanceSession,
+  AttendanceSummary,
   AuthResponse,
   Classroom,
   ClassroomAnnouncement,
@@ -18,6 +21,7 @@ import type {
   Institution,
   MockExam,
   MockExamAttempt,
+  MyAttendance,
   MockExamPattern,
   SourceAnalyticsSummary,
   StudentAssignmentFeedItem,
@@ -27,6 +31,7 @@ import type {
   TeacherOverview,
   TeacherChatResponse,
   Subject,
+  SubjectAttendance,
   SubjectMaterial,
   User,
   UserProfile,
@@ -149,9 +154,16 @@ export const classroomAnalyticsApi = {
     ),
 };
 
+export function mediaSrc(path: string) {
+  const token = getAccessToken() ?? "";
+  return `${API_BASE}${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+}
+
 export const contentsApi = {
   listByClassroom: (id: number) =>
     api<Content[]>(`/contents/classrooms/${id}`),
+
+  fileUrl: (contentId: number) => mediaSrc(`/contents/${contentId}/file`),
 
   upload: (classroomId: number, formData: FormData) =>
     apiForm<Content>(`/contents/classrooms/${classroomId}`, formData),
@@ -193,6 +205,9 @@ export const assignmentsApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  fileUrl: (assignmentId: number) => mediaSrc(`/assignments/${assignmentId}/file`),
+  submissionFileUrl: (assignmentId: number, studentId: number) =>
+    mediaSrc(`/assignments/${assignmentId}/submissions/${studentId}/file`),
 };
 
 export const streakApi = {
@@ -482,4 +497,32 @@ export const presentationsApi = {
     const token = getAccessToken() ?? "";
     return `${API_BASE}${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
   },
+};
+
+export const attendanceApi = {
+  subject: (classroomId: number, subjectId: number) =>
+    api<SubjectAttendance>(`/classrooms/${classroomId}/subjects/${subjectId}/attendance`),
+  summary: (classroomId: number) =>
+    api<AttendanceSummary>(`/classrooms/${classroomId}/attendance/summary`),
+  mine: (classroomId: number) => api<MyAttendance>(`/me/classrooms/${classroomId}/attendance`),
+  create: (
+    classroomId: number,
+    subjectId: number,
+    body: { held_on: string; title: string; marks: AttendanceMark[] },
+  ) =>
+    api<AttendanceSession>(`/classrooms/${classroomId}/subjects/${subjectId}/attendance`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  update: (
+    sessionId: number,
+    body: { held_on?: string; title?: string; marks?: AttendanceMark[] },
+  ) =>
+    api<AttendanceSession>(`/attendance/sessions/${sessionId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  remove: (sessionId: number) =>
+    api<void>(`/attendance/sessions/${sessionId}`, { method: "DELETE" }),
+  exportXlsx: (classroomId: number) => apiBlob(`/classrooms/${classroomId}/attendance/export.xlsx`),
 };

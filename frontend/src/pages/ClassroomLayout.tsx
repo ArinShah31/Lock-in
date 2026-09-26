@@ -97,6 +97,8 @@ export function ClassroomLayout() {
 
         <Tab to={`/classrooms/${id}/assignments`}>Assignments</Tab>
 
+        <Tab to={`/classrooms/${id}/attendance`}>Attendance</Tab>
+
         <Tab to={`/classrooms/${id}/leaderboard`}>Leaderboard</Tab>
 
         {user && user.id === c.class_teacher_id ? (

@@ -3,10 +3,11 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { assignmentsApi, classroomsApi } from "../api";
 import type { Assignment, Classroom, ClassroomStudent } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { dueState, formatDueIn } from "../lib/dueReminders";
 
 export type TeacherNotificationItem = {
   id: string;
-  kind: "join_request" | "ungraded";
+  kind: "join_request" | "ungraded" | "not_submitted";
   classroomId: number;
   classroomName: string;
   title: string;
@@ -76,6 +77,23 @@ export function useTeacherNotifications() {
       for (const assignment of assignments) {
         const submitted = assignment.submitted_count ?? 0;
         const graded = assignment.graded_count ?? 0;
+
+        const missing = (assignment.student_count ?? 0) - submitted;
+        if (missing > 0 && dueState(assignment.due_at) === "due_soon") {
+          out.push({
+            id: `not-submitted-${classroom.id}-${assignment.id}`,
+            kind: "not_submitted",
+            classroomId: classroom.id,
+            classroomName: classroom.name,
+            title:
+              missing === 1
+                ? `1 student hasn't submitted ${assignment.title}`
+                : `${missing} students haven't submitted ${assignment.title}`,
+            subtitle: `${classroom.name} · due ${formatDueIn(assignment.due_at)}`,
+            to: `/classrooms/${classroom.id}/assignments?assignment=${assignment.id}`,
+          });
+        }
+
         const ungraded = submitted - graded;
         if (ungraded <= 0) continue;
         out.push({

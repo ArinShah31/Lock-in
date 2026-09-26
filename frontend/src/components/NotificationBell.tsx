@@ -23,6 +23,12 @@ function kindIcon(kind: string) {
       return "cancel";
     case "new_assignment":
       return "assignment_add";
+    case "due_soon":
+      return "alarm";
+    case "overdue":
+      return "event_busy";
+    case "not_submitted":
+      return "hourglass_top";
     case "graded":
       return "grading";
     case "ungraded":

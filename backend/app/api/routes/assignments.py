@@ -4,9 +4,10 @@ import shutil
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_media_user
 from app.api.routes.classrooms import (
     _ensure_view_access,
     _get_classroom_or_404,
@@ -94,6 +95,7 @@ def _assignment_out(
     *,
     submitted_count: int | None = None,
     graded_count: int | None = None,
+    student_count: int | None = None,
     my_submission: AssignmentSubmissionOut | None = None,
 ) -> AssignmentOut:
     return AssignmentOut(
@@ -112,6 +114,7 @@ def _assignment_out(
         created_at=assignment.created_at,
         submitted_count=submitted_count,
         graded_count=graded_count,
+        student_count=student_count,
         my_submission=my_submission,
     )
 
@@ -294,6 +297,17 @@ def list_assignments(
     )
 
     is_teacher = classroom.class_teacher_id == current_user.id
+    student_count = (
+        db.query(ClassroomStudent)
+        .filter(
+            ClassroomStudent.classroom_id == classroom_id,
+            ClassroomStudent.status == MembershipStatus.APPROVED,
+            ClassroomStudent.is_active.is_(True),
+        )
+        .count()
+        if is_teacher
+        else None
+    )
     results: list[AssignmentOut] = []
     for assignment in assignments:
         submitted_count = graded_count = None
@@ -322,6 +336,7 @@ def list_assignments(
                 assignment,
                 submitted_count=submitted_count,
                 graded_count=graded_count,
+                student_count=student_count,
                 my_submission=my_submission,
             )
         )
@@ -366,6 +381,26 @@ def get_assignment(
         graded_count=graded_count,
         my_submission=my_submission,
     )
+
+
+@router.get("/assignments/{assignment_id}/file")
+def download_assignment_file(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_media_user),
+):
+    assignment = _get_assignment_or_404(db, assignment_id)
+    classroom = _get_classroom_or_404(db, assignment.classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+
+    if not assignment.file_path:
+        raise HTTPException(status_code=404, detail="No file attached to this assignment")
+
+    path = Path(assignment.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+
+    return FileResponse(path, filename=assignment.file_name, media_type=assignment.mime_type)
 
 
 @router.post(
@@ -473,6 +508,38 @@ def list_submissions(
         u.id: u for u in db.query(User).filter(User.id.in_(student_ids)).all()
     } if student_ids else {}
     return [_submission_out(s, students.get(s.student_id)) for s in submissions]
+
+
+@router.get("/assignments/{assignment_id}/submissions/{student_id}/file")
+def download_submission_file(
+    assignment_id: int,
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_media_user),
+):
+    assignment = _get_assignment_or_404(db, assignment_id)
+    classroom = _get_classroom_or_404(db, assignment.classroom_id)
+    _ensure_view_access(db, current_user, classroom)
+
+    if current_user.id != student_id and classroom.class_teacher_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this submission")
+
+    submission = (
+        db.query(AssignmentSubmission)
+        .filter(
+            AssignmentSubmission.assignment_id == assignment.id,
+            AssignmentSubmission.student_id == student_id,
+        )
+        .first()
+    )
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    path = Path(submission.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+
+    return FileResponse(path, filename=submission.file_name, media_type=submission.mime_type)
 
 
 @router.patch(

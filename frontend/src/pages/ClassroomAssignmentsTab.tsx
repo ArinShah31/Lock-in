@@ -3,7 +3,6 @@ import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignmentsApi } from "../api";
 import type { Assignment, AssignmentSubmission, Classroom } from "../api/types";
-import { uploadFileUrl } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { AssignmentsCalendar } from "../components/AssignmentsCalendar";
 import {
@@ -561,7 +560,7 @@ export function ClassroomAssignmentsTab() {
   const canSubmit = isStudent && active && !mySub?.is_graded;
 
   if (selectedId != null && active) {
-    const promptUrl = uploadFileUrl(active.file_path);
+    const promptUrl = active.file_name ? assignmentsApi.fileUrl(active.id) : null;
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -607,9 +606,9 @@ export function ClassroomAssignmentsTab() {
                   {mySub.is_late ? <span className="ml-2 text-[#6366f1]">Late</span> : null}
                 </p>
                 <p className="text-xs text-[#75777f]">Submitted {new Date(mySub.submitted_at).toLocaleString()}</p>
-                {uploadFileUrl(mySub.file_path) ? (
+                {mySub.file_name ? (
                   <a
-                    href={uploadFileUrl(mySub.file_path)!}
+                    href={assignmentsApi.submissionFileUrl(mySub.assignment_id, mySub.student_id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-2 inline-flex text-[#6366f1] hover:underline"
@@ -658,7 +657,9 @@ export function ClassroomAssignmentsTab() {
             ) : (
               <ul className="space-y-3">
                 {submissions.data.map((sub) => {
-                  const fileHref = uploadFileUrl(sub.file_path);
+                  const fileHref = sub.file_name
+                    ? assignmentsApi.submissionFileUrl(sub.assignment_id, sub.student_id)
+                    : null;
                   const isEditing = gradingStudentId === sub.student_id;
                   return (
                     <li key={sub.id} className="rounded-xl border border-[#e1e3e4] px-3 py-3 text-sm">

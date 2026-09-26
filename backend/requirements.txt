@@ -24,3 +24,4 @@ pypdf
 edge-tts
 imageio-ffmpeg
 pillow
+openpyxl

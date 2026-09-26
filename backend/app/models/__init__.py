@@ -1,4 +1,5 @@
 from app.models.assignment import Assignment, AssignmentSubmission
+from app.models.attendance import AttendanceRecord, AttendanceSession
 from app.models.classroom import (
     Classroom,
     ClassroomAnalyticsGrant,
@@ -38,6 +39,8 @@ __all__ = [
     "ContentType",
     "Assignment",
     "AssignmentSubmission",
+    "AttendanceSession",
+    "AttendanceRecord",
     "ClassroomCourse",
     "CourseBuildJob",
     "CourseChapterLock",

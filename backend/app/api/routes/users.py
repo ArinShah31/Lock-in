@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_roles
 from app.core.database import get_db
 from app.core.security import get_password_hash
 from app.models.institution import Department, Institution
@@ -19,7 +19,9 @@ TEACHER_ROLES = {UserRole.CLASS_TEACHER, UserRole.SUBJECT_TEACHER}
 def create_user(
     payload: CreateUserRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        require_roles([UserRole.SUPER_ADMIN, UserRole.INSTITUTION_ADMIN, UserRole.HOD])
+    ),
 ):
     existing = db.query(User).filter(User.email == payload.email.lower()).first()
     if existing:

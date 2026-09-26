@@ -19,6 +19,8 @@ class AssignmentOut(BaseModel):
     created_at: datetime
     submitted_count: int | None = None
     graded_count: int | None = None
+    # Approved students in the classroom; only set for the class teacher.
+    student_count: int | None = None
     my_submission: "AssignmentSubmissionOut | None" = None
 
     model_config = ConfigDict(from_attributes=True)

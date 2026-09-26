@@ -8,10 +8,19 @@ import type {
   StudentAssignmentFeedItem,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { dueState, formatDueIn } from "../lib/dueReminders";
 
 export type StudentNotificationItem = {
   id: string;
-  kind: "join_pending" | "join_approved" | "join_rejected" | "new_assignment" | "graded" | "announcement";
+  kind:
+    | "join_pending"
+    | "join_approved"
+    | "join_rejected"
+    | "new_assignment"
+    | "due_soon"
+    | "overdue"
+    | "graded"
+    | "announcement";
   title: string;
   subtitle: string;
   /** Empty string = read in the bell only (no navigation). */
@@ -128,13 +137,34 @@ export function useStudentNotifications() {
       const room = a.classroom_name || `Classroom ${a.classroom_id}`;
       const sub = a.my_submission;
       if (!sub) {
-        out.push({
-          id: `new-assignment-${a.id}`,
-          kind: "new_assignment",
-          title: `New assignment: ${a.title}`,
-          subtitle: room,
-          to: `/classrooms/${a.classroom_id}/assignments?assignment=${a.id}`,
-        });
+        const to = `/classrooms/${a.classroom_id}/assignments?assignment=${a.id}`;
+        const state = dueState(a.due_at);
+        // A reminder replaces the generic "new assignment" entry for the same assignment.
+        if (state === "due_soon") {
+          out.push({
+            id: `due-soon-${a.id}`,
+            kind: "due_soon",
+            title: `Due ${formatDueIn(a.due_at)}: ${a.title}`,
+            subtitle: room,
+            to,
+          });
+        } else if (state === "overdue") {
+          out.push({
+            id: `overdue-${a.id}`,
+            kind: "overdue",
+            title: `Overdue: ${a.title}`,
+            subtitle: `${room} · was due ${formatDueIn(a.due_at)}`,
+            to,
+          });
+        } else {
+          out.push({
+            id: `new-assignment-${a.id}`,
+            kind: "new_assignment",
+            title: `New assignment: ${a.title}`,
+            subtitle: room,
+            to,
+          });
+        }
         continue;
       }
       if (sub.graded_at && daysAgo(sub.graded_at)) {

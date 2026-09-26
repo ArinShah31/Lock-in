@@ -383,6 +383,8 @@ export type Assignment = {
   created_at: string;
   submitted_count?: number | null;
   graded_count?: number | null;
+  /** Approved students in the classroom (class teacher only). */
+  student_count?: number | null;
   my_submission?: AssignmentSubmission | null;
 };
 
@@ -391,12 +393,6 @@ export type StudentAssignmentFeedItem = Assignment & {
   is_overdue: boolean;
 };
 
-export function uploadFileUrl(filePath: string | null | undefined): string | null {
-  if (!filePath) return null;
-  if (filePath.startsWith("http")) return filePath;
-  const origin = import.meta.env.VITE_API_ORIGIN ?? "http://127.0.0.1:8000";
-  return `${origin}/${filePath.replace(/^\/+/, "")}`;
-}
 
 export type CourseSource = {
   title: string;
@@ -742,4 +738,56 @@ export type StreakBreak = {
 export type StudentStreak = {
   streak: number;
   last_break: StreakBreak | null;
+};
+
+export type AttendanceMark = { student_id: number; present: boolean };
+
+export type AttendanceSession = {
+  id: number;
+  subject_id: number;
+  held_on: string;
+  title: string;
+  marks: AttendanceMark[];
+};
+
+export type AttendanceStudent = { id: number; full_name: string; email: string };
+
+export type SubjectAttendance = {
+  subject_id: number;
+  subject_name: string;
+  subject_code: string;
+  can_edit: boolean;
+  students: AttendanceStudent[];
+  sessions: AttendanceSession[];
+};
+
+export type AttendanceSubjectPercent = {
+  subject_id: number;
+  attended: number;
+  held: number;
+  percent: number | null;
+};
+
+export type AttendanceSummary = {
+  subjects: { id: number; name: string; code: string }[];
+  rows: {
+    student_id: number;
+    full_name: string;
+    email: string;
+    subjects: AttendanceSubjectPercent[];
+    final_percent: number | null;
+  }[];
+};
+
+export type MyAttendance = {
+  subjects: {
+    subject_id: number;
+    subject_name: string;
+    subject_code: string;
+    attended: number;
+    held: number;
+    percent: number | null;
+    lectures: { session_id: number; held_on: string; title: string; present: boolean }[];
+  }[];
+  final_percent: number | null;
 };

@@ -16,16 +16,9 @@ import {
   Trash2,
 } from "lucide-react";
 
-function getFileUrl(filePath: string) {
-  if (!filePath) return "#";
-  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
-    return filePath;
-  }
-  const cleanPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
-  const backendBase = (
-    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
-  ).replace(/\/api\/v1\/?$/, "");
-  return `${backendBase}${cleanPath}`;
+function getFileUrl(doc: Content) {
+  if (doc.external_url) return doc.external_url;
+  return contentsApi.fileUrl(doc.id);
 }
 
 function getFileType(filePath: string) {
@@ -403,7 +396,7 @@ export function ClassroomDocumentsTab() {
                     </div>
 
                     <a
-                      href={getFileUrl(doc.file_path)}
+                      href={getFileUrl(doc)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="min-w-0"
@@ -456,7 +449,7 @@ export function ClassroomDocumentsTab() {
                 )}
 
                 <a
-                  href={getFileUrl(doc.file_path)}
+                  href={getFileUrl(doc)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-4 flex items-center gap-3 rounded-lg border border-line bg-panel-low/50 px-3 py-2.5 transition-all duration-200 hover:border-accent/40 hover:bg-accent/5"
