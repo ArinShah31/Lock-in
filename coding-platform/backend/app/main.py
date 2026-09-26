@@ -27,7 +27,7 @@ app.add_middleware(
 
 
 def _ensure_question_columns() -> None:
-    """Add Bloom/rubric columns introduced after the original SQLite schema."""
+    """Add columns introduced after the original SQLite schema."""
     if not settings.database_url.startswith("sqlite"):
         return
     inspector = inspect(engine)
@@ -37,6 +37,7 @@ def _ensure_question_columns() -> None:
     cols = {c["name"] for c in inspector.get_columns("questions")}
     added_bloom = "bloom_level" not in cols
     added_rubric = "rubric_json" not in cols
+    added_test_cases = "test_cases_json" not in cols
     with engine.begin() as conn:
         if added_bloom:
             conn.execute(text("ALTER TABLE questions ADD COLUMN bloom_level VARCHAR(20) DEFAULT 'APPLY'"))
@@ -44,6 +45,8 @@ def _ensure_question_columns() -> None:
             conn.execute(text("ALTER TABLE questions ADD COLUMN rubric_json JSON"))
         if "source_prompt" not in cols:
             conn.execute(text("ALTER TABLE questions ADD COLUMN source_prompt TEXT"))
+        if added_test_cases:
+            conn.execute(text("ALTER TABLE questions ADD COLUMN test_cases_json JSON"))
 
     from app.services.bloom import bloom_from_difficulty, normalize_rubric
 

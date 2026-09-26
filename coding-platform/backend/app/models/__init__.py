@@ -98,6 +98,7 @@ class Question(Base):
         SqlEnum(BloomLevel), nullable=False, default=BloomLevel.APPLY, index=True
     )
     rubric_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    test_cases_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

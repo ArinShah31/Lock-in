@@ -28,6 +28,7 @@ from app.schemas.auth import (
 from app.schemas.profile import ChangePasswordRequest, ProfileOut, UpdateMeRequest
 from app.services.avatar_upload import read_avatar_bytes, save_avatar_file, validate_avatar_upload
 from app.services.coding_platform_sync import sync_user_to_coding_platform
+from app.services.theory_platform_sync import sync_user_to_theory_platform
 from app.services.profile import build_user_profile
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -85,6 +86,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     sync_user_to_coding_platform(user)
+    sync_user_to_theory_platform(user)
 
     return _issue_auth_response(user)
 
@@ -99,6 +101,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
 
     sync_user_to_coding_platform(user)
+    sync_user_to_theory_platform(user)
 
     return _issue_auth_response(user)
 
@@ -163,6 +166,7 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     sync_user_to_coding_platform(user)
+    sync_user_to_theory_platform(user)
 
     return _issue_auth_response(user)
 
@@ -191,6 +195,7 @@ def refresh_tokens(payload: RefreshRequest, db: Session = Depends(get_db)):
 def me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Keep coding-platform identity in sync whenever the session is restored.
     sync_user_to_coding_platform(current_user)
+    sync_user_to_theory_platform(current_user)
     return UserOut.model_validate(current_user)
 
 
@@ -212,6 +217,7 @@ def update_me(
     db.commit()
     db.refresh(current_user)
     sync_user_to_coding_platform(current_user)
+    sync_user_to_theory_platform(current_user)
     return UserOut.model_validate(current_user)
 
 
@@ -233,6 +239,7 @@ async def upload_avatar(
     db.commit()
     db.refresh(current_user)
     sync_user_to_coding_platform(current_user)
+    sync_user_to_theory_platform(current_user)
     return UserOut.model_validate(current_user)
 
 

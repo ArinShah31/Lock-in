@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, type ExamQuestion, type Session } from "../api";
+import {
+  api,
+  type ExamQuestion,
+  type RunCodeResponse,
+  type Session,
+  runCode,
+  type TestCaseResult,
+} from "../api";
 import { useProctor } from "../components/useProctor";
 
 const monacoLang: Record<string, string> = {
@@ -14,6 +21,8 @@ const monacoLang: Record<string, string> = {
   javascript: "javascript",
 };
 
+const EXECUTABLE_LANGUAGES = new Set(["python", "java", "cpp", "javascript"]);
+
 export function ExamPage() {
   const { sessionId } = useParams();
   const sid = Number(sessionId);
@@ -22,6 +31,8 @@ export function ExamPage() {
   const [activeOrder, setActiveOrder] = useState(1);
   const [codes, setCodes] = useState<Record<number, string>>({});
   const [warn, setWarn] = useState<string | null>(null);
+  const [runResults, setRunResults] = useState<Record<number, RunCodeResponse>>({});
+  const [runError, setRunError] = useState<string | null>(null);
   const pasteTimes = useRef<number[]>([]);
 
   const session = useQuery({
@@ -59,6 +70,18 @@ export function ExamPage() {
     onSuccess: () => navigate(`/submitted/${sid}`),
   });
 
+  const run = useMutation({
+    mutationFn: (payload: { question_id: number; code: string; language: "python" | "java" | "cpp" | "html" | "css" | "javascript" }) =>
+      runCode(sid, payload),
+    onSuccess: (data, variables) => {
+      setRunResults((prev) => ({ ...prev, [variables.question_id]: data }));
+      setRunError(null);
+    },
+    onError: (err) => {
+      setRunError(err instanceof Error ? err.message : "Run failed");
+    },
+  });
+
   const report = useCallback(
     async (event_type: string, detail?: string, duration_seconds?: number) => {
       const res = await api<Session>(`/student/sessions/${sid}/event`, {
@@ -89,6 +112,9 @@ export function ExamPage() {
   const remaining = session.data?.remaining_seconds ?? 0;
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
+
+  const canRun = active && EXECUTABLE_LANGUAGES.has(active.language);
+  const activeResults = active ? runResults[active.question_id] : undefined;
 
   if (session.isLoading || questions.isLoading) {
     return <div className="p-8 text-[#44474e]">Loading exam…</div>;
@@ -127,6 +153,20 @@ export function ExamPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button
+            className="rounded-md border border-[#c5c6cf] bg-white px-3 py-1.5 text-sm font-semibold text-[#031635] transition hover:border-[#031635] disabled:opacity-50"
+            disabled={run.isPending || saveDraft.isPending}
+            onClick={() => {
+              if (!active) return;
+              run.mutate({
+                question_id: active.question_id,
+                code: codes[active.question_id] || "",
+                language: active.language,
+              });
+            }}
+          >
+            {run.isPending ? "Running…" : "Run tests"}
+          </button>
+          <button
             className="rounded-md border border-[#c5c6cf] bg-white px-3 py-1.5 text-sm font-semibold text-[#031635] transition hover:border-[#031635]"
             onClick={() => {
               if (!active) return;
@@ -159,6 +199,88 @@ export function ExamPage() {
           <pre className="mt-4 whitespace-pre-wrap font-sans text-sm leading-7 text-[#44474e]">
             {active?.prompt_markdown}
           </pre>
+
+          <div className="mt-8 border-t border-[#e1e3e4] pt-5">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#3f5d9b]">Test cases</p>
+            {!canRun ? (
+              <p className="mt-3 text-sm text-[#a0a4ab]">
+                Test-case runner is not available for {active?.language} questions.
+              </p>
+            ) : active && active.test_cases.length === 0 ? (
+              <p className="mt-3 text-sm text-[#a0a4ab]">No test cases available for this question.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {active?.test_cases.map((tc) => {
+                  const result: TestCaseResult | undefined = activeResults?.results.find(
+                    (r) => r.id === tc.id,
+                  );
+                  return (
+                    <div
+                      key={tc.id}
+                      className={`rounded-md border p-3 text-sm ${
+                        result?.passed === true
+                          ? "border-green-200 bg-green-50"
+                          : result?.passed === false
+                            ? "border-red-200 bg-red-50"
+                            : "border-[#e1e3e4] bg-[#fafbfc]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-[#031635]">{tc.description}</span>
+                        {result ? (
+                          <span
+                            className={`rounded px-2 py-0.5 text-xs font-bold ${
+                              result.passed
+                                ? "bg-green-100 text-green-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {result.passed ? "PASS" : "FAIL"}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-[#44474e] sm:grid-cols-2">
+                        <div>
+                          <span className="font-semibold">Input:</span>
+                          <pre className="mt-1 whitespace-pre-wrap rounded bg-white p-2 font-mono">{tc.input}</pre>
+                        </div>
+                        <div>
+                          <span className="font-semibold">Expected output:</span>
+                          <pre className="mt-1 whitespace-pre-wrap rounded bg-white p-2 font-mono">
+                            {tc.expected_output}
+                          </pre>
+                        </div>
+                      </div>
+                      {result && !result.passed ? (
+                        <div className="mt-2 text-xs">
+                          <span className="font-semibold text-[#031635]">Actual output:</span>
+                          <pre className="mt-1 whitespace-pre-wrap rounded bg-white p-2 font-mono text-[#44474e]">
+                            {result.actual_output}
+                          </pre>
+                          {result.error ? (
+                            <>
+                              <span className="mt-2 block font-semibold text-[#031635]">Error:</span>
+                              <pre className="mt-1 whitespace-pre-wrap rounded bg-white p-2 font-mono text-red-700">
+                                {result.error}
+                              </pre>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {runError ? (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                {runError}
+              </div>
+            ) : null}
+            {activeResults?.message ? (
+              <div className="mt-3 text-sm text-[#a0a4ab]">{activeResults.message}</div>
+            ) : null}
+          </div>
         </section>
         <section className="min-h-0 overflow-hidden border-t border-[#e1e3e4] lg:border-t-0">
           {active ? (

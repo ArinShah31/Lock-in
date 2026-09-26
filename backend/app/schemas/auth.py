@@ -38,6 +38,7 @@ class UserOut(BaseModel):
     role: UserRole
     is_active: bool
     coding_platform_enabled: bool = False
+    theory_platform_enabled: bool = False
     avatar_url: str | None = None
     institution_id: int | None = None
     department_id: int | None = None
@@ -46,6 +47,10 @@ class UserOut(BaseModel):
 
 
 class CodingPlatformToggleRequest(BaseModel):
+    enabled: bool
+
+
+class TheoryPlatformToggleRequest(BaseModel):
     enabled: bool
 
 

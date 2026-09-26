@@ -39,6 +39,10 @@ def _is_retryable_gemini_error(exc: Exception) -> bool:
             "RESOURCE_EXHAUSTED",
             "429",
             "QUOTA",
+            "503",
+            "UNAVAILABLE",
+            "DEADLINE",
+            "HIGH DEMAND",
         )
     )
 
@@ -96,10 +100,15 @@ def _is_safety_blocked(response) -> bool:
 
 def _chat_models_to_try() -> list[str]:
     primary = settings.gemini_chat_model.strip() or "gemini-3.6-flash"
-    fallbacks = ("gemini-3.6-flash", "gemini-flash-latest")
+    fallbacks = (
+        settings.gemini_model.strip() or "gemini-3.6-flash",
+        "gemini-3.6-flash",
+        "gemini-flash-latest",
+        "gemini-2.5-flash",
+    )
     models = [primary]
     for model in fallbacks:
-        if model not in models:
+        if model and model not in models:
             models.append(model)
     return models
 

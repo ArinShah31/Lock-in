@@ -31,6 +31,8 @@ from app.schemas import (
     EvalUpdateRequest,
     ExamQuestionOut,
     ProctorEventRequest,
+    RunCodeRequest,
+    RunCodeResponse,
     SessionOut,
     StudentResultOut,
     StudentResultSummaryOut,
@@ -39,9 +41,11 @@ from app.schemas import (
     AnalyticsBucketOut,
     AnalyticsRiskStudentOut,
     AnalyticsTestBreakdownOut,
+    TestCase,
 )
 from app.services.evaluator import evaluate_submission, event_weight
 from app.services.bloom import resolve_bloom
+from app.services.code_runner import run_test_cases
 
 student_router = APIRouter(prefix="/student", tags=["student"])
 results_router = APIRouter(prefix="/results", tags=["results"])
@@ -337,6 +341,8 @@ def exam_questions(
             .filter(CodeDraft.session_id == session.id, CodeDraft.question_id == link.question_id)
             .first()
         )
+        all_cases = link.question.test_cases_json or []
+        visible_cases = [c for c in all_cases if isinstance(c, dict) and c.get("is_visible")]
         out.append(
             ExamQuestionOut(
                 order_index=link.order_index,
@@ -348,9 +354,58 @@ def exam_questions(
                 language=link.question.language,
                 unlocked=link.order_index <= session.current_question_order,
                 draft_code=draft.code if draft else None,
+                test_cases=[TestCase(**c) for c in visible_cases],
             )
         )
     return out
+
+
+@student_router.post("/sessions/{session_id}/run", response_model=RunCodeResponse)
+def run_code(
+    session_id: int,
+    payload: RunCodeRequest,
+    db: Session = Depends(get_db),
+    student: User = Depends(require_student),
+):
+    if not settings.enable_exam_run_testcases:
+        raise HTTPException(status_code=403, detail="Test-case runner is disabled")
+
+    session = db.query(TestSession).filter(TestSession.id == session_id).first()
+    if not session or session.assignment.student_id != student.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = _expire_if_needed(db, session, session.assignment)
+    if session.status != SessionStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="Session is not active")
+
+    link = (
+        db.query(CodingTestQuestion)
+        .filter(
+            CodingTestQuestion.coding_test_id == session.assignment.coding_test_id,
+            CodingTestQuestion.question_id == payload.question_id,
+        )
+        .first()
+    )
+    if not link:
+        raise HTTPException(status_code=400, detail="Question not on this test")
+    if link.order_index > session.current_question_order:
+        raise HTTPException(status_code=400, detail="Question is locked")
+
+    question = link.question
+    all_cases = question.test_cases_json or []
+    visible_cases = [c for c in all_cases if isinstance(c, dict) and c.get("is_visible")]
+    if not visible_cases:
+        return RunCodeResponse(
+            results=[],
+            ran_count=0,
+            message="No test cases available for this question",
+        )
+
+    results = run_test_cases(
+        code=payload.code,
+        language=payload.language,
+        test_cases=visible_cases,
+    )
+    return RunCodeResponse(results=results, ran_count=len(results))
 
 
 @student_router.post("/sessions/{session_id}/draft")

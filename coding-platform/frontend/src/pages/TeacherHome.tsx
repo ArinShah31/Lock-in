@@ -1,6 +1,14 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type BloomLevel, type CodingTest, type Language, type Question, type RubricCriterion } from "../api";
+import {
+  api,
+  type BloomLevel,
+  type CodingTest,
+  type Language,
+  type Question,
+  type RubricCriterion,
+  type TestCase,
+} from "../api";
 import { useAuth } from "../auth";
 
 const LANGUAGES: Language[] = ["python", "java", "cpp", "html", "css", "javascript"];
@@ -72,6 +80,43 @@ export function TeacherHome() {
       { name: "Style", description: "Readable code", weight: 15, max_points: 100 },
       { name: "Edge cases", description: "Handles edge cases", weight: 15, max_points: 100 },
     ] as RubricCriterion[],
+    test_cases: [
+      {
+        id: 1,
+        description: "Typical case",
+        input: "",
+        expected_output: "",
+        is_visible: true,
+      },
+      {
+        id: 2,
+        description: "Boundary case",
+        input: "",
+        expected_output: "",
+        is_visible: true,
+      },
+      {
+        id: 3,
+        description: "Edge case",
+        input: "",
+        expected_output: "",
+        is_visible: true,
+      },
+      {
+        id: 4,
+        description: "Large input",
+        input: "",
+        expected_output: "",
+        is_visible: false,
+      },
+      {
+        id: 5,
+        description: "Tricky corner case",
+        input: "",
+        expected_output: "",
+        is_visible: false,
+      },
+    ] as TestCase[],
   });
   const [testForm, setTestForm] = useState({
     title: "New coding test",
@@ -84,7 +129,13 @@ export function TeacherHome() {
   const createQuestion = useMutation({
     mutationFn: () => api<Question>("/teacher/questions", { method: "POST", body: JSON.stringify(qForm) }),
     onSuccess: async () => {
-      setQForm((f) => ({ ...f, title: "", prompt_markdown: "", starter_code: "" }));
+      setQForm((f) => ({
+        ...f,
+        title: "",
+        prompt_markdown: "",
+        starter_code: "",
+        test_cases: f.test_cases.map((tc) => ({ ...tc, input: "", expected_output: "" })),
+      }));
       await qc.invalidateQueries({ queryKey: ["questions"] });
     },
     onError: (e: Error) => setError(e.message),
@@ -253,6 +304,88 @@ export function TeacherHome() {
                 ))}
               </select>
             </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-200">Test cases</h3>
+                <span className="text-xs text-slate-400">First 3 visible to students; rest hidden</span>
+              </div>
+              {qForm.test_cases.map((tc, idx) => (
+                <div key={tc.id} className="rounded-lg border border-slate-700 p-2">
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <input
+                      className="rounded border border-slate-600 bg-slate-950 px-2 py-1 text-sm"
+                      placeholder="Description"
+                      value={tc.description}
+                      onChange={(e) => {
+                        const next = [...qForm.test_cases];
+                        next[idx] = { ...tc, description: e.target.value };
+                        setQForm({ ...qForm, test_cases: next });
+                      }}
+                    />
+                    <label className="flex items-center gap-1 text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={tc.is_visible}
+                        onChange={(e) => {
+                          const next = [...qForm.test_cases];
+                          next[idx] = { ...tc, is_visible: e.target.checked };
+                          setQForm({ ...qForm, test_cases: next });
+                        }}
+                      />
+                      Visible
+                    </label>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <textarea
+                      className="min-h-16 rounded border border-slate-600 bg-slate-950 px-2 py-1 font-mono text-xs"
+                      placeholder="Input (stdin)"
+                      value={tc.input}
+                      onChange={(e) => {
+                        const next = [...qForm.test_cases];
+                        next[idx] = { ...tc, input: e.target.value };
+                        setQForm({ ...qForm, test_cases: next });
+                      }}
+                    />
+                    <textarea
+                      className="min-h-16 rounded border border-slate-600 bg-slate-950 px-2 py-1 font-mono text-xs"
+                      placeholder="Expected output"
+                      value={tc.expected_output}
+                      onChange={(e) => {
+                        const next = [...qForm.test_cases];
+                        next[idx] = { ...tc, expected_output: e.target.value };
+                        setQForm({ ...qForm, test_cases: next });
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-2 text-xs text-red-300 hover:text-red-200"
+                    onClick={() => {
+                      const next = qForm.test_cases.filter((_, i) => i !== idx);
+                      setQForm({ ...qForm, test_cases: next });
+                    }}
+                  >
+                    Remove case
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="text-sm text-cyan-300 hover:text-cyan-200"
+                onClick={() => {
+                  const nextId = Math.max(0, ...qForm.test_cases.map((tc) => tc.id)) + 1;
+                  setQForm({
+                    ...qForm,
+                    test_cases: [
+                      ...qForm.test_cases,
+                      { id: nextId, description: `Case ${nextId}`, input: "", expected_output: "", is_visible: false },
+                    ],
+                  });
+                }}
+              >
+                + Add test case
+              </button>
+            </div>
             <button className="rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-slate-950">Save question</button>
           </form>
           <div className="space-y-2 rounded-2xl border border-slate-700 p-4">
@@ -261,7 +394,7 @@ export function TeacherHome() {
               <div key={q.id} className="rounded-xl border border-slate-700 px-3 py-2 text-sm">
                 <div className="font-medium">{q.title}</div>
                 <div className="text-slate-400">
-                  #{q.id} · {q.language} · {bloomLabel(q.bloom_level)}
+                  #{q.id} · {q.language} · {bloomLabel(q.bloom_level)} · {q.test_cases?.length || 0} test cases
                 </div>
               </div>
             ))}

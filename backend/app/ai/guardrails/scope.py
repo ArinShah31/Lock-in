@@ -55,6 +55,8 @@ _EDUCATIONAL_HINTS: tuple[str, ...] = (
     "lesson",
     "topic",
     "practice",
+    "exercise",
+    "exercises",
     "assessment",
     "mock exam",
     "grade",

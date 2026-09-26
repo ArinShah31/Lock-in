@@ -1,0 +1,138 @@
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export async function api<T>(path: string, options: RequestInit = {}, auth = true): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (!headers.has("Content-Type") && options.body) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (auth) {
+    const token = localStorage.getItem("theory_access_token");
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (!res.ok) {
+    let message = res.statusText || `Request failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (typeof data.detail === "string") {
+        message = data.detail;
+      } else if (Array.isArray(data.detail)) {
+        message = data.detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join("; ");
+      } else if (data.detail != null) {
+        message = String(data.detail);
+      }
+    } catch {
+      if (res.status === 404) {
+        message = "Theory API not reachable (check Vite proxy → port 8012)";
+      }
+    }
+    throw new ApiError(res.status, message);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+export type Role = "TEACHER" | "STUDENT";
+export type BloomLevel = "REMEMBER" | "UNDERSTAND" | "APPLY" | "ANALYZE" | "EVALUATE" | "CREATE";
+export type SubjectArea =
+  | "general"
+  | "science"
+  | "mathematics"
+  | "humanities"
+  | "business"
+  | "computer_science";
+
+export type RubricCriterion = {
+  name: string;
+  description: string;
+  weight: number;
+  max_points: number;
+};
+
+export type User = {
+  id: number;
+  full_name: string;
+  email: string;
+  role: Role;
+};
+
+export type QuestionDraft = {
+  title: string;
+  prompt_markdown: string;
+  model_answer: string;
+  bloom_level: BloomLevel;
+  subject: SubjectArea;
+  rubric: RubricCriterion[];
+  source_prompt?: string | null;
+};
+
+export type Question = {
+  id: number;
+  title: string;
+  prompt_markdown: string;
+  model_answer: string;
+  subject: SubjectArea;
+  bloom_level: BloomLevel;
+  rubric: RubricCriterion[];
+  source_prompt?: string | null;
+  created_by_id: number;
+  is_active: boolean;
+};
+
+export type TheoryTest = {
+  id: number;
+  title: string;
+  duration_minutes: number;
+  invite_code: string;
+  is_published_results: boolean;
+  created_by_id: number;
+  questions: {
+    order_index: number;
+    bloom_level: BloomLevel;
+    question: Question;
+  }[];
+};
+
+export type Assignment = {
+  id: number;
+  theory_test_id: number;
+  student_id: number;
+  status: string;
+  test_title?: string | null;
+  duration_minutes?: number | null;
+  is_published_results?: boolean;
+  student_email?: string | null;
+  student_name?: string | null;
+};
+
+export type Session = {
+  id: number;
+  assignment_id: number;
+  started_at: string;
+  ends_at: string;
+  status: string;
+  violation_score: number;
+  current_question_order: number;
+  remaining_seconds: number;
+  warning?: string | null;
+};
+
+export type ExamQuestion = {
+  order_index: number;
+  bloom_level: BloomLevel;
+  question_id: number;
+  title: string;
+  prompt_markdown: string;
+  model_answer: string;
+  subject: SubjectArea;
+  unlocked: boolean;
+  draft_answer?: string | null;
+};

@@ -15,6 +15,7 @@ import {
   type QuestionDraft,
   type RubricCriterion,
   type StudentResultSummary,
+  type TestCase,
 } from "../api/codingClient";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -87,6 +88,20 @@ const RUBRIC_ICONS = [
 
 function emptyRubricRow(): RubricCriterion {
   return { name: "", description: "", weight: 0, max_points: 100 };
+}
+
+function defaultTestCases(): TestCase[] {
+  return [
+    { id: 1, description: "Typical case", input: "", expected_output: "", is_visible: true },
+    { id: 2, description: "Boundary case", input: "", expected_output: "", is_visible: true },
+    { id: 3, description: "Edge case", input: "", expected_output: "", is_visible: true },
+    { id: 4, description: "Large input", input: "", expected_output: "", is_visible: false },
+    { id: 5, description: "Tricky corner case", input: "", expected_output: "", is_visible: false },
+  ];
+}
+
+function normalizeTestCaseIds(cases: TestCase[]): TestCase[] {
+  return cases.map((tc, idx) => ({ ...tc, id: idx + 1 }));
 }
 
 /** Pick one other row to absorb leftover weight so prior edits stay intact. */
@@ -287,6 +302,106 @@ function RubricEditor({
   );
 }
 
+function TestCaseEditor({
+  rows,
+  onChange,
+}: {
+  rows: TestCase[];
+  onChange: (rows: TestCase[]) => void;
+}) {
+  function updateCase(index: number, patch: Partial<TestCase>) {
+    onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+
+  function addCase() {
+    const nextId = Math.max(0, ...rows.map((tc) => tc.id)) + 1;
+    onChange([
+      ...rows,
+      { id: nextId, description: `Case ${nextId}`, input: "", expected_output: "", is_visible: false },
+    ]);
+  }
+
+  function removeCase(index: number) {
+    onChange(normalizeTestCaseIds(rows.filter((_, i) => i !== index)));
+  }
+
+  const visibleCount = rows.filter((tc) => tc.is_visible).length;
+  const hiddenCount = rows.length - visibleCount;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[#e1e3e4] bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e1e3e4] px-4 py-3">
+        <div>
+          <h3 className="font-display text-lg font-bold text-[#031635]">Test cases</h3>
+          <p className="mt-0.5 text-sm text-[#75777f]">
+            {visibleCount} visible to students during the exam · {hiddenCount} hidden for grading
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-lg bg-[#031635] px-3 py-2 text-sm font-semibold text-white"
+          onClick={addCase}
+        >
+          <span className="material-symbols-outlined text-base">add</span>
+          Add case
+        </button>
+      </div>
+
+      <div className="divide-y divide-[#e1e3e4]">
+        {rows.map((tc, index) => (
+          <div key={tc.id} className="space-y-3 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-lg border border-[#e1e3e4] bg-[#f8f9fa] px-2.5 py-2 text-sm font-semibold text-[#031635] outline-none focus:border-[#031635]"
+                placeholder="Description"
+                value={tc.description}
+                onChange={(e) => updateCase(index, { description: e.target.value })}
+              />
+              <label className="flex items-center gap-2 text-sm text-[#44474e]">
+                <input
+                  type="checkbox"
+                  checked={tc.is_visible}
+                  onChange={(e) => updateCase(index, { is_visible: e.target.checked })}
+                />
+                Visible to student
+              </label>
+              <button
+                type="button"
+                className="text-[#75777f] hover:text-[#ba1a1a]"
+                title="Remove test case"
+                onClick={() => removeCase(index)}
+              >
+                <span className="material-symbols-outlined text-[20px]">delete</span>
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Input (stdin)">
+                <textarea
+                  className={`${inputClass} min-h-20 font-mono text-xs`}
+                  placeholder="Input fed to stdin"
+                  value={tc.input}
+                  onChange={(e) => updateCase(index, { input: e.target.value })}
+                />
+              </Field>
+              <Field label="Expected output">
+                <textarea
+                  className={`${inputClass} min-h-20 font-mono text-xs`}
+                  placeholder="Expected stdout"
+                  value={tc.expected_output}
+                  onChange={(e) => updateCase(index, { expected_output: e.target.value })}
+                />
+              </Field>
+            </div>
+          </div>
+        ))}
+        {!rows.length ? (
+          <p className="px-4 py-6 text-sm text-[#75777f]">No test cases yet. Add one or regenerate the question.</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 type ResultsViewMode = "tests" | "students";
 
 function readResultsMode(): ResultsViewMode {
@@ -438,6 +553,7 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
     language: "python" as Language,
     bloom_level: "APPLY" as BloomLevel,
     rubric: [emptyRubricRow(), emptyRubricRow(), emptyRubricRow(), emptyRubricRow()] as RubricCriterion[],
+    test_cases: defaultTestCases(),
   });
   const [testForm, setTestForm] = useState({
     title: "New coding test",
@@ -609,6 +725,7 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
         prompt_markdown: "",
         starter_code: "",
         rubric: [emptyRubricRow(), emptyRubricRow(), emptyRubricRow(), emptyRubricRow()],
+        test_cases: defaultTestCases(),
       }));
       setDraft(null);
       await qc.invalidateQueries({ queryKey: ["coding-questions"] });
@@ -623,7 +740,10 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
         body: JSON.stringify(genForm),
       }),
     onSuccess: (res) => {
-      setDraft(res);
+      setDraft({
+        ...res,
+        test_cases: res.test_cases?.length ? res.test_cases : defaultTestCases(),
+      });
       setError(null);
     },
     onError: (e: Error) => setError(e.message),
@@ -959,6 +1079,7 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
                   language: qForm.language,
                   bloom_level: qForm.bloom_level,
                   rubric: qForm.rubric.filter((row) => row.name.trim()),
+                  test_cases: normalizeTestCaseIds(qForm.test_cases),
                 });
               }}
             >
@@ -1017,6 +1138,10 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
                 rows={qForm.rubric}
                 onChange={(rubric) => setQForm({ ...qForm, rubric })}
               />
+              <TestCaseEditor
+                rows={qForm.test_cases}
+                onChange={(test_cases) => setQForm({ ...qForm, test_cases })}
+              />
               <div>
                 <PrimaryButton type="submit" disabled={createQuestion.isPending}>
                   Save question
@@ -1048,6 +1173,7 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
                           <div className="text-[#44474e]">
                             #{q.id} · {q.language} · {bloomLabel(q.bloom_level)}
                             {q.rubric?.length ? ` · ${q.rubric.length} criteria` : ""}
+                            {q.test_cases?.length ? ` · ${q.test_cases.length} test cases` : ""}
                           </div>
                         </div>
                         <span className="material-symbols-outlined mt-0.5 shrink-0 text-[#75777f]">
@@ -1075,6 +1201,42 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
                           ) : (
                             <p className="text-[#75777f]">No rubric criteria for this question.</p>
                           )}
+                          {q.test_cases?.length ? (
+                            <div className="mt-3 border-t border-[#e1e3e4] pt-3">
+                              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#75777f]">
+                                Test cases
+                              </p>
+                              <ul className="mt-2 space-y-2">
+                                {q.test_cases.map((tc) => (
+                                  <li
+                                    key={tc.id}
+                                    className="rounded-lg border border-[#e1e3e4] bg-white px-2.5 py-2 text-xs text-[#44474e]"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-medium text-[#031635]">{tc.description}</span>
+                                      <span
+                                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                                          tc.is_visible
+                                            ? "bg-[#e7f3ec] text-[#2f6b4f]"
+                                            : "bg-[#f5efe4] text-[#9a6b2f]"
+                                        }`}
+                                      >
+                                        {tc.is_visible ? "visible" : "hidden"}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                                      <pre className="whitespace-pre-wrap rounded bg-[#f8f9fa] p-2 font-mono">
+                                        {tc.input || "(empty input)"}
+                                      </pre>
+                                      <pre className="whitespace-pre-wrap rounded bg-[#f8f9fa] p-2 font-mono">
+                                        {tc.expected_output || "(empty output)"}
+                                      </pre>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </li>
@@ -1166,6 +1328,7 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
                     language: draft.language,
                     bloom_level: draft.bloom_level,
                     rubric: draft.rubric.filter((row) => row.name.trim()),
+                    test_cases: normalizeTestCaseIds(draft.test_cases ?? []),
                     source_prompt: draft.source_prompt || genForm.topic_or_scenario,
                   });
                 }}
@@ -1196,6 +1359,10 @@ function TeacherCodingWorkspace({ expectedEmail }: { expectedEmail?: string }) {
                 <RubricEditor
                   rows={draft.rubric}
                   onChange={(rubric) => setDraft({ ...draft, rubric })}
+                />
+                <TestCaseEditor
+                  rows={draft.test_cases ?? []}
+                  onChange={(test_cases) => setDraft({ ...draft, test_cases })}
                 />
                 <div>
                   <PrimaryButton type="submit" disabled={createQuestion.isPending}>
